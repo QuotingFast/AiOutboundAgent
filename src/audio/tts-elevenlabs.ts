@@ -10,21 +10,19 @@ export async function* streamTTS(text: string): AsyncGenerator<Buffer> {
     throw new Error('ElevenLabs API key and voice ID are required when TTS_PROVIDER=elevenlabs');
   }
 
-  const url = `https://api.elevenlabs.io/v1/text-to-speech/${config.elevenlabs.voiceId}/stream`;
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${config.elevenlabs.voiceId}/stream?output_format=ulaw_8000`;
 
-  logger.debug('tts-elevenlabs', 'Requesting TTS', { textLength: text.length });
+  logger.info('tts-elevenlabs', 'Requesting TTS', { textLength: text.length, voiceId: config.elevenlabs.voiceId });
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'xi-api-key': config.elevenlabs.apiKey,
       'Content-Type': 'application/json',
-      'Accept': 'audio/basic', // mulaw
     },
     body: JSON.stringify({
       text,
-      model_id: 'eleven_turbo_v2_5',
-      output_format: 'ulaw_8000',
+      model_id: 'eleven_flash_v2_5',
       voice_settings: {
         stability: 0.5,
         similarity_boost: 0.75,

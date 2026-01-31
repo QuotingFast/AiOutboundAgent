@@ -192,8 +192,14 @@ export function handleMediaStream(ws: WebSocket): void {
     greetingSent = true;
 
     const greetingText = buildGreetingText(lead);
-    logger.info('stream', 'Sending greeting', { sessionId, text: greetingText });
-    await speakText(greetingText);
+    logger.info('stream', 'Sending greeting', { sessionId, streamSid, text: greetingText });
+    try {
+      await speakText(greetingText);
+      logger.info('stream', 'Greeting TTS complete', { sessionId });
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.error('stream', 'Greeting TTS FAILED', { sessionId, error: errMsg });
+    }
   }
 
   async function processUtterance(audioBuffer: Buffer): Promise<void> {
@@ -270,6 +276,7 @@ export function handleMediaStream(ws: WebSocket): void {
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       logger.error('stream', 'TTS streaming error', { sessionId, error: errMsg });
+      throw err;
     } finally {
       isSpeaking = false;
       abortTTS = false;

@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: ai-outbound-agent
+    runtime: docker
+    plan: starter
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: BASE_URL
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: "gpt-4o"
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
+      - key: TTS_PROVIDER
+        value: "elevenlabs"
+      - key: STT_PROVIDER
+        value: "openai"
+      - key: DEBUG
+        value: "false"

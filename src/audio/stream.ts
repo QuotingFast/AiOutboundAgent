@@ -7,7 +7,7 @@ import { buildGreetingText, LeadData } from '../agent/prompts';
 import { executeWarmTransfer } from '../twilio/transfer';
 import { logger } from '../utils/logger';
 
-// Map of streamSid -> session data for passing lead/transfer info
+// Map of callSid -> session data for passing lead/transfer info
 const pendingSessions = new Map<string, { lead: LeadData; transfer?: { mode: string; target_number: string } }>();
 
 export function registerPendingSession(callSid: string, lead: LeadData, transfer?: { mode: string; target_number: string }): void {
@@ -40,30 +40,40 @@ interface TwilioMediaMessage {
 }
 
 /**
- * Energy detection for barge-in.
- * Calculates RMS energy of mulaw audio and returns true if above threshold.
+ * Decode mu-law byte to linear sample.
+ * Twilio sends inverted mu-law (each byte is bitwise complemented).
  */
-function detectSpeechEnergy(mulawPayload: Buffer, threshold: number = 30): boolean {
-  if (mulawPayload.length === 0) return false;
+function mulawToLinear(muByte: number): number {
+  // Twilio mu-law is complemented on the wire
+  muByte = ~muByte & 0xff;
+
+  const sign = muByte & 0x80;
+  const exponent = (muByte >> 4) & 0x07;
+  const mantissa = muByte & 0x0f;
+  let magnitude = ((mantissa << 1) | 0x21) << (exponent + 2);
+  magnitude -= 33; // Remove mu-law bias
+
+  return sign ? -magnitude : magnitude;
+}
+
+/**
+ * Energy detection for VAD / barge-in.
+ * Returns RMS energy level of the audio chunk.
+ */
+function getAudioEnergy(mulawPayload: Buffer): number {
+  if (mulawPayload.length === 0) return 0;
 
   let sumSquares = 0;
   for (let i = 0; i < mulawPayload.length; i++) {
-    // Convert mulaw byte to approximate linear amplitude
-    const mulaw = mulawPayload[i];
-    const sign = mulaw & 0x80 ? -1 : 1;
-    const exponent = (mulaw >> 4) & 0x07;
-    const mantissa = mulaw & 0x0f;
-    const magnitude = ((mantissa << 1) | 0x21) << (exponent + 2);
-    const sample = sign * magnitude;
+    const sample = mulawToLinear(mulawPayload[i]);
     sumSquares += sample * sample;
   }
 
-  const rms = Math.sqrt(sumSquares / mulawPayload.length);
-  return rms > threshold;
+  return Math.sqrt(sumSquares / mulawPayload.length);
 }
 
 export function handleMediaStream(ws: WebSocket): void {
-  const sessionId = uuidv4();
+  const sessionId = uuidv4().slice(0, 8);
   let streamSid = '';
   let callSid = '';
   let agent: AgentStateMachine | null = null;
@@ -73,18 +83,26 @@ export function handleMediaStream(ws: WebSocket): void {
   let inboundAudioBuffer = Buffer.alloc(0);
   let silenceFrames = 0;
   let speechFrames = 0;
-  const SILENCE_THRESHOLD = 25; // Consecutive silent frames before we consider speech ended
-  const SPEECH_START_THRESHOLD = 3; // Consecutive speech frames to start recording
+  let totalMediaFrames = 0;
 
-  // Barge-in state
-  let isSpeaking = false; // Is the agent currently sending TTS audio?
-  let abortTTS = false;   // Flag to cancel current TTS stream
-  let isProcessing = false; // Are we currently processing a turn?
+  // Tuning constants
+  const ENERGY_THRESHOLD = 200;          // Minimum RMS energy to count as speech
+  const SPEECH_START_FRAMES = 5;         // ~100ms of speech to start recording
+  const SILENCE_END_FRAMES = 40;         // ~800ms of silence to end utterance
+  const BARGE_IN_FRAMES = 8;             // ~160ms of speech during TTS to trigger barge-in
+  const MAX_UTTERANCE_MS = 15000;        // 15s max utterance before forced processing
+  const MIN_AUDIO_FOR_STT = 3200;        // ~200ms of audio minimum for STT
 
-  // Track greeting state
+  // State
+  let isSpeaking = false;
+  let abortTTS = false;
+  let isProcessing = false;
   let greetingSent = false;
+  let greetingComplete = false;
+  let utteranceStartTime = 0;
+  let utteranceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  logger.info('stream', 'WebSocket connection opened', { sessionId });
+  logger.info('stream', 'WS opened', { sessionId });
 
   ws.on('message', async (data: WebSocket.Data) => {
     try {
@@ -92,7 +110,7 @@ export function handleMediaStream(ws: WebSocket): void {
 
       switch (msg.event) {
         case 'connected':
-          logger.info('stream', 'Twilio stream connected', { sessionId });
+          logger.info('stream', 'Twilio connected', { sessionId });
           break;
 
         case 'start': {
@@ -100,63 +118,98 @@ export function handleMediaStream(ws: WebSocket): void {
           callSid = msg.start?.callSid || '';
           logger.info('stream', 'Stream started', { sessionId, streamSid, callSid });
 
-          // Look up session data — try callSid first, then iterate pending sessions
           const sessionData = pendingSessions.get(callSid);
           if (sessionData) {
             agent = new AgentStateMachine(sessionData.lead);
             transferConfig = sessionData.transfer as { mode: string; target_number: string } | undefined;
             pendingSessions.delete(callSid);
-
-            // Send greeting after a short delay to let the audio path establish
-            setTimeout(() => sendGreeting(sessionData.lead), 500);
+            logger.info('stream', 'Session found for callSid', { sessionId, leadName: sessionData.lead.first_name });
+            setTimeout(() => sendGreeting(sessionData.lead), 800);
           } else {
-            // Fallback: use default lead data
+            logger.warn('stream', 'No session found, using default', { sessionId, callSid, pendingKeys: [...pendingSessions.keys()] });
             const defaultLead: LeadData = { first_name: 'there' };
             agent = new AgentStateMachine(defaultLead);
-            setTimeout(() => sendGreeting(defaultLead), 500);
+            setTimeout(() => sendGreeting(defaultLead), 800);
           }
           break;
         }
 
         case 'media': {
           if (!msg.media?.payload) break;
+          totalMediaFrames++;
 
           const audioChunk = Buffer.from(msg.media.payload, 'base64');
-          const hasSpeech = detectSpeechEnergy(audioChunk);
+          const energy = getAudioEnergy(audioChunk);
+          const hasSpeech = energy > ENERGY_THRESHOLD;
 
+          // Log energy periodically for debugging
+          if (totalMediaFrames % 50 === 0) {
+            logger.debug('stream', 'Audio stats', {
+              sessionId,
+              frame: totalMediaFrames,
+              energy: Math.round(energy),
+              hasSpeech,
+              speechFrames,
+              silenceFrames,
+              bufferBytes: inboundAudioBuffer.length,
+              isSpeaking,
+              isProcessing,
+              greetingComplete,
+            });
+          }
+
+          // During greeting playback, only check for barge-in — don't process utterances
+          if (isSpeaking) {
+            if (hasSpeech) {
+              speechFrames++;
+              if (speechFrames >= BARGE_IN_FRAMES && greetingComplete) {
+                // Only allow barge-in after first greeting is fully played
+                logger.info('stream', 'Barge-in detected', { sessionId, energy: Math.round(energy) });
+                abortTTS = true;
+                sendClearMessage();
+                inboundAudioBuffer = Buffer.concat([inboundAudioBuffer, audioChunk]);
+              }
+            } else {
+              speechFrames = 0;
+            }
+            silenceFrames = 0;
+            break;
+          }
+
+          // Normal listening mode (agent is not speaking)
           if (hasSpeech) {
             speechFrames++;
             silenceFrames = 0;
 
-            // Barge-in: if agent is speaking and we detect real speech, cancel TTS
-            if (isSpeaking && speechFrames >= SPEECH_START_THRESHOLD) {
-              logger.info('stream', 'Barge-in detected — canceling TTS', { sessionId });
-              abortTTS = true;
-              // Send clear message to Twilio to stop playing audio
-              sendClearMessage();
-            }
-
-            // Buffer inbound audio for transcription
-            inboundAudioBuffer = Buffer.concat([inboundAudioBuffer, audioChunk]);
-          } else {
-            if (speechFrames >= SPEECH_START_THRESHOLD) {
-              // We were in speech, now silence
-              silenceFrames++;
-
-              // Still buffer during short pauses
+            if (speechFrames >= SPEECH_START_FRAMES) {
+              // We're recording speech
               inboundAudioBuffer = Buffer.concat([inboundAudioBuffer, audioChunk]);
 
-              if (silenceFrames >= SILENCE_THRESHOLD && !isProcessing) {
-                // End of utterance detected
-                const audioToProcess = inboundAudioBuffer;
-                inboundAudioBuffer = Buffer.alloc(0);
-                speechFrames = 0;
-                silenceFrames = 0;
+              // Start utterance timer on first buffered speech
+              if (!utteranceStartTime) {
+                utteranceStartTime = Date.now();
+                startUtteranceTimer();
+              }
+            }
+          } else {
+            // Silence
+            if (speechFrames >= SPEECH_START_FRAMES && inboundAudioBuffer.length > 0) {
+              // We were in speech, now silence
+              silenceFrames++;
+              inboundAudioBuffer = Buffer.concat([inboundAudioBuffer, audioChunk]);
 
-                // Process this utterance
-                processUtterance(audioToProcess);
+              if (silenceFrames >= SILENCE_END_FRAMES && !isProcessing) {
+                // End of utterance
+                logger.info('stream', 'Utterance ended (silence)', {
+                  sessionId,
+                  bufferBytes: inboundAudioBuffer.length,
+                  speechFrames,
+                  silenceFrames,
+                });
+                flushAndProcess();
               }
             } else {
+              // Not in speech, reset
               speechFrames = 0;
               silenceFrames = 0;
             }
@@ -166,6 +219,7 @@ export function handleMediaStream(ws: WebSocket): void {
 
         case 'stop':
           logger.info('stream', 'Stream stopped', { sessionId, callSid });
+          clearUtteranceTimer();
           break;
 
         default:
@@ -173,19 +227,47 @@ export function handleMediaStream(ws: WebSocket): void {
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      logger.error('stream', 'Error processing message', { sessionId, error: errMsg });
+      logger.error('stream', 'Message processing error', { sessionId, error: errMsg });
     }
   });
 
   ws.on('close', () => {
-    logger.info('stream', 'WebSocket closed', { sessionId, callSid });
+    logger.info('stream', 'WS closed', { sessionId, callSid });
+    clearUtteranceTimer();
   });
 
   ws.on('error', (err) => {
-    logger.error('stream', 'WebSocket error', { sessionId, error: err.message });
+    logger.error('stream', 'WS error', { sessionId, error: err.message });
   });
 
   // --- Helper functions ---
+
+  function startUtteranceTimer(): void {
+    clearUtteranceTimer();
+    utteranceTimer = setTimeout(() => {
+      if (inboundAudioBuffer.length > MIN_AUDIO_FOR_STT && !isProcessing) {
+        logger.info('stream', 'Utterance timeout — forcing processing', { sessionId, bufferBytes: inboundAudioBuffer.length });
+        flushAndProcess();
+      }
+    }, MAX_UTTERANCE_MS);
+  }
+
+  function clearUtteranceTimer(): void {
+    if (utteranceTimer) {
+      clearTimeout(utteranceTimer);
+      utteranceTimer = null;
+    }
+  }
+
+  function flushAndProcess(): void {
+    const audioToProcess = inboundAudioBuffer;
+    inboundAudioBuffer = Buffer.alloc(0);
+    speechFrames = 0;
+    silenceFrames = 0;
+    utteranceStartTime = 0;
+    clearUtteranceTimer();
+    processUtterance(audioToProcess);
+  }
 
   async function sendGreeting(lead: LeadData): Promise<void> {
     if (greetingSent) return;
@@ -195,28 +277,34 @@ export function handleMediaStream(ws: WebSocket): void {
     logger.info('stream', 'Sending greeting', { sessionId, streamSid, text: greetingText });
     try {
       await speakText(greetingText);
-      logger.info('stream', 'Greeting TTS complete', { sessionId });
+      greetingComplete = true;
+      logger.info('stream', 'Greeting complete', { sessionId });
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       logger.error('stream', 'Greeting TTS FAILED', { sessionId, error: errMsg });
+      greetingComplete = true; // Allow conversation to continue even if greeting fails
     }
   }
 
   async function processUtterance(audioBuffer: Buffer): Promise<void> {
     if (!agent || isProcessing) return;
+    if (audioBuffer.length < MIN_AUDIO_FOR_STT) {
+      logger.debug('stream', 'Audio too short, skipping', { sessionId, bytes: audioBuffer.length });
+      return;
+    }
+
     isProcessing = true;
+    logger.info('stream', 'Processing utterance', { sessionId, bytes: audioBuffer.length });
 
     try {
-      // Transcribe
       const transcript = await transcribeAudio(audioBuffer);
       if (!transcript) {
-        isProcessing = false;
+        logger.info('stream', 'Empty transcript, skipping', { sessionId });
         return;
       }
 
       logger.info('stream', 'User said', { sessionId, transcript });
 
-      // Get agent response
       const turn: AgentTurn = await agent.processUserInput(transcript);
 
       logger.info('stream', 'Agent response', {
@@ -226,29 +314,25 @@ export function handleMediaStream(ws: WebSocket): void {
         state: agent.getState(),
       });
 
-      // Speak the response
       if (turn.text) {
         await speakText(turn.text);
       }
 
-      // Handle actions
       if (turn.action === 'transfer' && transferConfig) {
         logger.info('stream', 'Executing transfer', { sessionId, target: transferConfig.target_number });
         const success = await executeWarmTransfer(callSid, transferConfig.target_number);
         if (!success) {
-          // Transfer failed — agent recovers
           const recovery = await agent.processUserInput('[system: transfer failed, line did not connect]');
           if (recovery.text) {
             await speakText(recovery.text);
           }
         }
       } else if (turn.action === 'end') {
-        // Let the TTS finish, then Twilio will eventually hang up
         logger.info('stream', 'Call ending', { sessionId });
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      logger.error('stream', 'Error processing utterance', { sessionId, error: errMsg });
+      logger.error('stream', 'Utterance processing error', { sessionId, error: errMsg });
     } finally {
       isProcessing = false;
     }
@@ -257,25 +341,30 @@ export function handleMediaStream(ws: WebSocket): void {
   async function speakText(text: string): Promise<void> {
     isSpeaking = true;
     abortTTS = false;
+    speechFrames = 0; // Reset so barge-in detection starts fresh
 
     try {
+      logger.info('stream', 'TTS starting', { sessionId, textLength: text.length });
       const ttsStream = streamTTS(text);
 
       for await (const chunk of ttsStream) {
         if (abortTTS) {
-          logger.debug('stream', 'TTS aborted by barge-in', { sessionId });
+          logger.info('stream', 'TTS aborted by barge-in', { sessionId });
           break;
         }
 
-        // Send audio chunk to Twilio via WebSocket
         sendAudioToTwilio(chunk);
 
-        // Small yield to allow barge-in detection between chunks
+        // Yield to event loop so barge-in detection can run
         await new Promise(resolve => setTimeout(resolve, 5));
+      }
+
+      if (!abortTTS) {
+        logger.info('stream', 'TTS finished normally', { sessionId });
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      logger.error('stream', 'TTS streaming error', { sessionId, error: errMsg });
+      logger.error('stream', 'TTS error', { sessionId, error: errMsg });
       throw err;
     } finally {
       isSpeaking = false;
@@ -300,11 +389,11 @@ export function handleMediaStream(ws: WebSocket): void {
   function sendClearMessage(): void {
     if (ws.readyState !== WebSocket.OPEN) return;
 
-    // Send clear event to tell Twilio to flush its audio buffer
     const message = JSON.stringify({
       event: 'clear',
       streamSid,
     });
     ws.send(message);
+    logger.debug('stream', 'Sent clear to Twilio', { sessionId });
   }
 }

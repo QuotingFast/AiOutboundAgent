@@ -146,14 +146,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         input_audio_transcription: { model: 'whisper-1' },
         turn_detection: {
           type: 'server_vad',
-          threshold: 0.62,
-          prefix_padding_ms: 250,
-          silence_duration_ms: 400,
+          threshold: 0.65,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 700,
           create_response: true,
           interrupt_response: true,
         },
         tools: getRealtimeTools(),
-        max_response_output_tokens: 100,
+        max_response_output_tokens: 150,
         temperature: 0.7,
       },
     }));

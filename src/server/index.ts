@@ -39,8 +39,8 @@ export function startServer(): void {
   server.listen(config.port, () => {
     logger.info('server', `Server listening on port ${config.port}`);
     logger.info('server', `Base URL: ${config.baseUrl}`);
-    logger.info('server', `TTS provider: ${config.ttsProvider}`);
-    logger.info('server', `STT provider: ${config.sttProvider}`);
+    logger.info('server', `Realtime model: ${config.openai.realtimeModel}`);
+    logger.info('server', `Voice: ${config.openai.voice}`);
     logger.info('server', `Debug mode: ${config.debug}`);
     logger.info('server', 'Endpoints:');
     logger.info('server', `  POST ${config.baseUrl}/call/start`);

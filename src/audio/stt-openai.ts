@@ -4,13 +4,41 @@ import { logger } from '../utils/logger';
 
 const openai = new OpenAI({ apiKey: config.openai.apiKey });
 
+// Whisper commonly hallucinates these phrases from noise/silence
+const HALLUCINATION_PATTERNS = [
+  /^you're welcome\.?$/i,
+  /^thank you\.?$/i,
+  /^thanks for watching\.?$/i,
+  /^thanks for listening\.?$/i,
+  /^bye\.?$/i,
+  /^goodbye\.?$/i,
+  /^the end\.?$/i,
+  /^see you\.?$/i,
+  /^please subscribe\.?$/i,
+  /^like and subscribe\.?$/i,
+  /^music$/i,
+  /^music playing$/i,
+  /^\[.*\]$/,        // [Music], [Applause], etc.
+  /^\(.*\)$/,        // (music), (silence), etc.
+  /^\.+$/,           // Just dots
+  /^,+$/,            // Just commas
+  /^\s*$/,           // Empty/whitespace
+];
+
+function isHallucination(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length < 2) return true;
+  return HALLUCINATION_PATTERNS.some(pattern => pattern.test(trimmed));
+}
+
 /**
  * Transcribe a buffer of raw audio (mulaw 8000Hz mono) using OpenAI Whisper.
  * We convert the raw buffer to a WAV in-memory before sending.
  */
 export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
-  if (audioBuffer.length < 1600) {
-    // Less than ~100ms of audio at 8kHz — skip
+  // Need at least ~400ms of audio for reliable transcription
+  if (audioBuffer.length < 3200) {
+    logger.debug('stt-openai', 'Audio too short, skipping', { bytes: audioBuffer.length });
     return '';
   }
 
@@ -23,11 +51,19 @@ export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
       file,
       language: 'en',
       response_format: 'text',
+      prompt: 'This is a phone conversation about auto insurance quotes.',
     });
 
     const text = typeof result === 'string' ? result : (result as { text?: string }).text || '';
-    logger.debug('stt-openai', 'Transcription result', { length: audioBuffer.length, text });
-    return text.trim();
+    const trimmed = text.trim();
+
+    if (isHallucination(trimmed)) {
+      logger.info('stt-openai', 'Filtered hallucination', { text: trimmed, bytes: audioBuffer.length });
+      return '';
+    }
+
+    logger.info('stt-openai', 'Transcription', { text: trimmed, bytes: audioBuffer.length });
+    return trimmed;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error('stt-openai', 'Transcription failed', { error: msg });

@@ -40,6 +40,63 @@ export class AgentStateMachine {
     return this.turnCount;
   }
 
+  /**
+   * Process user input with streaming — calls onSentence for each complete sentence
+   * so TTS can start immediately without waiting for the full response.
+   */
+  async processUserInputStreaming(
+    transcript: string,
+    onSentence: (sentence: string) => Promise<void>,
+  ): Promise<AgentTurn> {
+    this.turnCount++;
+    logger.info('agent', `Turn ${this.turnCount}`, { state: this.state, userSaid: transcript });
+
+    this.messages.push({ role: 'user', content: transcript });
+
+    // Use gpt-4o-mini for speed, stream the response
+    const stream = await this.openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: this.messages,
+      max_tokens: 150,
+      temperature: 0.7,
+      stream: true,
+    });
+
+    let fullResponse = '';
+    let sentenceBuffer = '';
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content || '';
+      fullResponse += delta;
+      sentenceBuffer += delta;
+
+      // Check for sentence boundaries — send each sentence to TTS immediately
+      const sentenceEnd = sentenceBuffer.match(/^(.*?[.!?—])\s+(.*)$/s);
+      if (sentenceEnd) {
+        const completeSentence = sentenceEnd[1].trim();
+        sentenceBuffer = sentenceEnd[2];
+
+        // Don't TTS the action tokens
+        if (completeSentence && !completeSentence.match(/\[TRANSFER_|CALL_END\]/)) {
+          await onSentence(completeSentence);
+        }
+      }
+    }
+
+    // Flush remaining text (if it doesn't end with punctuation)
+    const remaining = sentenceBuffer.trim();
+    if (remaining && !remaining.match(/^\[.*\]$/) && !remaining.match(/\[TRANSFER_|CALL_END\]/)) {
+      await onSentence(remaining);
+    }
+
+    this.messages.push({ role: 'assistant', content: fullResponse });
+
+    return this.parseResponse(fullResponse);
+  }
+
+  /**
+   * Non-streaming fallback for system messages.
+   */
   async processUserInput(transcript: string): Promise<AgentTurn> {
     this.turnCount++;
     logger.info('agent', `Turn ${this.turnCount}`, { state: this.state, userSaid: transcript });
@@ -47,9 +104,9 @@ export class AgentStateMachine {
     this.messages.push({ role: 'user', content: transcript });
 
     const response = await this.openai.chat.completions.create({
-      model: config.openai.model,
+      model: 'gpt-4o-mini',
       messages: this.messages,
-      max_tokens: 200,
+      max_tokens: 150,
       temperature: 0.7,
     });
 
@@ -76,7 +133,6 @@ export class AgentStateMachine {
       return { action: 'transfer_other', text };
     }
 
-    // Legacy support
     if (trimmed.includes('[TRANSFER_NOW]')) {
       this.state = 'transferring';
       const text = trimmed.replace('[TRANSFER_NOW]', '').trim();
@@ -95,6 +151,6 @@ export class AgentStateMachine {
       this.state = 'qualifying';
     }
 
-    return { action: 'speak', text: trimmed };
+    return { action: 'speak', text: '' }; // Text already sent via streaming
   }
 }

@@ -86,12 +86,12 @@ export function handleMediaStream(ws: WebSocket): void {
   let totalMediaFrames = 0;
 
   // Tuning constants
-  const ENERGY_THRESHOLD = 200;          // Minimum RMS energy to count as speech
-  const SPEECH_START_FRAMES = 5;         // ~100ms of speech to start recording
-  const SILENCE_END_FRAMES = 40;         // ~800ms of silence to end utterance
+  const ENERGY_THRESHOLD = 150;          // Minimum RMS energy to count as speech (lowered for phone audio)
+  const SPEECH_START_FRAMES = 4;         // ~80ms of speech to start recording
+  const SILENCE_END_FRAMES = 35;         // ~700ms of silence to end utterance
   const BARGE_IN_FRAMES = 8;             // ~160ms of speech during TTS to trigger barge-in
   const MAX_UTTERANCE_MS = 15000;        // 15s max utterance before forced processing
-  const MIN_AUDIO_FOR_STT = 3200;        // ~200ms of audio minimum for STT
+  const MIN_AUDIO_FOR_STT = 3200;        // ~400ms of audio minimum for STT
 
   // State
   let isSpeaking = false;
@@ -158,21 +158,33 @@ export function handleMediaStream(ws: WebSocket): void {
             });
           }
 
-          // During greeting playback, only check for barge-in — don't process utterances
+          // During TTS playback, check for barge-in and buffer audio after barge-in fires
           if (isSpeaking) {
             if (hasSpeech) {
               speechFrames++;
               if (speechFrames >= BARGE_IN_FRAMES && greetingComplete) {
-                // Only allow barge-in after first greeting is fully played
-                logger.info('stream', 'Barge-in detected', { sessionId, energy: Math.round(energy) });
-                abortTTS = true;
-                sendClearMessage();
+                if (!abortTTS) {
+                  // First barge-in detection — cancel TTS
+                  logger.info('stream', 'Barge-in detected', { sessionId, energy: Math.round(energy) });
+                  abortTTS = true;
+                  sendClearMessage();
+                }
+                // Keep buffering user audio while TTS is tearing down
                 inboundAudioBuffer = Buffer.concat([inboundAudioBuffer, audioChunk]);
+                if (!utteranceStartTime) {
+                  utteranceStartTime = Date.now();
+                  startUtteranceTimer();
+                }
               }
             } else {
-              speechFrames = 0;
+              // If barge-in already fired and now silence, keep tracking silence for utterance end
+              if (abortTTS && inboundAudioBuffer.length > 0) {
+                silenceFrames++;
+                inboundAudioBuffer = Buffer.concat([inboundAudioBuffer, audioChunk]);
+              } else {
+                speechFrames = 0;
+              }
             }
-            silenceFrames = 0;
             break;
           }
 
@@ -305,20 +317,23 @@ export function handleMediaStream(ws: WebSocket): void {
 
       logger.info('stream', 'User said', { sessionId, transcript });
 
-      const turn: AgentTurn = await agent.processUserInput(transcript);
+      // Stream GPT response and TTS each sentence immediately for low latency
+      const turn: AgentTurn = await agent.processUserInputStreaming(
+        transcript,
+        async (sentence: string) => {
+          logger.info('stream', 'Streaming sentence to TTS', { sessionId, sentence });
+          await speakText(sentence);
+        },
+      );
 
-      logger.info('stream', 'Agent response', {
+      logger.info('stream', 'Agent turn complete', {
         sessionId,
         action: turn.action,
-        text: turn.text,
         state: agent.getState(),
       });
 
-      if (turn.text) {
-        await speakText(turn.text);
-      }
-
       // Resolve transfer target based on routing decision
+      // (Text was already spoken sentence-by-sentence via streaming callback above)
       const isTransfer = turn.action === 'transfer_allstate' || turn.action === 'transfer_other' || turn.action === 'transfer';
       if (isTransfer && transferConfig) {
         let targetNumber: string | undefined;
@@ -339,10 +354,11 @@ export function handleMediaStream(ws: WebSocket): void {
           logger.info('stream', 'Executing transfer', { sessionId, route: turn.action, target: targetNumber });
           const success = await executeWarmTransfer(callSid, targetNumber);
           if (!success) {
-            const recovery = await agent.processUserInput('[system: transfer failed, line did not connect]');
-            if (recovery.text) {
-              await speakText(recovery.text);
-            }
+            // Use streaming for recovery message too
+            await agent.processUserInputStreaming(
+              '[system: transfer failed, line did not connect]',
+              async (sentence: string) => { await speakText(sentence); },
+            );
           }
         } else {
           logger.error('stream', 'No transfer number configured', { sessionId, route: turn.action });
@@ -355,6 +371,12 @@ export function handleMediaStream(ws: WebSocket): void {
       logger.error('stream', 'Utterance processing error', { sessionId, error: errMsg });
     } finally {
       isProcessing = false;
+
+      // Check if audio accumulated while we were processing — process it now
+      if (inboundAudioBuffer.length >= MIN_AUDIO_FOR_STT) {
+        logger.info('stream', 'Processing queued audio after previous turn', { sessionId, bytes: inboundAudioBuffer.length });
+        flushAndProcess();
+      }
     }
   }
 

@@ -3,14 +3,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { transcribeAudio } from './stt-openai';
 import { streamTTS } from './tts-router';
 import { AgentStateMachine, AgentTurn } from '../agent/state-machine';
-import { buildGreetingText, LeadData } from '../agent/prompts';
+import { buildGreetingText, LeadData, TransferConfig } from '../agent/prompts';
 import { executeWarmTransfer } from '../twilio/transfer';
 import { logger } from '../utils/logger';
 
 // Map of callSid -> session data for passing lead/transfer info
-const pendingSessions = new Map<string, { lead: LeadData; transfer?: { mode: string; target_number: string } }>();
+const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig }>();
 
-export function registerPendingSession(callSid: string, lead: LeadData, transfer?: { mode: string; target_number: string }): void {
+export function registerPendingSession(callSid: string, lead: LeadData, transfer?: TransferConfig): void {
   pendingSessions.set(callSid, { lead, transfer });
 }
 
@@ -77,7 +77,7 @@ export function handleMediaStream(ws: WebSocket): void {
   let streamSid = '';
   let callSid = '';
   let agent: AgentStateMachine | null = null;
-  let transferConfig: { mode: string; target_number: string } | undefined;
+  let transferConfig: TransferConfig | undefined;
 
   // Audio buffering for STT
   let inboundAudioBuffer = Buffer.alloc(0);
@@ -121,7 +121,7 @@ export function handleMediaStream(ws: WebSocket): void {
           const sessionData = pendingSessions.get(callSid);
           if (sessionData) {
             agent = new AgentStateMachine(sessionData.lead);
-            transferConfig = sessionData.transfer as { mode: string; target_number: string } | undefined;
+            transferConfig = sessionData.transfer;
             pendingSessions.delete(callSid);
             logger.info('stream', 'Session found for callSid', { sessionId, leadName: sessionData.lead.first_name });
             setTimeout(() => sendGreeting(sessionData.lead), 800);
@@ -318,14 +318,34 @@ export function handleMediaStream(ws: WebSocket): void {
         await speakText(turn.text);
       }
 
-      if (turn.action === 'transfer' && transferConfig) {
-        logger.info('stream', 'Executing transfer', { sessionId, target: transferConfig.target_number });
-        const success = await executeWarmTransfer(callSid, transferConfig.target_number);
-        if (!success) {
-          const recovery = await agent.processUserInput('[system: transfer failed, line did not connect]');
-          if (recovery.text) {
-            await speakText(recovery.text);
+      // Resolve transfer target based on routing decision
+      const isTransfer = turn.action === 'transfer_allstate' || turn.action === 'transfer_other' || turn.action === 'transfer';
+      if (isTransfer && transferConfig) {
+        let targetNumber: string | undefined;
+
+        if (turn.action === 'transfer_allstate' && transferConfig.allstate_number) {
+          targetNumber = transferConfig.allstate_number;
+        } else if (turn.action === 'transfer_other' && transferConfig.non_allstate_number) {
+          targetNumber = transferConfig.non_allstate_number;
+        } else if (transferConfig.target_number) {
+          // Legacy fallback or if specific route number not set
+          targetNumber = transferConfig.target_number;
+        } else {
+          // Use non-allstate as default fallback
+          targetNumber = transferConfig.non_allstate_number || transferConfig.allstate_number;
+        }
+
+        if (targetNumber) {
+          logger.info('stream', 'Executing transfer', { sessionId, route: turn.action, target: targetNumber });
+          const success = await executeWarmTransfer(callSid, targetNumber);
+          if (!success) {
+            const recovery = await agent.processUserInput('[system: transfer failed, line did not connect]');
+            if (recovery.text) {
+              await speakText(recovery.text);
+            }
           }
+        } else {
+          logger.error('stream', 'No transfer number configured', { sessionId, route: turn.action });
         }
       } else if (turn.action === 'end') {
         logger.info('stream', 'Call ending', { sessionId });

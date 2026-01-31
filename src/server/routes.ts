@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { startOutboundCall, StartCallParams } from '../twilio/client';
 import { buildMediaStreamTwiml, buildTransferTwiml } from '../twilio/twiml';
 import { registerPendingSession } from '../audio/stream';
+import { TransferConfig } from '../agent/prompts';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -12,7 +13,7 @@ const router = Router();
  */
 router.post('/call/start', async (req: Request, res: Response) => {
   try {
-    const { to, from, lead, transfer } = req.body as StartCallParams & { transfer?: { mode: string; target_number: string } };
+    const { to, from, lead, transfer } = req.body as StartCallParams & { transfer?: TransferConfig };
 
     if (!to) {
       res.status(400).json({ error: 'Missing required field: to' });

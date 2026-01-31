@@ -4,7 +4,7 @@ import { buildSystemPrompt, LeadData } from './prompts';
 import { logger } from '../utils/logger';
 
 export type AgentState = 'greeting' | 'qualifying' | 'transferring' | 'ended';
-export type AgentAction = 'speak' | 'transfer' | 'end';
+export type AgentAction = 'speak' | 'transfer_allstate' | 'transfer_other' | 'transfer' | 'end';
 
 export interface AgentTurn {
   action: AgentAction;
@@ -62,10 +62,25 @@ export class AgentStateMachine {
   private parseResponse(raw: string): AgentTurn {
     const trimmed = raw.trim();
 
+    if (trimmed.includes('[TRANSFER_ALLSTATE]')) {
+      this.state = 'transferring';
+      const text = trimmed.replace('[TRANSFER_ALLSTATE]', '').trim();
+      logger.info('agent', 'Transfer ALLSTATE triggered', { text });
+      return { action: 'transfer_allstate', text };
+    }
+
+    if (trimmed.includes('[TRANSFER_OTHER]')) {
+      this.state = 'transferring';
+      const text = trimmed.replace('[TRANSFER_OTHER]', '').trim();
+      logger.info('agent', 'Transfer OTHER triggered', { text });
+      return { action: 'transfer_other', text };
+    }
+
+    // Legacy support
     if (trimmed.includes('[TRANSFER_NOW]')) {
       this.state = 'transferring';
       const text = trimmed.replace('[TRANSFER_NOW]', '').trim();
-      logger.info('agent', 'Transfer triggered', { text });
+      logger.info('agent', 'Transfer (legacy) triggered', { text });
       return { action: 'transfer', text };
     }
 
@@ -76,7 +91,6 @@ export class AgentStateMachine {
       return { action: 'end', text };
     }
 
-    // Advance state based on turn progression
     if (this.state === 'greeting' && this.turnCount >= 1) {
       this.state = 'qualifying';
     }

@@ -20,6 +20,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let transferConfig: TransferConfig | undefined;
   let leadData: LeadData = { first_name: 'there' };
 
+  // Barge-in debounce: require sustained speech before canceling model
+  const BARGE_IN_DEBOUNCE_MS = 200;
+  let bargeInTimer: ReturnType<typeof setTimeout> | null = null;
+  let responseIsPlaying = false;
+
   logger.info('stream', 'Twilio WS opened', { sessionId });
 
   // --- Twilio WebSocket handlers ---
@@ -146,14 +151,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         input_audio_transcription: { model: 'whisper-1' },
         turn_detection: {
           type: 'server_vad',
-          threshold: 0.65,
+          threshold: 0.75,
           prefix_padding_ms: 300,
           silence_duration_ms: 700,
           create_response: true,
           interrupt_response: true,
         },
         tools: getRealtimeTools(),
-        max_response_output_tokens: 150,
+        max_response_output_tokens: 120,
         temperature: 0.7,
       },
     }));
@@ -196,22 +201,47 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       case 'response.audio.delta':
         // Stream g711_ulaw audio directly to Twilio — zero transcoding
+        responseIsPlaying = true;
         if (event.delta) {
           sendAudioToTwilio(event.delta);
         }
         break;
 
+      case 'response.audio.done':
+        responseIsPlaying = false;
+        break;
+
       case 'input_audio_buffer.speech_started':
-        // CRITICAL: Flush Twilio outbound audio queue immediately on user speech
-        logger.info('stream', 'User speech started — flushing Twilio queue', { sessionId });
-        sendClearToTwilio();
+        // Debounce: only treat as barge-in if speech sustains for 200ms
+        // This filters out pops, breaths, and line noise
+        if (bargeInTimer) clearTimeout(bargeInTimer);
+
+        if (responseIsPlaying) {
+          logger.debug('stream', 'Speech detected during response — starting debounce', { sessionId });
+          bargeInTimer = setTimeout(() => {
+            bargeInTimer = null;
+            logger.info('stream', 'Barge-in confirmed (200ms sustained) — flushing', { sessionId });
+            sendClearToTwilio();
+          }, BARGE_IN_DEBOUNCE_MS);
+        }
         break;
 
       case 'input_audio_buffer.speech_stopped':
-        logger.debug('stream', 'User speech stopped', { sessionId });
+        // If speech stopped before debounce window, cancel — it was noise
+        if (bargeInTimer) {
+          clearTimeout(bargeInTimer);
+          bargeInTimer = null;
+          logger.debug('stream', 'Speech stopped before debounce — ignored as noise', { sessionId });
+        }
         break;
 
       case 'response.done':
+        responseIsPlaying = false;
+        // Clear any pending barge-in timer since response is done anyway
+        if (bargeInTimer) {
+          clearTimeout(bargeInTimer);
+          bargeInTimer = null;
+        }
         // Check for function calls in the completed response
         if (event.response?.output) {
           for (const item of event.response.output) {

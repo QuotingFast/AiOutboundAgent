@@ -62,4 +62,9 @@ export async function transferCall(callSid: string, targetNumber: string, bridge
   });
 }
 
+export async function endCall(callSid: string): Promise<void> {
+  logger.info('twilio-client', 'Ending call', { callSid });
+  await twilioClient.calls(callSid).update({ status: 'completed' });
+}
+
 export { twilioClient };

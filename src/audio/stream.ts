@@ -4,6 +4,7 @@ import { config } from '../config';
 import { getSettings } from '../config/runtime';
 import { buildSystemPrompt, getRealtimeTools, LeadData, TransferConfig } from '../agent/prompts';
 import { executeWarmTransfer } from '../twilio/transfer';
+import { endCall } from '../twilio/client';
 import { logger } from '../utils/logger';
 
 // Map of callSid -> session data for passing lead/transfer info
@@ -99,19 +100,30 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
   // --- OpenAI Realtime connection ---
 
+  // Detect whether the model uses the GA or beta API based on name
+  function isGAModel(model: string): boolean {
+    return model.startsWith('gpt-realtime');
+  }
+
+  let usingGA = false;
+
   function connectToOpenAIRealtime(): void {
     const s = getSettings();
     const model = s.realtimeModel;
+    usingGA = isGAModel(model);
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
 
-    logger.info('stream', 'Connecting to OpenAI Realtime', { sessionId, model });
+    logger.info('stream', 'Connecting to OpenAI Realtime', { sessionId, model, ga: usingGA });
 
-    openaiWs = new WebSocket(url, {
-      headers: {
-        'Authorization': `Bearer ${config.openai.apiKey}`,
-        'OpenAI-Beta': 'realtime=v1',
-      },
-    });
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${config.openai.apiKey}`,
+    };
+    // GA API does not use the beta header; beta/preview requires it
+    if (!usingGA) {
+      headers['OpenAI-Beta'] = 'realtime=v1';
+    }
+
+    openaiWs = new WebSocket(url, { headers });
 
     openaiWs.on('open', () => {
       logger.info('stream', 'OpenAI Realtime connected', { sessionId });
@@ -171,34 +183,63 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       sessionId,
       voice: s.voice,
       model: s.realtimeModel,
+      ga: usingGA,
       vadThreshold: s.vadThreshold,
       silenceDurationMs: s.silenceDurationMs,
       bargeInDebounceMs: s.bargeInDebounceMs,
       maxTokens: s.maxResponseTokens,
     });
 
-    openaiWs.send(JSON.stringify({
-      type: 'session.update',
-      session: {
-        modalities: ['text', 'audio'],
-        instructions,
-        voice: s.voice,
-        input_audio_format: 'g711_ulaw',
-        output_audio_format: 'g711_ulaw',
-        input_audio_transcription: { model: 'whisper-1' },
-        turn_detection: {
-          type: 'server_vad',
-          threshold: s.vadThreshold,
-          prefix_padding_ms: s.prefixPaddingMs,
-          silence_duration_ms: s.silenceDurationMs,
-          create_response: true,
-          interrupt_response: true,
+    const turnDetection = {
+      type: 'server_vad' as const,
+      threshold: s.vadThreshold,
+      prefix_padding_ms: s.prefixPaddingMs,
+      silence_duration_ms: s.silenceDurationMs,
+      create_response: true,
+      interrupt_response: true,
+    };
+
+    if (usingGA) {
+      // GA API format: nested audio config, no temperature, session type required
+      openaiWs.send(JSON.stringify({
+        type: 'session.update',
+        session: {
+          type: 'realtime',
+          output_modalities: ['audio'],
+          instructions,
+          audio: {
+            input: {
+              format: { type: 'audio/pcmu' },
+              turn_detection: turnDetection,
+              transcription: { model: 'gpt-4o-transcribe' },
+            },
+            output: {
+              format: { type: 'audio/pcmu' },
+              voice: s.voice,
+            },
+          },
+          tools: getRealtimeTools(),
+          max_response_output_tokens: s.maxResponseTokens,
         },
-        tools: getRealtimeTools(),
-        max_response_output_tokens: s.maxResponseTokens,
-        temperature: s.temperature,
-      },
-    }));
+      }));
+    } else {
+      // Beta API format: flat fields, temperature supported
+      openaiWs.send(JSON.stringify({
+        type: 'session.update',
+        session: {
+          modalities: ['text', 'audio'],
+          instructions,
+          voice: s.voice,
+          input_audio_format: 'g711_ulaw',
+          output_audio_format: 'g711_ulaw',
+          input_audio_transcription: { model: 'whisper-1' },
+          turn_detection: turnDetection,
+          tools: getRealtimeTools(),
+          max_response_output_tokens: s.maxResponseTokens,
+          temperature: s.temperature,
+        },
+      }));
+    }
   }
 
   function triggerGreeting(): void {
@@ -236,7 +277,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         setTimeout(() => triggerGreeting(), 300);
         break;
 
-      case 'response.audio.delta':
+      case 'response.audio.delta':        // Beta event name
+      case 'response.output_audio.delta':  // GA event name
         // Stream g711_ulaw audio directly to Twilio — zero transcoding
         responseIsPlaying = true;
         lastAudioSentAt = Date.now();
@@ -245,7 +287,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
         break;
 
-      case 'response.audio.done':
+      case 'response.audio.done':         // Beta event name
+      case 'response.output_audio.done':   // GA event name
         responseIsPlaying = false;
         break;
 
@@ -304,7 +347,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
         break;
 
-      case 'response.audio_transcript.done':
+      case 'response.audio_transcript.done':              // Beta event name
+      case 'response.output_audio_transcript.done':       // GA event name
         logger.info('stream', 'Agent said', { sessionId, transcript: event.transcript });
         break;
 
@@ -375,8 +419,17 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       }
     } else if (name === 'end_call') {
       logger.info('stream', 'Call ending via function', { sessionId, reason: args.reason });
-      // Acknowledge — the call will end naturally when audio finishes
       sendFunctionOutput(call_id, { status: 'ending' });
+
+      // Wait for farewell audio to finish playing, then hang up
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        await endCall(callSid);
+        logger.info('stream', 'Call terminated via Twilio API', { sessionId, callSid });
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logger.error('stream', 'Failed to end call via Twilio API', { sessionId, error: errMsg });
+      }
     }
   }
 

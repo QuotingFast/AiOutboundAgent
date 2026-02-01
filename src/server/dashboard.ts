@@ -202,9 +202,77 @@ export function getDashboardHtml(): string {
     margin-top: 18px;
     justify-content: flex-end;
   }
+  .voice-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 10px;
+  }
+  .voice-card {
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+  }
+  .voice-card:hover { border-color: var(--accent); }
+  .voice-card.selected {
+    border-color: var(--accent);
+    background: rgba(99, 102, 241, 0.1);
+  }
+  .voice-card .vc-name {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .voice-card .vc-desc {
+    font-size: 11px;
+    color: var(--text2);
+    line-height: 1.3;
+  }
+  .voice-card .vc-tag {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-top: 6px;
+  }
+  .voice-card .vc-tag.sales { background: rgba(34,197,94,0.15); color: var(--green); }
+  .voice-card .vc-tag.neutral { background: rgba(148,153,173,0.15); color: var(--text2); }
+  .voice-card .vc-tag.new { background: rgba(245,158,11,0.15); color: var(--orange); }
+  .vc-play {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s;
+  }
+  .vc-play:hover { border-color: var(--accent); color: var(--accent); }
+  .vc-play.loading { opacity: 0.5; cursor: wait; }
+  .vc-check {
+    display: none;
+    position: absolute;
+    bottom: 8px;
+    right: 10px;
+    font-size: 14px;
+    color: var(--accent);
+  }
+  .voice-card.selected .vc-check { display: block; }
   @media (max-width: 640px) {
     .grid, .grid-3 { grid-template-columns: 1fr; }
     .call-row { flex-direction: column; }
+    .voice-grid { grid-template-columns: 1fr 1fr; }
     main { padding: 16px 10px; }
   }
 </style>
@@ -251,32 +319,98 @@ export function getDashboardHtml(): string {
     <div id="callHistory" style="font-size:13px;color:var(--text2)">Loading...</div>
   </div>
 
-  <!-- Voice & Model -->
+  <!-- Voice Selection -->
   <div class="card">
-    <h2><span class="icon">&#127908;</span> Voice &amp; Model</h2>
-    <div class="grid">
-      <div>
-        <label>Voice</label>
-        <select id="voice">
-          <option value="alloy">Alloy</option>
-          <option value="ash">Ash</option>
-          <option value="ballad">Ballad</option>
-          <option value="coral">Coral</option>
-          <option value="echo">Echo</option>
-          <option value="sage">Sage</option>
-          <option value="shimmer">Shimmer</option>
-          <option value="verse">Verse</option>
-        </select>
+    <h2><span class="icon">&#127908;</span> Voice</h2>
+    <input type="hidden" id="voice" value="coral">
+    <div class="voice-grid" id="voiceGrid">
+      <div class="voice-card" data-voice="coral" onclick="selectVoice('coral')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('coral',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Coral</div>
+        <div class="vc-desc">Friendly, upbeat</div>
+        <span class="vc-tag sales">Sales</span>
+        <span class="vc-check">&#10003;</span>
       </div>
+      <div class="voice-card" data-voice="sage" onclick="selectVoice('sage')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('sage',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Sage</div>
+        <div class="vc-desc">Calm, thoughtful</div>
+        <span class="vc-tag sales">Sales</span>
+        <span class="vc-check">&#10003;</span>
+      </div>
+      <div class="voice-card" data-voice="ballad" onclick="selectVoice('ballad')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('ballad',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Ballad</div>
+        <div class="vc-desc">Warm, expressive</div>
+        <span class="vc-tag sales">Sales</span>
+        <span class="vc-check">&#10003;</span>
+      </div>
+      <div class="voice-card" data-voice="ash" onclick="selectVoice('ash')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('ash',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Ash</div>
+        <div class="vc-desc">Warm, conversational</div>
+        <span class="vc-tag neutral">Versatile</span>
+        <span class="vc-check">&#10003;</span>
+      </div>
+      <div class="voice-card" data-voice="verse" onclick="selectVoice('verse')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('verse',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Verse</div>
+        <div class="vc-desc">Articulate, clear</div>
+        <span class="vc-tag neutral">Versatile</span>
+        <span class="vc-check">&#10003;</span>
+      </div>
+      <div class="voice-card" data-voice="alloy" onclick="selectVoice('alloy')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('alloy',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Alloy</div>
+        <div class="vc-desc">Neutral, balanced</div>
+        <span class="vc-tag neutral">Versatile</span>
+        <span class="vc-check">&#10003;</span>
+      </div>
+      <div class="voice-card" data-voice="echo" onclick="selectVoice('echo')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('echo',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Echo</div>
+        <div class="vc-desc">Deep, steady</div>
+        <span class="vc-tag neutral">Versatile</span>
+        <span class="vc-check">&#10003;</span>
+      </div>
+      <div class="voice-card" data-voice="shimmer" onclick="selectVoice('shimmer')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('shimmer',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Shimmer</div>
+        <div class="vc-desc">Bright, energetic</div>
+        <span class="vc-tag neutral">Versatile</span>
+        <span class="vc-check">&#10003;</span>
+      </div>
+      <div class="voice-card" data-voice="cedar" onclick="selectVoice('cedar')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('cedar',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Cedar</div>
+        <div class="vc-desc">Rich, resonant</div>
+        <span class="vc-tag new">GA Only</span>
+        <span class="vc-check">&#10003;</span>
+      </div>
+      <div class="voice-card" data-voice="marin" onclick="selectVoice('marin')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('marin',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Marin</div>
+        <div class="vc-desc">Smooth, professional</div>
+        <span class="vc-tag new">GA Only</span>
+        <span class="vc-check">&#10003;</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model -->
+  <div class="card">
+    <h2><span class="icon">&#129302;</span> Model</h2>
+    <div class="grid">
       <div>
         <label>Realtime Model</label>
         <select id="realtimeModel">
-          <option value="gpt-4o-realtime-preview">gpt-4o-realtime-preview</option>
-          <option value="gpt-4o-mini-realtime-preview">gpt-4o-mini-realtime-preview</option>
+          <option value="gpt-realtime">gpt-realtime (GA)</option>
+          <option value="gpt-realtime-mini">gpt-realtime-mini (GA, cheaper)</option>
+          <option value="gpt-4o-realtime-preview">gpt-4o-realtime-preview (deprecated Feb 27)</option>
         </select>
       </div>
-      <div class="full">
-        <label>Temperature</label>
+      <div>
+        <label>Temperature (beta only)</label>
         <div class="range-wrap">
           <input type="range" id="temperature" min="0" max="1" step="0.05" value="0.7">
           <span class="range-val" id="temperatureVal">0.70</span>
@@ -410,6 +544,9 @@ async function loadSettings() {
         el.value = s[key] ?? '';
       }
     }
+
+    // Highlight the selected voice card
+    if (s.voice) selectVoice(s.voice);
 
     // Map call form fields from settings
     if (s.defaultToNumber) document.getElementById('callTo').value = s.defaultToNumber;
@@ -589,6 +726,62 @@ async function loadCallHistory() {
     el.innerHTML = html;
   } catch (e) {
     document.getElementById('callHistory').innerHTML = '<span class="err">Failed to load</span>';
+  }
+}
+
+// --- Voice preview ---
+let currentAudio = null;
+let currentPlayBtn = null;
+
+function selectVoice(voice) {
+  document.getElementById('voice').value = voice;
+  document.querySelectorAll('.voice-card').forEach(c => {
+    c.classList.toggle('selected', c.dataset.voice === voice);
+  });
+}
+
+async function previewVoice(voice, btn) {
+  // Stop any currently playing preview
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    if (currentPlayBtn) currentPlayBtn.innerHTML = '&#9654;';
+  }
+
+  // If clicking the same one that's playing, just stop
+  if (currentPlayBtn === btn && currentAudio && !currentAudio.paused) {
+    currentAudio = null;
+    currentPlayBtn = null;
+    return;
+  }
+
+  btn.classList.add('loading');
+  btn.innerHTML = '...';
+
+  try {
+    const audio = new Audio('/api/voice-preview/' + voice);
+    audio.addEventListener('canplaythrough', () => {
+      btn.classList.remove('loading');
+      btn.innerHTML = '&#9724;'; // Stop icon while playing
+      audio.play();
+    }, { once: true });
+    audio.addEventListener('ended', () => {
+      btn.innerHTML = '&#9654;';
+      currentAudio = null;
+      currentPlayBtn = null;
+    });
+    audio.addEventListener('error', () => {
+      btn.classList.remove('loading');
+      btn.innerHTML = '&#9654;';
+      toast('Preview failed for ' + voice, 'error');
+    });
+    currentAudio = audio;
+    currentPlayBtn = btn;
+    audio.load();
+  } catch (e) {
+    btn.classList.remove('loading');
+    btn.innerHTML = '&#9654;';
+    toast('Preview failed: ' + e.message, 'error');
   }
 }
 

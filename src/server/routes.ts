@@ -5,9 +5,14 @@ import { registerPendingSession } from '../audio/stream';
 import { TransferConfig, buildSystemPrompt } from '../agent/prompts';
 import { getSettings, updateSettings, recordCall, getCallHistory } from '../config/runtime';
 import { getDashboardHtml } from './dashboard';
+import { config } from '../config';
 import { logger } from '../utils/logger';
 
 const router = Router();
+
+// In-memory cache for voice preview audio (voice -> mp3 Buffer)
+const voicePreviewCache = new Map<string, Buffer>();
+const PREVIEW_TEXT = "Hey there! This is a quick preview of how I sound. Pretty natural, right?";
 
 /**
  * POST /call/start
@@ -149,6 +154,65 @@ router.get('/api/calls', (_req: Request, res: Response) => {
 router.get('/api/default-prompt', (_req: Request, res: Response) => {
   const prompt = buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}' });
   res.json({ prompt });
+});
+
+/**
+ * GET /api/voice-preview/:voice
+ * Returns an MP3 audio preview of the given voice using OpenAI TTS.
+ * Results are cached in memory so each voice is only generated once.
+ */
+router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
+  const voice = req.params.voice;
+  const validVoices = ['alloy','ash','ballad','coral','echo','sage','shimmer','verse','cedar','marin'];
+  if (!validVoices.includes(voice)) {
+    res.status(400).json({ error: 'Invalid voice. Valid: ' + validVoices.join(', ') });
+    return;
+  }
+
+  try {
+    // Check cache first
+    if (voicePreviewCache.has(voice)) {
+      res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'public, max-age=86400' });
+      res.send(voicePreviewCache.get(voice));
+      return;
+    }
+
+    // Generate via OpenAI TTS API
+    const ttsRes = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.openai.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'tts-1',
+        input: PREVIEW_TEXT,
+        voice: voice,
+        response_format: 'mp3',
+      }),
+    });
+
+    if (!ttsRes.ok) {
+      const errText = await ttsRes.text();
+      logger.error('routes', 'TTS preview failed', { voice, status: ttsRes.status, error: errText });
+      res.status(502).json({ error: 'TTS generation failed: ' + ttsRes.status });
+      return;
+    }
+
+    const arrayBuf = await ttsRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuf);
+
+    // Cache for future requests
+    voicePreviewCache.set(voice, buffer);
+    logger.info('routes', 'Voice preview generated and cached', { voice, bytes: buffer.length });
+
+    res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'public, max-age=86400' });
+    res.send(buffer);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error('routes', 'Voice preview error', { voice, error: msg });
+    res.status(500).json({ error: msg });
+  }
 });
 
 export { router };

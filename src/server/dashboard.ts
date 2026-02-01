@@ -245,6 +245,12 @@ export function getDashboardHtml(): string {
     </div>
   </div>
 
+  <!-- Call History -->
+  <div class="card">
+    <h2><span class="icon">&#128203;</span> Recent Calls <button class="btn btn-secondary" style="margin-left:auto;padding:6px 12px;font-size:12px" onclick="loadCallHistory()">Refresh</button></h2>
+    <div id="callHistory" style="font-size:13px;color:var(--text2)">Loading...</div>
+  </div>
+
   <!-- Voice & Model -->
   <div class="card">
     <h2><span class="icon">&#127908;</span> Voice &amp; Model</h2>
@@ -541,6 +547,51 @@ function clearPrompt() {
   toast('Prompt cleared — will use built-in default', 'success');
 }
 
+async function loadCallHistory() {
+  try {
+    const res = await fetch('/api/calls');
+    const calls = await res.json();
+    const el = document.getElementById('callHistory');
+    if (!calls.length) {
+      el.innerHTML = '<div style="color:var(--text2)">No calls yet since last deploy. Make a call and refresh.</div>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+    html += '<tr style="text-align:left;color:var(--text2);border-bottom:1px solid var(--border)">'
+      + '<th style="padding:6px 8px">Time</th>'
+      + '<th style="padding:6px 8px">To</th>'
+      + '<th style="padding:6px 8px">Lead</th>'
+      + '<th style="padding:6px 8px">Voice</th>'
+      + '<th style="padding:6px 8px">VAD</th>'
+      + '<th style="padding:6px 8px">Silence</th>'
+      + '<th style="padding:6px 8px">Debounce</th>'
+      + '<th style="padding:6px 8px">Echo</th>'
+      + '<th style="padding:6px 8px">Tokens</th>'
+      + '<th style="padding:6px 8px">Agent</th>'
+      + '</tr>';
+    for (const c of calls) {
+      const t = new Date(c.timestamp).toLocaleString();
+      const s = c.settings;
+      html += '<tr style="border-bottom:1px solid var(--border)">'
+        + '<td style="padding:6px 8px;color:var(--text2)">' + t + '</td>'
+        + '<td style="padding:6px 8px">' + c.to + '</td>'
+        + '<td style="padding:6px 8px">' + c.leadName + '</td>'
+        + '<td style="padding:6px 8px;color:var(--accent)">' + s.voice + '</td>'
+        + '<td style="padding:6px 8px">' + s.vadThreshold + '</td>'
+        + '<td style="padding:6px 8px">' + s.silenceDurationMs + 'ms</td>'
+        + '<td style="padding:6px 8px">' + s.bargeInDebounceMs + 'ms</td>'
+        + '<td style="padding:6px 8px">' + s.echoSuppressionMs + 'ms</td>'
+        + '<td style="padding:6px 8px">' + s.maxResponseTokens + '</td>'
+        + '<td style="padding:6px 8px">' + s.agentName + '</td>'
+        + '</tr>';
+    }
+    html += '</table>';
+    el.innerHTML = html;
+  } catch (e) {
+    document.getElementById('callHistory').innerHTML = '<span class="err">Failed to load</span>';
+  }
+}
+
 // Range slider live values
 document.querySelectorAll('input[type=range]').forEach(el => {
   el.addEventListener('input', () => {
@@ -549,8 +600,9 @@ document.querySelectorAll('input[type=range]').forEach(el => {
   });
 });
 
-// Load settings on page ready
+// Load on page ready
 loadSettings();
+loadCallHistory();
 </script>
 </body>
 </html>`;

@@ -32,6 +32,25 @@ export interface RuntimeSettings {
   defaultToNumber: string;
 }
 
+export interface CallRecord {
+  callSid: string;
+  to: string;
+  leadName: string;
+  timestamp: string;
+  settings: {
+    voice: string;
+    realtimeModel: string;
+    temperature: number;
+    vadThreshold: number;
+    silenceDurationMs: number;
+    prefixPaddingMs: number;
+    bargeInDebounceMs: number;
+    echoSuppressionMs: number;
+    maxResponseTokens: number;
+    agentName: string;
+  };
+}
+
 const settings: RuntimeSettings = {
   voice: config.openai.voice,
   realtimeModel: config.openai.realtimeModel,
@@ -51,6 +70,10 @@ const settings: RuntimeSettings = {
   defaultToNumber: '',
 };
 
+// Keep last 20 calls
+const callHistory: CallRecord[] = [];
+const MAX_HISTORY = 20;
+
 export function getSettings(): RuntimeSettings {
   return { ...settings };
 }
@@ -62,4 +85,33 @@ export function updateSettings(updates: Partial<RuntimeSettings>): RuntimeSettin
     }
   }
   return { ...settings };
+}
+
+export function recordCall(callSid: string, to: string, leadName: string): void {
+  const s = getSettings();
+  callHistory.unshift({
+    callSid,
+    to,
+    leadName,
+    timestamp: new Date().toISOString(),
+    settings: {
+      voice: s.voice,
+      realtimeModel: s.realtimeModel,
+      temperature: s.temperature,
+      vadThreshold: s.vadThreshold,
+      silenceDurationMs: s.silenceDurationMs,
+      prefixPaddingMs: s.prefixPaddingMs,
+      bargeInDebounceMs: s.bargeInDebounceMs,
+      echoSuppressionMs: s.echoSuppressionMs,
+      maxResponseTokens: s.maxResponseTokens,
+      agentName: s.agentName,
+    },
+  });
+  if (callHistory.length > MAX_HISTORY) {
+    callHistory.length = MAX_HISTORY;
+  }
+}
+
+export function getCallHistory(): CallRecord[] {
+  return [...callHistory];
 }

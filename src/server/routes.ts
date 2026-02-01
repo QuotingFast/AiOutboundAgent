@@ -3,7 +3,7 @@ import { startOutboundCall, StartCallParams } from '../twilio/client';
 import { buildMediaStreamTwiml, buildTransferTwiml } from '../twilio/twiml';
 import { registerPendingSession } from '../audio/stream';
 import { TransferConfig, buildSystemPrompt } from '../agent/prompts';
-import { getSettings, updateSettings } from '../config/runtime';
+import { getSettings, updateSettings, recordCall, getCallHistory } from '../config/runtime';
 import { getDashboardHtml } from './dashboard';
 import { logger } from '../utils/logger';
 
@@ -30,6 +30,9 @@ router.post('/call/start', async (req: Request, res: Response) => {
 
     // Register session data so the WebSocket handler can pick it up when the call connects
     registerPendingSession(result.callSid, lead, transfer);
+
+    // Record this call with current settings for history tracking
+    recordCall(result.callSid, to, lead.first_name);
 
     logger.info('routes', 'Call started', { callSid: result.callSid, to });
 
@@ -129,6 +132,14 @@ router.put('/api/settings', (req: Request, res: Response) => {
   const updated = updateSettings(req.body);
   logger.info('routes', 'Settings updated', { keys: Object.keys(req.body) });
   res.json(updated);
+});
+
+/**
+ * GET /api/calls
+ * Returns recent call history with the settings used for each call.
+ */
+router.get('/api/calls', (_req: Request, res: Response) => {
+  res.json(getCallHistory());
 });
 
 /**

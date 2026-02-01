@@ -268,6 +268,12 @@ export function getDashboardHtml(): string {
     color: var(--accent);
   }
   .voice-card.selected .vc-check { display: block; }
+  .voice-card.disabled {
+    opacity: 0.35;
+    pointer-events: none;
+    filter: grayscale(1);
+  }
+  .voice-card.disabled .vc-play { display: none; }
   @media (max-width: 640px) {
     .grid, .grid-3 { grid-template-columns: 1fr; }
     .call-row { flex-direction: column; }
@@ -388,7 +394,7 @@ export function getDashboardHtml(): string {
     <div class="grid">
       <div>
         <label>Realtime Model</label>
-        <select id="realtimeModel">
+        <select id="realtimeModel" onchange="updateVoiceAvailability()">
           <option value="gpt-4o-realtime-preview">gpt-4o-realtime-preview</option>
           <option value="gpt-4o-mini-realtime-preview">gpt-4o-mini-realtime-preview</option>
         </select>
@@ -503,6 +509,40 @@ const NUMBER_FIELDS = [
   'bargeInDebounceMs','echoSuppressionMs','maxResponseTokens'
 ];
 
+// Voice-model compatibility map
+const MODEL_VOICES = {
+  'gpt-4o-realtime-preview': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'],
+  'gpt-4o-mini-realtime-preview': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'],
+};
+const ALL_VOICES = ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'];
+
+function getCompatibleVoices() {
+  const model = document.getElementById('realtimeModel').value;
+  return MODEL_VOICES[model] || ALL_VOICES;
+}
+
+function updateVoiceAvailability() {
+  const allowed = getCompatibleVoices();
+  const currentVoice = document.getElementById('voice').value;
+  let needsSwitch = !allowed.includes(currentVoice);
+
+  document.querySelectorAll('.voice-card').forEach(c => {
+    const v = c.dataset.voice;
+    if (allowed.includes(v)) {
+      c.classList.remove('disabled');
+    } else {
+      c.classList.add('disabled');
+      if (c.classList.contains('selected')) c.classList.remove('selected');
+    }
+  });
+
+  // If current voice is now incompatible, auto-select first available
+  if (needsSwitch) {
+    selectVoice(allowed[0]);
+    toast('Voice switched to ' + allowed[0] + ' (incompatible with selected model)', 'error');
+  }
+}
+
 function toast(msg, type) {
   const el = document.getElementById('toast');
   el.textContent = msg;
@@ -529,7 +569,8 @@ async function loadSettings() {
       }
     }
 
-    // Highlight the selected voice card
+    // Highlight the selected voice card and update availability
+    updateVoiceAvailability();
     if (s.voice) selectVoice(s.voice);
 
     // Map call form fields from settings
@@ -544,6 +585,14 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
+  // Validate voice-model compatibility before saving
+  const allowed = getCompatibleVoices();
+  const selectedVoice = document.getElementById('voice').value;
+  if (!allowed.includes(selectedVoice)) {
+    toast('Voice "' + selectedVoice + '" is not compatible with the selected model. Pick a different voice.', 'error');
+    return;
+  }
+
   const btn = document.getElementById('saveBtn');
   btn.disabled = true;
   btn.textContent = 'Saving...';

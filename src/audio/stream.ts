@@ -21,9 +21,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let leadData: LeadData = { first_name: 'there' };
 
   // Barge-in debounce: require sustained speech before canceling model
-  const BARGE_IN_DEBOUNCE_MS = 200;
+  // 250ms filters out echo/crosstalk from the AI's own voice leaking back
+  const BARGE_IN_DEBOUNCE_MS = 250;
   let bargeInTimer: ReturnType<typeof setTimeout> | null = null;
   let responseIsPlaying = false;
+  let lastAudioSentAt = 0; // Track when we last sent audio to Twilio
 
   logger.info('stream', 'Twilio WS opened', { sessionId });
 
@@ -202,6 +204,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       case 'response.audio.delta':
         // Stream g711_ulaw audio directly to Twilio — zero transcoding
         responseIsPlaying = true;
+        lastAudioSentAt = Date.now();
         if (event.delta) {
           sendAudioToTwilio(event.delta);
         }
@@ -212,26 +215,40 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         break;
 
       case 'input_audio_buffer.speech_started':
-        // Debounce: only treat as barge-in if speech sustains for 200ms
-        // This filters out pops, breaths, and line noise
-        if (bargeInTimer) clearTimeout(bargeInTimer);
-
-        if (responseIsPlaying) {
-          logger.debug('stream', 'Speech detected during response — starting debounce', { sessionId });
-          bargeInTimer = setTimeout(() => {
-            bargeInTimer = null;
-            logger.info('stream', 'Barge-in confirmed (200ms sustained) — flushing', { sessionId });
-            sendClearToTwilio();
-          }, BARGE_IN_DEBOUNCE_MS);
+        // If AI is not currently speaking, nothing to barge into
+        if (!responseIsPlaying) {
+          break;
         }
+
+        // Echo suppression: if we just sent audio <100ms ago, this is likely
+        // the AI's own voice leaking back through the phone — ignore it
+        if (Date.now() - lastAudioSentAt < 100) {
+          logger.debug('stream', 'Speech detected within echo window — suppressing', { sessionId });
+          break;
+        }
+
+        // Start debounce: require 250ms sustained speech to confirm real barge-in
+        if (bargeInTimer) clearTimeout(bargeInTimer);
+        logger.debug('stream', 'Potential barge-in — starting debounce', { sessionId });
+        bargeInTimer = setTimeout(() => {
+          bargeInTimer = null;
+          logger.info('stream', 'Barge-in confirmed (250ms sustained) — canceling response', { sessionId });
+          // Cancel the model's in-progress response
+          if (openaiWs?.readyState === WebSocket.OPEN) {
+            openaiWs.send(JSON.stringify({ type: 'response.cancel' }));
+          }
+          // Flush Twilio's outbound audio queue
+          sendClearToTwilio();
+          responseIsPlaying = false;
+        }, BARGE_IN_DEBOUNCE_MS);
         break;
 
       case 'input_audio_buffer.speech_stopped':
-        // If speech stopped before debounce window, cancel — it was noise
+        // If speech stopped before debounce window, it was echo or noise — cancel
         if (bargeInTimer) {
           clearTimeout(bargeInTimer);
           bargeInTimer = null;
-          logger.debug('stream', 'Speech stopped before debounce — ignored as noise', { sessionId });
+          logger.debug('stream', 'Speech stopped before debounce — ignored as echo/noise', { sessionId });
         }
         break;
 

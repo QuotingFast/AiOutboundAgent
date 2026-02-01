@@ -404,9 +404,8 @@ export function getDashboardHtml(): string {
       <div>
         <label>Realtime Model</label>
         <select id="realtimeModel">
-          <option value="gpt-realtime">gpt-realtime (GA)</option>
-          <option value="gpt-realtime-mini">gpt-realtime-mini (GA, cheaper)</option>
-          <option value="gpt-4o-realtime-preview">gpt-4o-realtime-preview (deprecated Feb 27)</option>
+          <option value="gpt-4o-realtime-preview">gpt-4o-realtime-preview</option>
+          <option value="gpt-4o-mini-realtime-preview">gpt-4o-mini-realtime-preview</option>
         </select>
       </div>
       <div>

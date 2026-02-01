@@ -26,7 +26,7 @@ export const config = {
   openai: {
     apiKey: required('OPENAI_API_KEY'),
     model: optional('OPENAI_MODEL', 'gpt-4o'),
-    realtimeModel: optional('OPENAI_REALTIME_MODEL', 'gpt-realtime'),
+    realtimeModel: optional('OPENAI_REALTIME_MODEL', 'gpt-4o-realtime-preview'),
     voice: optional('OPENAI_VOICE', 'coral'),
   },
 

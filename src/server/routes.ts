@@ -163,7 +163,7 @@ router.get('/api/default-prompt', (_req: Request, res: Response) => {
  */
 router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
   const voice = req.params.voice;
-  const validVoices = ['alloy','ash','ballad','coral','echo','sage','shimmer','verse','cedar','marin'];
+  const validVoices = ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'];
   if (!validVoices.includes(voice)) {
     res.status(400).json({ error: 'Invalid voice. Valid: ' + validVoices.join(', ') });
     return;
@@ -185,7 +185,7 @@ router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'tts-1',
+        model: 'gpt-4o-mini-tts',
         input: PREVIEW_TEXT,
         voice: voice,
         response_format: 'mp3',

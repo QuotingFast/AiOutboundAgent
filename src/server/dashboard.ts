@@ -240,7 +240,6 @@ export function getDashboardHtml(): string {
   }
   .voice-card .vc-tag.sales { background: rgba(34,197,94,0.15); color: var(--green); }
   .voice-card .vc-tag.neutral { background: rgba(148,153,173,0.15); color: var(--text2); }
-  .voice-card .vc-tag.new { background: rgba(245,158,11,0.15); color: var(--orange); }
   .vc-play {
     position: absolute;
     top: 10px;
@@ -378,20 +377,6 @@ export function getDashboardHtml(): string {
         <div class="vc-name">Shimmer</div>
         <div class="vc-desc">Bright, energetic</div>
         <span class="vc-tag neutral">Versatile</span>
-        <span class="vc-check">&#10003;</span>
-      </div>
-      <div class="voice-card" data-voice="cedar" onclick="selectVoice('cedar')">
-        <button class="vc-play" onclick="event.stopPropagation();previewVoice('cedar',this)" title="Preview">&#9654;</button>
-        <div class="vc-name">Cedar</div>
-        <div class="vc-desc">Rich, resonant</div>
-        <span class="vc-tag new">GA Only</span>
-        <span class="vc-check">&#10003;</span>
-      </div>
-      <div class="voice-card" data-voice="marin" onclick="selectVoice('marin')">
-        <button class="vc-play" onclick="event.stopPropagation();previewVoice('marin',this)" title="Preview">&#9654;</button>
-        <div class="vc-name">Marin</div>
-        <div class="vc-desc">Smooth, professional</div>
-        <span class="vc-tag new">GA Only</span>
         <span class="vc-check">&#10003;</span>
       </div>
     </div>

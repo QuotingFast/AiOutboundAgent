@@ -100,30 +100,21 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
   // --- OpenAI Realtime connection ---
 
-  // Detect whether the model uses the GA or beta API based on name
-  function isGAModel(model: string): boolean {
-    return model.startsWith('gpt-realtime');
-  }
-
-  let usingGA = false;
-
   function connectToOpenAIRealtime(): void {
     const s = getSettings();
     const model = s.realtimeModel;
-    usingGA = isGAModel(model);
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
 
-    logger.info('stream', 'Connecting to OpenAI Realtime', { sessionId, model, ga: usingGA });
+    logger.info('stream', 'Connecting to OpenAI Realtime', { sessionId, model });
 
-    const headers: Record<string, string> = {
-      'Authorization': `Bearer ${config.openai.apiKey}`,
-    };
-    // GA API does not use the beta header; beta/preview requires it
-    if (!usingGA) {
-      headers['OpenAI-Beta'] = 'realtime=v1';
-    }
-
-    openaiWs = new WebSocket(url, { headers });
+    // Always use beta header — beta interface supports all models and is
+    // the proven-working format. GA-only format can be added after Feb 27.
+    openaiWs = new WebSocket(url, {
+      headers: {
+        'Authorization': `Bearer ${config.openai.apiKey}`,
+        'OpenAI-Beta': 'realtime=v1',
+      },
+    });
 
     openaiWs.on('open', () => {
       logger.info('stream', 'OpenAI Realtime connected', { sessionId });
@@ -183,63 +174,34 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       sessionId,
       voice: s.voice,
       model: s.realtimeModel,
-      ga: usingGA,
       vadThreshold: s.vadThreshold,
       silenceDurationMs: s.silenceDurationMs,
       bargeInDebounceMs: s.bargeInDebounceMs,
       maxTokens: s.maxResponseTokens,
     });
 
-    const turnDetection = {
-      type: 'server_vad' as const,
-      threshold: s.vadThreshold,
-      prefix_padding_ms: s.prefixPaddingMs,
-      silence_duration_ms: s.silenceDurationMs,
-      create_response: true,
-      interrupt_response: true,
-    };
-
-    if (usingGA) {
-      // GA API format: nested audio config, no temperature, session type required
-      openaiWs.send(JSON.stringify({
-        type: 'session.update',
-        session: {
-          type: 'realtime',
-          output_modalities: ['audio'],
-          instructions,
-          audio: {
-            input: {
-              format: { type: 'audio/pcmu' },
-              turn_detection: turnDetection,
-              transcription: { model: 'gpt-4o-transcribe' },
-            },
-            output: {
-              format: { type: 'audio/pcmu' },
-              voice: s.voice,
-            },
-          },
-          tools: getRealtimeTools(),
-          max_response_output_tokens: s.maxResponseTokens,
+    openaiWs.send(JSON.stringify({
+      type: 'session.update',
+      session: {
+        modalities: ['text', 'audio'],
+        instructions,
+        voice: s.voice,
+        input_audio_format: 'g711_ulaw',
+        output_audio_format: 'g711_ulaw',
+        input_audio_transcription: { model: 'whisper-1' },
+        turn_detection: {
+          type: 'server_vad',
+          threshold: s.vadThreshold,
+          prefix_padding_ms: s.prefixPaddingMs,
+          silence_duration_ms: s.silenceDurationMs,
+          create_response: true,
+          interrupt_response: true,
         },
-      }));
-    } else {
-      // Beta API format: flat fields, temperature supported
-      openaiWs.send(JSON.stringify({
-        type: 'session.update',
-        session: {
-          modalities: ['text', 'audio'],
-          instructions,
-          voice: s.voice,
-          input_audio_format: 'g711_ulaw',
-          output_audio_format: 'g711_ulaw',
-          input_audio_transcription: { model: 'whisper-1' },
-          turn_detection: turnDetection,
-          tools: getRealtimeTools(),
-          max_response_output_tokens: s.maxResponseTokens,
-          temperature: s.temperature,
-        },
-      }));
-    }
+        tools: getRealtimeTools(),
+        max_response_output_tokens: s.maxResponseTokens,
+        temperature: s.temperature,
+      },
+    }));
   }
 
   function triggerGreeting(): void {

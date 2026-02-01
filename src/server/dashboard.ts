@@ -1,0 +1,513 @@
+export function getDashboardHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Outbound Agent</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232733;
+    --border: #2e3345;
+    --text: #e4e6ed;
+    --text2: #9499ad;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --green: #22c55e;
+    --red: #ef4444;
+    --orange: #f59e0b;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  header h1 span { color: var(--accent); }
+  .status-dot {
+    width: 8px; height: 8px;
+    background: var(--green);
+    border-radius: 50%;
+    display: inline-block;
+  }
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 16px 60px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 18px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card h2 .icon { font-size: 18px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .full { grid-column: 1 / -1; }
+  label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text2);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  input, select, textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--accent);
+  }
+  textarea { resize: vertical; min-height: 200px; font-size: 13px; line-height: 1.5; }
+  select { cursor: pointer; }
+  .range-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .range-wrap input[type=range] {
+    flex: 1;
+    padding: 0;
+    height: 6px;
+    -webkit-appearance: none;
+    background: var(--border);
+    border-radius: 3px;
+    border: none;
+  }
+  .range-wrap input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .range-val {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    min-width: 45px;
+    text-align: right;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-secondary {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-green { background: var(--green); color: white; }
+  .btn-green:hover { opacity: 0.9; }
+  .btn-red { background: var(--red); color: white; }
+  .btn-red:hover { opacity: 0.9; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .call-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+  }
+  .call-row .field { flex: 1; }
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: white;
+    z-index: 999;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.3s;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.success { background: var(--green); }
+  .toast.error { background: var(--red); }
+  .call-log {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    max-height: 180px;
+    overflow-y: auto;
+    line-height: 1.8;
+    color: var(--text2);
+  }
+  .call-log .entry { padding: 2px 0; }
+  .call-log .sid { color: var(--accent); }
+  .call-log .ok { color: var(--green); }
+  .call-log .err { color: var(--red); }
+  .section-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 18px;
+    justify-content: flex-end;
+  }
+  @media (max-width: 640px) {
+    .grid, .grid-3 { grid-template-columns: 1fr; }
+    .call-row { flex-direction: column; }
+    main { padding: 16px 10px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>AI</span> Outbound Agent</h1>
+  <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)">
+    <span class="status-dot"></span> Connected
+  </div>
+</header>
+
+<main>
+  <!-- Quick Call -->
+  <div class="card">
+    <h2><span class="icon">&#128222;</span> Quick Call</h2>
+    <div class="call-row">
+      <div class="field">
+        <label>To Number</label>
+        <input type="text" id="callTo" placeholder="+19547905093">
+      </div>
+      <div class="field">
+        <label>From Number</label>
+        <input type="text" id="callFrom" placeholder="+18557702370">
+      </div>
+      <div class="field">
+        <label>Lead Name</label>
+        <input type="text" id="callName" value="Justin">
+      </div>
+      <div class="field">
+        <label>Lead State</label>
+        <input type="text" id="callState" value="FL" style="max-width:80px">
+      </div>
+      <button class="btn btn-green" id="callBtn" onclick="makeCall()">Call</button>
+    </div>
+    <div class="call-log" id="callLog" style="margin-top:14px">
+      <div class="entry" style="color:var(--text2)">Call log will appear here...</div>
+    </div>
+  </div>
+
+  <!-- Voice & Model -->
+  <div class="card">
+    <h2><span class="icon">&#127908;</span> Voice &amp; Model</h2>
+    <div class="grid">
+      <div>
+        <label>Voice</label>
+        <select id="voice">
+          <option value="alloy">Alloy</option>
+          <option value="ash">Ash</option>
+          <option value="ballad">Ballad</option>
+          <option value="coral">Coral</option>
+          <option value="echo">Echo</option>
+          <option value="sage">Sage</option>
+          <option value="shimmer">Shimmer</option>
+          <option value="verse">Verse</option>
+        </select>
+      </div>
+      <div>
+        <label>Realtime Model</label>
+        <select id="realtimeModel">
+          <option value="gpt-4o-realtime-preview">gpt-4o-realtime-preview</option>
+          <option value="gpt-4o-mini-realtime-preview">gpt-4o-mini-realtime-preview</option>
+        </select>
+      </div>
+      <div class="full">
+        <label>Temperature</label>
+        <div class="range-wrap">
+          <input type="range" id="temperature" min="0" max="1" step="0.05" value="0.7">
+          <span class="range-val" id="temperatureVal">0.70</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VAD & Barge-in -->
+  <div class="card">
+    <h2><span class="icon">&#127897;</span> VAD &amp; Barge-in</h2>
+    <div class="grid">
+      <div>
+        <label>VAD Threshold (0.0 - 1.0)</label>
+        <div class="range-wrap">
+          <input type="range" id="vadThreshold" min="0.3" max="1.0" step="0.05" value="0.75">
+          <span class="range-val" id="vadThresholdVal">0.75</span>
+        </div>
+      </div>
+      <div>
+        <label>Silence Duration (ms)</label>
+        <input type="number" id="silenceDurationMs" value="700" min="200" max="2000" step="50">
+      </div>
+      <div>
+        <label>Prefix Padding (ms)</label>
+        <input type="number" id="prefixPaddingMs" value="300" min="100" max="1000" step="50">
+      </div>
+      <div>
+        <label>Barge-in Debounce (ms)</label>
+        <input type="number" id="bargeInDebounceMs" value="250" min="50" max="1000" step="25">
+      </div>
+      <div>
+        <label>Echo Suppression (ms)</label>
+        <input type="number" id="echoSuppressionMs" value="100" min="0" max="500" step="25">
+      </div>
+      <div>
+        <label>Max Response Tokens</label>
+        <input type="number" id="maxResponseTokens" value="120" min="30" max="500" step="10">
+      </div>
+    </div>
+  </div>
+
+  <!-- Agent Persona -->
+  <div class="card">
+    <h2><span class="icon">&#129489;</span> Agent Persona</h2>
+    <div class="grid">
+      <div>
+        <label>Agent Name</label>
+        <input type="text" id="agentName" value="Sarah">
+      </div>
+      <div>
+        <label>Company Name</label>
+        <input type="text" id="companyName" value="QuotingFast">
+      </div>
+    </div>
+  </div>
+
+  <!-- System Prompt -->
+  <div class="card">
+    <h2><span class="icon">&#128221;</span> System Prompt</h2>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:12px">
+      Leave empty to use the default prompt template (recommended). Or paste a custom prompt below.
+      Use <code style="background:var(--surface2);padding:2px 6px;border-radius:3px">{{first_name}}</code>,
+      <code style="background:var(--surface2);padding:2px 6px;border-radius:3px">{{state}}</code>,
+      <code style="background:var(--surface2);padding:2px 6px;border-radius:3px">{{current_insurer}}</code> as placeholders.
+    </p>
+    <textarea id="systemPromptOverride" placeholder="Leave empty for default prompt..."></textarea>
+    <div class="section-actions">
+      <button class="btn btn-secondary" onclick="loadDefaultPrompt()">Load Default</button>
+      <button class="btn btn-secondary" onclick="clearPrompt()">Clear (Use Default)</button>
+    </div>
+  </div>
+
+  <!-- Transfer Numbers -->
+  <div class="card">
+    <h2><span class="icon">&#128260;</span> Transfer Numbers</h2>
+    <div class="grid">
+      <div>
+        <label>Allstate Transfer Number</label>
+        <input type="text" id="allstateNumber" placeholder="+1...">
+      </div>
+      <div>
+        <label>Non-Allstate Transfer Number</label>
+        <input type="text" id="nonAllstateNumber" placeholder="+1...">
+      </div>
+    </div>
+  </div>
+
+  <!-- Save -->
+  <div style="display:flex;justify-content:flex-end;gap:12px">
+    <button class="btn btn-secondary" onclick="loadSettings()">Revert</button>
+    <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">Save All Settings</button>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const FIELDS = [
+  'voice','realtimeModel','temperature','vadThreshold','silenceDurationMs',
+  'prefixPaddingMs','bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
+  'agentName','companyName','systemPromptOverride','allstateNumber','nonAllstateNumber',
+  'defaultFromNumber','defaultToNumber'
+];
+const NUMBER_FIELDS = [
+  'temperature','vadThreshold','silenceDurationMs','prefixPaddingMs',
+  'bargeInDebounceMs','echoSuppressionMs','maxResponseTokens'
+];
+
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast ' + type + ' show';
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+async function loadSettings() {
+  try {
+    const res = await fetch('/api/settings');
+    const s = await res.json();
+    for (const key of FIELDS) {
+      const el = document.getElementById(key);
+      if (!el) continue;
+      if (el.type === 'range') {
+        el.value = s[key];
+        const valEl = document.getElementById(key + 'Val');
+        if (valEl) valEl.textContent = parseFloat(s[key]).toFixed(2);
+      } else {
+        el.value = s[key] ?? '';
+      }
+    }
+    // Fill call form defaults
+    if (s.defaultToNumber) document.getElementById('callTo').value = s.defaultToNumber;
+    if (s.defaultFromNumber) document.getElementById('callFrom').value = s.defaultFromNumber;
+  } catch (e) {
+    toast('Failed to load settings', 'error');
+  }
+}
+
+async function saveSettings() {
+  const body = {};
+  for (const key of FIELDS) {
+    const el = document.getElementById(key);
+    if (!el) continue;
+    let val = el.value;
+    if (NUMBER_FIELDS.includes(key)) val = parseFloat(val);
+    body[key] = val;
+  }
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      toast('Settings saved', 'success');
+    } else {
+      toast('Save failed', 'error');
+    }
+  } catch (e) {
+    toast('Save failed: ' + e.message, 'error');
+  }
+}
+
+async function makeCall() {
+  const to = document.getElementById('callTo').value.trim();
+  const from = document.getElementById('callFrom').value.trim();
+  const name = document.getElementById('callName').value.trim() || 'there';
+  const state = document.getElementById('callState').value.trim() || 'FL';
+  if (!to) { toast('Enter a phone number', 'error'); return; }
+  const btn = document.getElementById('callBtn');
+  btn.disabled = true;
+  btn.textContent = 'Calling...';
+  try {
+    const res = await fetch('/call/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to, from: from || undefined,
+        lead: { first_name: name, state },
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      addLog('Call started: <span class="sid">' + data.call_sid + '</span> <span class="ok">queued</span>');
+      toast('Call sent!', 'success');
+    } else {
+      addLog('<span class="err">Error: ' + (data.error || res.statusText) + '</span>');
+      toast('Call failed', 'error');
+    }
+  } catch (e) {
+    addLog('<span class="err">Network error: ' + e.message + '</span>');
+    toast('Call failed', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Call';
+  }
+}
+
+function addLog(html) {
+  const log = document.getElementById('callLog');
+  const time = new Date().toLocaleTimeString();
+  const entry = document.createElement('div');
+  entry.className = 'entry';
+  entry.innerHTML = '<span style="color:var(--text2)">' + time + '</span> ' + html;
+  if (log.children.length === 1 && log.children[0].textContent.includes('will appear')) {
+    log.innerHTML = '';
+  }
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function loadDefaultPrompt() {
+  try {
+    const res = await fetch('/api/default-prompt');
+    const data = await res.json();
+    document.getElementById('systemPromptOverride').value = data.prompt;
+  } catch (e) {
+    toast('Failed to load default prompt', 'error');
+  }
+}
+
+function clearPrompt() {
+  document.getElementById('systemPromptOverride').value = '';
+}
+
+// Range slider live values
+document.querySelectorAll('input[type=range]').forEach(el => {
+  el.addEventListener('input', () => {
+    const valEl = document.getElementById(el.id + 'Val');
+    if (valEl) valEl.textContent = parseFloat(el.value).toFixed(2);
+  });
+});
+
+// Load on page ready
+loadSettings();
+</script>
+</body>
+</html>`;
+}

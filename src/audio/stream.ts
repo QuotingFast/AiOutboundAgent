@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config';
+import { getSettings } from '../config/runtime';
 import { buildSystemPrompt, getRealtimeTools, LeadData, TransferConfig } from '../agent/prompts';
 import { executeWarmTransfer } from '../twilio/transfer';
 import { logger } from '../utils/logger';
@@ -20,9 +21,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let transferConfig: TransferConfig | undefined;
   let leadData: LeadData = { first_name: 'there' };
 
-  // Barge-in debounce: require sustained speech before canceling model
-  // 250ms filters out echo/crosstalk from the AI's own voice leaking back
-  const BARGE_IN_DEBOUNCE_MS = 250;
+  // Barge-in state (thresholds read from runtime settings at call start)
+  let bargeInDebounceMs = 250;
+  let echoSuppressionMs = 100;
   let bargeInTimer: ReturnType<typeof setTimeout> | null = null;
   let responseIsPlaying = false;
   let lastAudioSentAt = 0; // Track when we last sent audio to Twilio
@@ -99,7 +100,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   // --- OpenAI Realtime connection ---
 
   function connectToOpenAIRealtime(): void {
-    const model = config.openai.realtimeModel;
+    const s = getSettings();
+    const model = s.realtimeModel;
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
 
     logger.info('stream', 'Connecting to OpenAI Realtime', { sessionId, model });
@@ -139,29 +141,62 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   function sendSessionUpdate(): void {
     if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
 
-    const instructions = buildSystemPrompt(leadData);
-    const voice = config.openai.voice;
+    // Read all tunable settings at call start time
+    const s = getSettings();
+    bargeInDebounceMs = s.bargeInDebounceMs;
+    echoSuppressionMs = s.echoSuppressionMs;
+
+    // Use custom prompt if set, otherwise default template with runtime agent/company name
+    let instructions: string;
+    if (s.systemPromptOverride) {
+      instructions = s.systemPromptOverride
+        .replace(/\{\{first_name\}\}/g, leadData.first_name)
+        .replace(/\{\{state\}\}/g, leadData.state || 'unknown')
+        .replace(/\{\{current_insurer\}\}/g, leadData.current_insurer || 'unknown');
+    } else {
+      instructions = buildSystemPrompt(leadData, { agentName: s.agentName, companyName: s.companyName });
+    }
+
+    // Apply transfer config from runtime settings if not set per-call
+    if (!transferConfig) {
+      if (s.allstateNumber || s.nonAllstateNumber) {
+        transferConfig = {
+          allstate_number: s.allstateNumber || undefined,
+          non_allstate_number: s.nonAllstateNumber || undefined,
+        };
+      }
+    }
+
+    logger.info('stream', 'Configuring session', {
+      sessionId,
+      voice: s.voice,
+      model: s.realtimeModel,
+      vadThreshold: s.vadThreshold,
+      silenceDurationMs: s.silenceDurationMs,
+      bargeInDebounceMs: s.bargeInDebounceMs,
+      maxTokens: s.maxResponseTokens,
+    });
 
     openaiWs.send(JSON.stringify({
       type: 'session.update',
       session: {
         modalities: ['text', 'audio'],
         instructions,
-        voice,
+        voice: s.voice,
         input_audio_format: 'g711_ulaw',
         output_audio_format: 'g711_ulaw',
         input_audio_transcription: { model: 'whisper-1' },
         turn_detection: {
           type: 'server_vad',
-          threshold: 0.75,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 700,
+          threshold: s.vadThreshold,
+          prefix_padding_ms: s.prefixPaddingMs,
+          silence_duration_ms: s.silenceDurationMs,
           create_response: true,
           interrupt_response: true,
         },
         tools: getRealtimeTools(),
-        max_response_output_tokens: 120,
-        temperature: 0.7,
+        max_response_output_tokens: s.maxResponseTokens,
+        temperature: s.temperature,
       },
     }));
   }
@@ -220,19 +255,19 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           break;
         }
 
-        // Echo suppression: if we just sent audio <100ms ago, this is likely
-        // the AI's own voice leaking back through the phone — ignore it
-        if (Date.now() - lastAudioSentAt < 100) {
+        // Echo suppression: if we just sent audio within the suppression window,
+        // this is likely the AI's own voice leaking back through the phone
+        if (Date.now() - lastAudioSentAt < echoSuppressionMs) {
           logger.debug('stream', 'Speech detected within echo window — suppressing', { sessionId });
           break;
         }
 
-        // Start debounce: require 250ms sustained speech to confirm real barge-in
+        // Start debounce: require sustained speech to confirm real barge-in
         if (bargeInTimer) clearTimeout(bargeInTimer);
         logger.debug('stream', 'Potential barge-in — starting debounce', { sessionId });
         bargeInTimer = setTimeout(() => {
           bargeInTimer = null;
-          logger.info('stream', 'Barge-in confirmed (250ms sustained) — canceling response', { sessionId });
+          logger.info('stream', 'Barge-in confirmed — canceling response', { sessionId });
           // Cancel the model's in-progress response
           if (openaiWs?.readyState === WebSocket.OPEN) {
             openaiWs.send(JSON.stringify({ type: 'response.cancel' }));
@@ -240,7 +275,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           // Flush Twilio's outbound audio queue
           sendClearToTwilio();
           responseIsPlaying = false;
-        }, BARGE_IN_DEBOUNCE_MS);
+        }, bargeInDebounceMs);
         break;
 
       case 'input_audio_buffer.speech_stopped':

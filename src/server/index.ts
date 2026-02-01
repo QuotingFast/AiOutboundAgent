@@ -43,6 +43,7 @@ export function startServer(): void {
     logger.info('server', `Voice: ${config.openai.voice}`);
     logger.info('server', `Debug mode: ${config.debug}`);
     logger.info('server', 'Endpoints:');
+    logger.info('server', `  Dashboard: ${config.baseUrl}/dashboard`);
     logger.info('server', `  POST ${config.baseUrl}/call/start`);
     logger.info('server', `  POST ${config.baseUrl}/twilio/voice`);
     logger.info('server', `  WS   ${config.baseUrl.replace(/^http/, 'ws')}/twilio/stream`);

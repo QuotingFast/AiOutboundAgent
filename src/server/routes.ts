@@ -2,7 +2,9 @@ import { Router, Request, Response } from 'express';
 import { startOutboundCall, StartCallParams } from '../twilio/client';
 import { buildMediaStreamTwiml, buildTransferTwiml } from '../twilio/twiml';
 import { registerPendingSession } from '../audio/stream';
-import { TransferConfig } from '../agent/prompts';
+import { TransferConfig, buildSystemPrompt } from '../agent/prompts';
+import { getSettings, updateSettings } from '../config/runtime';
+import { getDashboardHtml } from './dashboard';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -100,6 +102,42 @@ router.post('/twilio/status', (req: Request, res: Response) => {
  */
 router.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+/**
+ * GET /dashboard
+ * Web dashboard for managing settings and making test calls.
+ */
+router.get('/dashboard', (_req: Request, res: Response) => {
+  res.type('text/html');
+  res.send(getDashboardHtml());
+});
+
+/**
+ * GET /api/settings
+ * Returns current runtime settings.
+ */
+router.get('/api/settings', (_req: Request, res: Response) => {
+  res.json(getSettings());
+});
+
+/**
+ * PUT /api/settings
+ * Update runtime settings. Partial updates supported.
+ */
+router.put('/api/settings', (req: Request, res: Response) => {
+  const updated = updateSettings(req.body);
+  logger.info('routes', 'Settings updated', { keys: Object.keys(req.body) });
+  res.json(updated);
+});
+
+/**
+ * GET /api/default-prompt
+ * Returns the default system prompt template for reference.
+ */
+router.get('/api/default-prompt', (_req: Request, res: Response) => {
+  const prompt = buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}' });
+  res.json({ prompt });
 });
 
 export { router };

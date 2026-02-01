@@ -369,11 +369,10 @@ export function getDashboardHtml(): string {
 <div class="toast" id="toast"></div>
 
 <script>
-const FIELDS = [
+const SETTINGS_FIELDS = [
   'voice','realtimeModel','temperature','vadThreshold','silenceDurationMs',
   'prefixPaddingMs','bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
-  'agentName','companyName','systemPromptOverride','allstateNumber','nonAllstateNumber',
-  'defaultFromNumber','defaultToNumber'
+  'agentName','companyName','systemPromptOverride','allstateNumber','nonAllstateNumber'
 ];
 const NUMBER_FIELDS = [
   'temperature','vadThreshold','silenceDurationMs','prefixPaddingMs',
@@ -384,16 +383,19 @@ function toast(msg, type) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className = 'toast ' + type + ' show';
-  setTimeout(() => el.classList.remove('show'), 2500);
+  setTimeout(() => el.classList.remove('show'), 3000);
 }
 
 async function loadSettings() {
   try {
     const res = await fetch('/api/settings');
+    if (!res.ok) { toast('Failed to load settings: ' + res.status, 'error'); return; }
     const s = await res.json();
-    for (const key of FIELDS) {
+    console.log('[Dashboard] Loaded settings:', s);
+
+    for (const key of SETTINGS_FIELDS) {
       const el = document.getElementById(key);
-      if (!el) continue;
+      if (!el) { console.warn('[Dashboard] No element for:', key); continue; }
       if (el.type === 'range') {
         el.value = s[key];
         const valEl = document.getElementById(key + 'Val');
@@ -402,36 +404,65 @@ async function loadSettings() {
         el.value = s[key] ?? '';
       }
     }
-    // Fill call form defaults
+
+    // Map call form fields from settings
     if (s.defaultToNumber) document.getElementById('callTo').value = s.defaultToNumber;
     if (s.defaultFromNumber) document.getElementById('callFrom').value = s.defaultFromNumber;
+
+    toast('Settings loaded', 'success');
   } catch (e) {
+    console.error('[Dashboard] Load error:', e);
     toast('Failed to load settings', 'error');
   }
 }
 
 async function saveSettings() {
-  const body = {};
-  for (const key of FIELDS) {
-    const el = document.getElementById(key);
-    if (!el) continue;
-    let val = el.value;
-    if (NUMBER_FIELDS.includes(key)) val = parseFloat(val);
-    body[key] = val;
-  }
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
   try {
+    const body = {};
+
+    // Collect all settings fields
+    for (const key of SETTINGS_FIELDS) {
+      const el = document.getElementById(key);
+      if (!el) continue;
+      let val = el.value;
+      if (NUMBER_FIELDS.includes(key)) val = parseFloat(val);
+      body[key] = val;
+    }
+
+    // Map call form phone numbers into settings
+    const callTo = document.getElementById('callTo').value.trim();
+    const callFrom = document.getElementById('callFrom').value.trim();
+    if (callTo) body.defaultToNumber = callTo;
+    if (callFrom) body.defaultFromNumber = callFrom;
+
+    console.log('[Dashboard] Saving settings:', body);
+
     const res = await fetch('/api/settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (res.ok) {
-      toast('Settings saved', 'success');
-    } else {
-      toast('Save failed', 'error');
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('[Dashboard] Save failed:', res.status, errText);
+      toast('Save failed: ' + res.status, 'error');
+      return;
     }
+
+    const saved = await res.json();
+    console.log('[Dashboard] Saved successfully:', saved);
+    toast('Settings saved — next call will use new settings', 'success');
   } catch (e) {
+    console.error('[Dashboard] Save error:', e);
     toast('Save failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save All Settings';
   }
 }
 
@@ -440,30 +471,41 @@ async function makeCall() {
   const from = document.getElementById('callFrom').value.trim();
   const name = document.getElementById('callName').value.trim() || 'there';
   const state = document.getElementById('callState').value.trim() || 'FL';
+
   if (!to) { toast('Enter a phone number', 'error'); return; }
+
   const btn = document.getElementById('callBtn');
   btn.disabled = true;
   btn.textContent = 'Calling...';
+
   try {
+    const payload = {
+      to: to,
+      from: from || undefined,
+      lead: { first_name: name, state: state },
+    };
+    console.log('[Dashboard] Making call:', payload);
+
     const res = await fetch('/call/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to, from: from || undefined,
-        lead: { first_name: name, state },
-      }),
+      body: JSON.stringify(payload),
     });
+
     const data = await res.json();
+    console.log('[Dashboard] Call response:', data);
+
     if (res.ok) {
       addLog('Call started: <span class="sid">' + data.call_sid + '</span> <span class="ok">queued</span>');
       toast('Call sent!', 'success');
     } else {
       addLog('<span class="err">Error: ' + (data.error || res.statusText) + '</span>');
-      toast('Call failed', 'error');
+      toast('Call failed: ' + (data.error || res.statusText), 'error');
     }
   } catch (e) {
+    console.error('[Dashboard] Call error:', e);
     addLog('<span class="err">Network error: ' + e.message + '</span>');
-    toast('Call failed', 'error');
+    toast('Call failed: ' + e.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Call';
@@ -488,6 +530,7 @@ async function loadDefaultPrompt() {
     const res = await fetch('/api/default-prompt');
     const data = await res.json();
     document.getElementById('systemPromptOverride').value = data.prompt;
+    toast('Default prompt loaded into editor', 'success');
   } catch (e) {
     toast('Failed to load default prompt', 'error');
   }
@@ -495,6 +538,7 @@ async function loadDefaultPrompt() {
 
 function clearPrompt() {
   document.getElementById('systemPromptOverride').value = '';
+  toast('Prompt cleared — will use built-in default', 'success');
 }
 
 // Range slider live values
@@ -505,7 +549,7 @@ document.querySelectorAll('input[type=range]').forEach(el => {
   });
 });
 
-// Load on page ready
+// Load settings on page ready
 loadSettings();
 </script>
 </body>

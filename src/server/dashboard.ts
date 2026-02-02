@@ -722,7 +722,7 @@ export function getDashboardHtml(): string {
     <div class="grid">
       <div>
         <label>Agent Name</label>
-        <input type="text" id="agentName" value="Sarah">
+        <input type="text" id="agentName" value="Alex">
       </div>
       <div>
         <label>Company Name</label>

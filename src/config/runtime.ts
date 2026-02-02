@@ -82,7 +82,7 @@ const settings: RuntimeSettings = {
   bargeInDebounceMs: 250,
   echoSuppressionMs: 100,
   maxResponseTokens: 120,
-  agentName: 'Sarah',
+  agentName: 'Alex',
   companyName: 'QuotingFast',
   systemPromptOverride: '',
   inboundPromptOverride: '',

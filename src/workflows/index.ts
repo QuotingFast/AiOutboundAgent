@@ -265,7 +265,7 @@ export function formatSMSTemplate(
 ): string {
   return template
     .replace(/\{\{name\}\}/g, vars.name || 'there')
-    .replace(/\{\{agent\}\}/g, vars.agent || 'Sarah')
+    .replace(/\{\{agent\}\}/g, vars.agent || 'Alex')
     .replace(/\{\{company\}\}/g, vars.company || 'QuotingFast');
 }
 

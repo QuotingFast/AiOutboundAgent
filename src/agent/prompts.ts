@@ -16,7 +16,7 @@ export interface TransferConfig {
 }
 
 export function buildSystemPrompt(lead: LeadData, overrides?: { agentName?: string; companyName?: string }): string {
-  const agentName = overrides?.agentName || 'Sarah';
+  const agentName = overrides?.agentName || 'Alex';
   const companyName = overrides?.companyName || 'QuotingFast';
 
   return `You are calling on behalf of ${companyName}. You are a real person named ${agentName} making outbound calls to people who requested auto insurance quotes. You sound completely natural and human — like a friendly coworker on a quick call. You never identify yourself as an AI, assistant, bot, or automated system.
@@ -182,7 +182,7 @@ export function getRealtimeTools(): any[] {
 }
 
 export function buildInboundSystemPrompt(callerNumber: string, overrides?: { agentName?: string; companyName?: string }): string {
-  const agentName = overrides?.agentName || 'Sarah';
+  const agentName = overrides?.agentName || 'Alex';
   const companyName = overrides?.companyName || 'QuotingFast';
 
   return `You are ${agentName}, answering incoming phone calls for ${companyName}, an auto insurance agency. You sound completely natural and human — like a friendly, helpful person picking up the phone. You never identify yourself as an AI, assistant, bot, or automated system.
@@ -272,7 +272,7 @@ export function buildGreetingText(lead: LeadData): string {
 }
 
 export function buildInboundGreetingText(overrides?: { agentName?: string; companyName?: string }): string {
-  const agentName = overrides?.agentName || 'Sarah';
+  const agentName = overrides?.agentName || 'Alex';
   const companyName = overrides?.companyName || 'QuotingFast';
   return `Thanks for calling ${companyName}, this is ${agentName}. How can I help you today?`;
 }

@@ -215,4 +215,68 @@ router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /api/elevenlabs-voice-preview/:voiceId
+ * Returns an MP3 audio preview of the given ElevenLabs voice.
+ * Results are cached in memory so each voice is only generated once.
+ */
+const elPreviewCache = new Map<string, Buffer>();
+const EL_PREVIEW_TEXT = "Hey there! This is a quick preview of how I sound. Pretty natural, right?";
+
+router.get('/api/elevenlabs-voice-preview/:voiceId', async (req: Request, res: Response) => {
+  const voiceId = req.params.voiceId;
+  if (!voiceId || voiceId.length < 10) {
+    res.status(400).json({ error: 'Invalid voice ID' });
+    return;
+  }
+
+  const apiKey = config.elevenlabs?.apiKey;
+  if (!apiKey) {
+    res.status(500).json({ error: 'ELEVENLABS_API_KEY not configured' });
+    return;
+  }
+
+  try {
+    if (elPreviewCache.has(voiceId)) {
+      res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'public, max-age=86400' });
+      res.send(elPreviewCache.get(voiceId));
+      return;
+    }
+
+    const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'audio/mpeg',
+      },
+      body: JSON.stringify({
+        text: EL_PREVIEW_TEXT,
+        model_id: 'eleven_turbo_v2_5',
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      }),
+    });
+
+    if (!ttsRes.ok) {
+      const errText = await ttsRes.text();
+      logger.error('routes', 'ElevenLabs preview failed', { voiceId, status: ttsRes.status, error: errText });
+      res.status(502).json({ error: 'ElevenLabs TTS failed: ' + ttsRes.status });
+      return;
+    }
+
+    const arrayBuf = await ttsRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuf);
+
+    elPreviewCache.set(voiceId, buffer);
+    logger.info('routes', 'ElevenLabs preview generated and cached', { voiceId, bytes: buffer.length });
+
+    res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'public, max-age=86400' });
+    res.send(buffer);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error('routes', 'ElevenLabs preview error', { voiceId, error: msg });
+    res.status(500).json({ error: msg });
+  }
+});
+
 export { router };

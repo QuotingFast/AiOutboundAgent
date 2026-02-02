@@ -439,11 +439,71 @@ export function getDashboardHtml(): string {
 
     <!-- ElevenLabs settings (shown when ElevenLabs selected) -->
     <div id="elevenlabsVoiceSection" class="el-settings" style="display:none">
-      <div class="el-row">
-        <div>
-          <label>ElevenLabs Voice ID</label>
-          <input type="text" id="elevenlabsVoiceId" placeholder="e.g. 21m00Tcm4TlvDq8ikWAM">
+      <label>ElevenLabs Voice</label>
+      <input type="hidden" id="elevenlabsVoiceId" value="">
+      <div class="voice-grid" id="elVoiceGrid">
+        <div class="voice-card el-vc" data-elvoice="21m00Tcm4TlvDq8ikWAM" onclick="selectElVoice('21m00Tcm4TlvDq8ikWAM')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('21m00Tcm4TlvDq8ikWAM',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Rachel</div>
+          <div class="vc-desc">Calm, warm female</div>
+          <span class="vc-tag sales">Sales</span>
+          <span class="vc-check">&#10003;</span>
         </div>
+        <div class="voice-card el-vc" data-elvoice="EXAVITQu4vr4xnSDxMaL" onclick="selectElVoice('EXAVITQu4vr4xnSDxMaL')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('EXAVITQu4vr4xnSDxMaL',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Bella</div>
+          <div class="vc-desc">Soft, friendly female</div>
+          <span class="vc-tag sales">Sales</span>
+          <span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="AZnzlk1XvdvUeBnXmlld" onclick="selectElVoice('AZnzlk1XvdvUeBnXmlld')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('AZnzlk1XvdvUeBnXmlld',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Domi</div>
+          <div class="vc-desc">Confident, assertive female</div>
+          <span class="vc-tag sales">Sales</span>
+          <span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="MF3mGyEYCl7XYWbV9V6O" onclick="selectElVoice('MF3mGyEYCl7XYWbV9V6O')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('MF3mGyEYCl7XYWbV9V6O',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Elli</div>
+          <div class="vc-desc">Expressive, emotional female</div>
+          <span class="vc-tag neutral">Versatile</span>
+          <span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="ErXwobaYiN019PkySvjV" onclick="selectElVoice('ErXwobaYiN019PkySvjV')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('ErXwobaYiN019PkySvjV',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Antoni</div>
+          <div class="vc-desc">Warm, conversational male</div>
+          <span class="vc-tag sales">Sales</span>
+          <span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="TxGEqnHWrfWFTfGW9XjX" onclick="selectElVoice('TxGEqnHWrfWFTfGW9XjX')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('TxGEqnHWrfWFTfGW9XjX',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Josh</div>
+          <div class="vc-desc">Deep, friendly male</div>
+          <span class="vc-tag neutral">Versatile</span>
+          <span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="VR6AewLTigWG4xSOukaG" onclick="selectElVoice('VR6AewLTigWG4xSOukaG')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('VR6AewLTigWG4xSOukaG',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Arnold</div>
+          <div class="vc-desc">Crisp, confident male</div>
+          <span class="vc-tag neutral">Versatile</span>
+          <span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="pNInz6obpgDQGcFmaJgB" onclick="selectElVoice('pNInz6obpgDQGcFmaJgB')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('pNInz6obpgDQGcFmaJgB',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Adam</div>
+          <div class="vc-desc">Deep, authoritative male</div>
+          <span class="vc-tag neutral">Versatile</span>
+          <span class="vc-check">&#10003;</span>
+        </div>
+      </div>
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <label>Custom Voice ID (optional — overrides card selection)</label>
+        <input type="text" id="elCustomVoiceId" placeholder="Paste a custom ElevenLabs Voice ID here">
+      </div>
+      <div class="el-row" style="margin-top:14px">
         <div>
           <label>ElevenLabs Model</label>
           <select id="elevenlabsModelId">
@@ -452,6 +512,7 @@ export function getDashboardHtml(): string {
             <option value="eleven_monolingual_v1">Monolingual v1</option>
           </select>
         </div>
+        <div></div>
       </div>
       <div class="el-row">
         <div>
@@ -470,7 +531,8 @@ export function getDashboardHtml(): string {
         </div>
       </div>
       <p style="font-size:12px;color:var(--text2);margin-top:4px">
-        Get your Voice ID from the ElevenLabs dashboard. OpenAI Realtime still handles speech recognition and conversation logic.
+        These are ElevenLabs premade voices. You can also paste a custom Voice ID from your ElevenLabs library above.
+        OpenAI Realtime still handles speech recognition and conversation logic.
       </p>
     </div>
   </div>
@@ -673,6 +735,9 @@ async function loadSettings() {
     updateVoiceAvailability();
     if (s.voice) selectVoice(s.voice);
 
+    // Sync ElevenLabs voice card selection
+    syncElVoiceSelection();
+
     // Map call form fields from settings
     if (s.defaultToNumber) document.getElementById('callTo').value = s.defaultToNumber;
     if (s.defaultFromNumber) document.getElementById('callFrom').value = s.defaultFromNumber;
@@ -699,9 +764,13 @@ async function saveSettings() {
 
   // Validate ElevenLabs voice ID is set when using ElevenLabs
   if (provider === 'elevenlabs') {
-    const voiceId = document.getElementById('elevenlabsVoiceId').value.trim();
-    if (!voiceId) {
-      toast('Enter an ElevenLabs Voice ID before saving', 'error');
+    const customId = document.getElementById('elCustomVoiceId').value.trim();
+    const hiddenId = document.getElementById('elevenlabsVoiceId').value.trim();
+    // Custom field overrides card selection
+    if (customId) document.getElementById('elevenlabsVoiceId').value = customId;
+    const finalId = customId || hiddenId;
+    if (!finalId) {
+      toast('Select an ElevenLabs voice or enter a custom Voice ID', 'error');
       return;
     }
   }
@@ -922,6 +991,94 @@ async function previewVoice(voice, btn) {
       btn.classList.remove('loading');
       btn.innerHTML = '&#9654;';
       toast('Preview failed for ' + voice, 'error');
+    });
+    currentAudio = audio;
+    currentPlayBtn = btn;
+    audio.load();
+  } catch (e) {
+    btn.classList.remove('loading');
+    btn.innerHTML = '&#9654;';
+    toast('Preview failed: ' + e.message, 'error');
+  }
+}
+
+// --- ElevenLabs voice selection & preview ---
+const EL_VOICES = {
+  '21m00Tcm4TlvDq8ikWAM': 'Rachel',
+  'EXAVITQu4vr4xnSDxMaL': 'Bella',
+  'AZnzlk1XvdvUeBnXmlld': 'Domi',
+  'MF3mGyEYCl7XYWbV9V6O': 'Elli',
+  'ErXwobaYiN019PkySvjV': 'Antoni',
+  'TxGEqnHWrfWFTfGW9XjX': 'Josh',
+  'VR6AewLTigWG4xSOukaG': 'Arnold',
+  'pNInz6obpgDQGcFmaJgB': 'Adam',
+};
+
+function selectElVoice(voiceId) {
+  document.getElementById('elevenlabsVoiceId').value = voiceId;
+  document.getElementById('elCustomVoiceId').value = '';
+  document.querySelectorAll('.el-vc').forEach(c => {
+    c.classList.toggle('selected', c.dataset.elvoice === voiceId);
+  });
+}
+
+function syncElVoiceSelection() {
+  const voiceId = document.getElementById('elevenlabsVoiceId').value;
+  const customEl = document.getElementById('elCustomVoiceId');
+  if (EL_VOICES[voiceId]) {
+    // Known premade voice — select the card
+    document.querySelectorAll('.el-vc').forEach(c => {
+      c.classList.toggle('selected', c.dataset.elvoice === voiceId);
+    });
+    customEl.value = '';
+  } else if (voiceId) {
+    // Custom voice ID — deselect all cards, show in custom field
+    document.querySelectorAll('.el-vc').forEach(c => c.classList.remove('selected'));
+    customEl.value = voiceId;
+  }
+}
+
+// Custom voice ID input: when typed, update the hidden field and deselect cards
+document.getElementById('elCustomVoiceId').addEventListener('input', function() {
+  const val = this.value.trim();
+  if (val) {
+    document.getElementById('elevenlabsVoiceId').value = val;
+    document.querySelectorAll('.el-vc').forEach(c => c.classList.remove('selected'));
+  }
+});
+
+async function previewElVoice(voiceId, btn) {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    if (currentPlayBtn) currentPlayBtn.innerHTML = '&#9654;';
+  }
+
+  if (currentPlayBtn === btn && currentAudio && !currentAudio.paused) {
+    currentAudio = null;
+    currentPlayBtn = null;
+    return;
+  }
+
+  btn.classList.add('loading');
+  btn.innerHTML = '...';
+
+  try {
+    const audio = new Audio('/api/elevenlabs-voice-preview/' + voiceId);
+    audio.addEventListener('canplaythrough', () => {
+      btn.classList.remove('loading');
+      btn.innerHTML = '&#9724;';
+      audio.play();
+    }, { once: true });
+    audio.addEventListener('ended', () => {
+      btn.innerHTML = '&#9654;';
+      currentAudio = null;
+      currentPlayBtn = null;
+    });
+    audio.addEventListener('error', () => {
+      btn.classList.remove('loading');
+      btn.innerHTML = '&#9654;';
+      toast('Preview failed for ElevenLabs voice', 'error');
     });
     currentAudio = audio;
     currentPlayBtn = btn;

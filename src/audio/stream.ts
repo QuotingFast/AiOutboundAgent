@@ -169,6 +169,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     const s = getSettings();
     const model = s.realtimeModel;
     useDeepSeek = s.voiceProvider === 'deepseek';
+
+    // Fall back to ElevenLabs mode if DeepSeek selected but API key missing
+    if (useDeepSeek && !config.deepseek.apiKey) {
+      logger.warn('stream', 'DeepSeek selected but no API key configured — falling back to ElevenLabs mode', { sessionId });
+      useDeepSeek = false;
+    }
+
     useElevenLabs = s.voiceProvider === 'elevenlabs' || useDeepSeek;
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
 
@@ -753,8 +760,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         break;
 
       // --- Text output (for ElevenLabs mode + transcript) ---
+      // DeepSeek mode handles its own text→ElevenLabs path, skip OpenAI text events
       case 'response.text.delta':
-        if (useElevenLabs && event.delta) {
+        if (useElevenLabs && !useDeepSeek && event.delta) {
           responseIsPlaying = true;
           sendTextToElevenLabs(event.delta);
 
@@ -768,7 +776,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         break;
 
       case 'response.text.done':
-        if (useElevenLabs) {
+        if (useElevenLabs && !useDeepSeek) {
           flushElevenLabs();
           const agentText = event.text || currentElevenLabsText;
           logger.info('stream', 'Agent said', { sessionId, transcript: redactPII(agentText) });
@@ -828,7 +836,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         break;
 
       case 'response.done':
-        if (useElevenLabs && elevenLabsWs) {
+        if (useElevenLabs && !useDeepSeek && elevenLabsWs) {
           // Don't eagerly reconnect — just close. Next sendTextToElevenLabs will reconnect on demand.
           // This avoids ElevenLabs idle timeout killing the connection.
           setTimeout(() => {
@@ -955,7 +963,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         targetNumber = transferConfig?.non_allstate_number || transferConfig?.allstate_number;
       }
 
-      sendFunctionOutput(call_id, { status: 'transferring', target: targetNumber ? 'found' : 'not_configured' });
+      // In DeepSeek mode, don't send function output to OpenAI — DeepSeek handles its own tool responses
+      if (!useDeepSeek) {
+        sendFunctionOutput(call_id, { status: 'transferring', target: targetNumber ? 'found' : 'not_configured' });
+      }
 
       if (analytics) {
         analytics.setOutcome('transferred', `Route: ${route}`);
@@ -970,15 +981,27 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         if (!success) {
           logger.error('stream', 'Transfer failed', { sessionId, route });
           if (analytics) analytics.setOutcome('ended', 'Transfer failed');
-          sendUserMessage('[System: The transfer failed. The line did not connect. Let the caller know and ask if they want to try again.]');
+          const failMsg = '[System: The transfer failed. The line did not connect. Let the caller know and ask if they want to try again.]';
+          if (useDeepSeek) {
+            callDeepSeekStreaming(failMsg);
+          } else {
+            sendUserMessage(failMsg);
+          }
         }
       } else {
         logger.error('stream', 'No transfer number configured', { sessionId, route });
-        sendUserMessage('[System: No transfer number is configured for this route. Apologize and say someone will call them back shortly.]');
+        const noNumMsg = '[System: No transfer number is configured for this route. Apologize and say someone will call them back shortly.]';
+        if (useDeepSeek) {
+          callDeepSeekStreaming(noNumMsg);
+        } else {
+          sendUserMessage(noNumMsg);
+        }
       }
     } else if (name === 'end_call') {
       logger.info('stream', 'Call ending via function', { sessionId, reason: args.reason });
-      sendFunctionOutput(call_id, { status: 'ending' });
+      if (!useDeepSeek) {
+        sendFunctionOutput(call_id, { status: 'ending' });
+      }
 
       if (analytics) analytics.setOutcome('ended', args.reason);
       if (callSid) updateSessionStatus(callSid, 'ending');

@@ -342,13 +342,18 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     const modelId = s.elevenlabsModelId || 'eleven_turbo_v2_5';
     const url = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=${modelId}&output_format=ulaw_8000`;
 
-    logger.info('stream', 'Connecting to ElevenLabs WS', { sessionId, voiceId, modelId });
+    const ws = new WebSocket(url);
+    elevenLabsWs = ws;
 
-    elevenLabsWs = new WebSocket(url);
-
-    elevenLabsWs.on('open', () => {
+    ws.on('open', () => {
+      // Guard: if this socket was replaced by a newer one, ignore
+      if (elevenLabsWs !== ws) {
+        logger.debug('stream', 'Stale ElevenLabs open event, ignoring', { sessionId });
+        ws.close();
+        return;
+      }
       logger.info('stream', 'ElevenLabs WS connected', { sessionId });
-      elevenLabsWs!.send(JSON.stringify({
+      ws.send(JSON.stringify({
         text: ' ',
         voice_settings: {
           stability: s.elevenlabsStability,
@@ -358,7 +363,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       }));
     });
 
-    elevenLabsWs.on('message', (data: WebSocket.Data) => {
+    ws.on('message', (data: WebSocket.Data) => {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.audio) {
@@ -387,12 +392,15 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       }
     });
 
-    elevenLabsWs.on('close', () => {
+    ws.on('close', () => {
       logger.debug('stream', 'ElevenLabs WS closed', { sessionId });
-      elevenLabsWs = null;
+      // Only null out if this is still the active socket
+      if (elevenLabsWs === ws) {
+        elevenLabsWs = null;
+      }
     });
 
-    elevenLabsWs.on('error', (err) => {
+    ws.on('error', (err) => {
       logger.error('stream', 'ElevenLabs WS error', { sessionId, error: err.message });
     });
   }

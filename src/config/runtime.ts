@@ -1,10 +1,19 @@
 import { config } from './index';
 
 export interface RuntimeSettings {
-  // Voice & Model
+  // Voice provider: 'openai' = Realtime speech-to-speech, 'elevenlabs' = text-to-speech via ElevenLabs
+  voiceProvider: 'openai' | 'elevenlabs';
+
+  // Voice & Model (OpenAI)
   voice: string;
   realtimeModel: string;
   temperature: number;
+
+  // ElevenLabs settings
+  elevenlabsVoiceId: string;
+  elevenlabsModelId: string;
+  elevenlabsStability: number;
+  elevenlabsSimilarityBoost: number;
 
   // VAD & Barge-in
   vadThreshold: number;
@@ -38,6 +47,7 @@ export interface CallRecord {
   leadName: string;
   timestamp: string;
   settings: {
+    voiceProvider: string;
     voice: string;
     realtimeModel: string;
     temperature: number;
@@ -52,9 +62,14 @@ export interface CallRecord {
 }
 
 const settings: RuntimeSettings = {
+  voiceProvider: 'openai',
   voice: config.openai.voice,
   realtimeModel: config.openai.realtimeModel,
   temperature: 0.7,
+  elevenlabsVoiceId: config.elevenlabs.voiceId,
+  elevenlabsModelId: 'eleven_turbo_v2_5',
+  elevenlabsStability: 0.5,
+  elevenlabsSimilarityBoost: 0.75,
   vadThreshold: 0.75,
   silenceDurationMs: 700,
   prefixPaddingMs: 300,
@@ -95,7 +110,8 @@ export function recordCall(callSid: string, to: string, leadName: string): void 
     leadName,
     timestamp: new Date().toISOString(),
     settings: {
-      voice: s.voice,
+      voiceProvider: s.voiceProvider,
+      voice: s.voiceProvider === 'openai' ? s.voice : `elevenlabs:${s.elevenlabsVoiceId}`,
       realtimeModel: s.realtimeModel,
       temperature: s.temperature,
       vadThreshold: s.vadThreshold,

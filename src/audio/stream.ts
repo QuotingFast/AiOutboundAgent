@@ -22,12 +22,16 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let transferConfig: TransferConfig | undefined;
   let leadData: LeadData = { first_name: 'there' };
 
+  // Voice provider determined at call start
+  let useElevenLabs = false;
+  let elevenLabsWs: WebSocket | null = null;
+
   // Barge-in state (thresholds read from runtime settings at call start)
   let bargeInDebounceMs = 250;
   let echoSuppressionMs = 100;
   let bargeInTimer: ReturnType<typeof setTimeout> | null = null;
   let responseIsPlaying = false;
-  let lastAudioSentAt = 0; // Track when we last sent audio to Twilio
+  let lastAudioSentAt = 0;
 
   logger.info('stream', 'Twilio WS opened', { sessionId });
 
@@ -77,7 +81,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
         case 'stop':
           logger.info('stream', 'Twilio stream stopped', { sessionId, callSid });
-          cleanupOpenAI();
+          cleanup();
           break;
 
         default:
@@ -91,7 +95,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
   twilioWs.on('close', () => {
     logger.info('stream', 'Twilio WS closed', { sessionId, callSid });
-    cleanupOpenAI();
+    cleanup();
   });
 
   twilioWs.on('error', (err) => {
@@ -103,12 +107,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   function connectToOpenAIRealtime(): void {
     const s = getSettings();
     const model = s.realtimeModel;
+    useElevenLabs = s.voiceProvider === 'elevenlabs';
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
 
-    logger.info('stream', 'Connecting to OpenAI Realtime', { sessionId, model });
+    logger.info('stream', 'Connecting to OpenAI Realtime', {
+      sessionId, model, voiceProvider: s.voiceProvider,
+    });
 
-    // Always use beta header — beta interface supports all models and is
-    // the proven-working format. GA-only format can be added after Feb 27.
     openaiWs = new WebSocket(url, {
       headers: {
         'Authorization': `Bearer ${config.openai.apiKey}`,
@@ -144,12 +149,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   function sendSessionUpdate(): void {
     if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
 
-    // Read all tunable settings at call start time
     const s = getSettings();
     bargeInDebounceMs = s.bargeInDebounceMs;
     echoSuppressionMs = s.echoSuppressionMs;
 
-    // Use custom prompt if set, otherwise default template with runtime agent/company name
     let instructions: string;
     if (s.systemPromptOverride) {
       instructions = s.systemPromptOverride
@@ -160,7 +163,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       instructions = buildSystemPrompt(leadData, { agentName: s.agentName, companyName: s.companyName });
     }
 
-    // Apply transfer config from runtime settings if not set per-call
     if (!transferConfig) {
       if (s.allstateNumber || s.nonAllstateNumber) {
         transferConfig = {
@@ -172,36 +174,61 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
     logger.info('stream', 'Configuring session', {
       sessionId,
-      voice: s.voice,
+      voiceProvider: s.voiceProvider,
+      voice: useElevenLabs ? `elevenlabs:${s.elevenlabsVoiceId}` : s.voice,
       model: s.realtimeModel,
       vadThreshold: s.vadThreshold,
       silenceDurationMs: s.silenceDurationMs,
-      bargeInDebounceMs: s.bargeInDebounceMs,
       maxTokens: s.maxResponseTokens,
     });
 
-    openaiWs.send(JSON.stringify({
-      type: 'session.update',
-      session: {
-        modalities: ['text', 'audio'],
-        instructions,
-        voice: s.voice,
-        input_audio_format: 'g711_ulaw',
-        output_audio_format: 'g711_ulaw',
-        input_audio_transcription: { model: 'whisper-1' },
-        turn_detection: {
-          type: 'server_vad',
-          threshold: s.vadThreshold,
-          prefix_padding_ms: s.prefixPaddingMs,
-          silence_duration_ms: s.silenceDurationMs,
-          create_response: true,
-          interrupt_response: true,
+    if (useElevenLabs) {
+      // ElevenLabs mode: text-only output from OpenAI, audio routed through ElevenLabs
+      openaiWs.send(JSON.stringify({
+        type: 'session.update',
+        session: {
+          modalities: ['text'],
+          instructions,
+          input_audio_format: 'g711_ulaw',
+          input_audio_transcription: { model: 'whisper-1' },
+          turn_detection: {
+            type: 'server_vad',
+            threshold: s.vadThreshold,
+            prefix_padding_ms: s.prefixPaddingMs,
+            silence_duration_ms: s.silenceDurationMs,
+            create_response: true,
+            interrupt_response: true,
+          },
+          tools: getRealtimeTools(),
+          max_response_output_tokens: s.maxResponseTokens,
+          temperature: s.temperature,
         },
-        tools: getRealtimeTools(),
-        max_response_output_tokens: s.maxResponseTokens,
-        temperature: s.temperature,
-      },
-    }));
+      }));
+    } else {
+      // OpenAI mode: full speech-to-speech
+      openaiWs.send(JSON.stringify({
+        type: 'session.update',
+        session: {
+          modalities: ['text', 'audio'],
+          instructions,
+          voice: s.voice,
+          input_audio_format: 'g711_ulaw',
+          output_audio_format: 'g711_ulaw',
+          input_audio_transcription: { model: 'whisper-1' },
+          turn_detection: {
+            type: 'server_vad',
+            threshold: s.vadThreshold,
+            prefix_padding_ms: s.prefixPaddingMs,
+            silence_duration_ms: s.silenceDurationMs,
+            create_response: true,
+            interrupt_response: true,
+          },
+          tools: getRealtimeTools(),
+          max_response_output_tokens: s.maxResponseTokens,
+          temperature: s.temperature,
+        },
+      }));
+    }
   }
 
   function triggerGreeting(): void {
@@ -209,7 +236,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
     logger.info('stream', 'Triggering greeting', { sessionId, lead: leadData.first_name });
 
-    // Inject a user message to prompt the agent to greet the caller
     openaiWs.send(JSON.stringify({
       type: 'conversation.item.create',
       item: {
@@ -225,6 +251,84 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     openaiWs.send(JSON.stringify({ type: 'response.create' }));
   }
 
+  // --- ElevenLabs WebSocket streaming TTS ---
+
+  function connectElevenLabs(): void {
+    const s = getSettings();
+    if (!config.elevenlabs.apiKey || !s.elevenlabsVoiceId) {
+      logger.error('stream', 'ElevenLabs API key or voice ID not configured', { sessionId });
+      return;
+    }
+
+    const voiceId = s.elevenlabsVoiceId;
+    const modelId = s.elevenlabsModelId || 'eleven_turbo_v2_5';
+    const url = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=${modelId}&output_format=ulaw_8000`;
+
+    logger.info('stream', 'Connecting to ElevenLabs WS', { sessionId, voiceId, modelId });
+
+    elevenLabsWs = new WebSocket(url);
+
+    elevenLabsWs.on('open', () => {
+      logger.info('stream', 'ElevenLabs WS connected', { sessionId });
+      // Send initial config (BOS - beginning of stream)
+      elevenLabsWs!.send(JSON.stringify({
+        text: ' ',
+        voice_settings: {
+          stability: s.elevenlabsStability,
+          similarity_boost: s.elevenlabsSimilarityBoost,
+        },
+        xi_api_key: config.elevenlabs.apiKey,
+      }));
+    });
+
+    elevenLabsWs.on('message', (data: WebSocket.Data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.audio) {
+          // ElevenLabs sends base64-encoded ulaw_8000 audio
+          responseIsPlaying = true;
+          lastAudioSentAt = Date.now();
+          sendAudioToTwilio(msg.audio);
+        }
+        if (msg.isFinal) {
+          responseIsPlaying = false;
+        }
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logger.error('stream', 'ElevenLabs message error', { sessionId, error: errMsg });
+      }
+    });
+
+    elevenLabsWs.on('close', () => {
+      logger.debug('stream', 'ElevenLabs WS closed', { sessionId });
+      elevenLabsWs = null;
+    });
+
+    elevenLabsWs.on('error', (err) => {
+      logger.error('stream', 'ElevenLabs WS error', { sessionId, error: err.message });
+    });
+  }
+
+  function sendTextToElevenLabs(text: string): void {
+    if (!elevenLabsWs || elevenLabsWs.readyState !== WebSocket.OPEN) return;
+    elevenLabsWs.send(JSON.stringify({ text }));
+  }
+
+  function flushElevenLabs(): void {
+    if (!elevenLabsWs || elevenLabsWs.readyState !== WebSocket.OPEN) return;
+    // Send empty text to signal EOS (end of stream) and flush remaining audio
+    elevenLabsWs.send(JSON.stringify({ text: '' }));
+  }
+
+  function resetElevenLabs(): void {
+    // Close current connection and open a fresh one for the next utterance
+    if (elevenLabsWs) {
+      elevenLabsWs.close();
+      elevenLabsWs = null;
+    }
+    connectElevenLabs();
+  }
+
   // --- OpenAI event handling ---
 
   function handleOpenAIEvent(event: any): void {
@@ -235,13 +339,16 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       case 'session.updated':
         logger.info('stream', 'Realtime session configured', { sessionId });
-        // Trigger the greeting after session is ready
+        // Connect ElevenLabs if in that mode
+        if (useElevenLabs) {
+          connectElevenLabs();
+        }
         setTimeout(() => triggerGreeting(), 300);
         break;
 
-      case 'response.audio.delta':        // Beta event name
-      case 'response.output_audio.delta':  // GA event name
-        // Stream g711_ulaw audio directly to Twilio — zero transcoding
+      // --- OpenAI voice output (only fires in OpenAI mode) ---
+      case 'response.audio.delta':
+      case 'response.output_audio.delta':
         responseIsPlaying = true;
         lastAudioSentAt = Date.now();
         if (event.delta) {
@@ -249,42 +356,54 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
         break;
 
-      case 'response.audio.done':         // Beta event name
-      case 'response.output_audio.done':   // GA event name
+      case 'response.audio.done':
+      case 'response.output_audio.done':
         responseIsPlaying = false;
         break;
 
-      case 'input_audio_buffer.speech_started':
-        // If AI is not currently speaking, nothing to barge into
-        if (!responseIsPlaying) {
-          break;
+      // --- Text output (only fires in ElevenLabs mode) ---
+      case 'response.text.delta':
+        if (useElevenLabs && event.delta) {
+          responseIsPlaying = true;
+          sendTextToElevenLabs(event.delta);
         }
+        break;
 
-        // Echo suppression: if we just sent audio within the suppression window,
-        // this is likely the AI's own voice leaking back through the phone
+      case 'response.text.done':
+        if (useElevenLabs) {
+          flushElevenLabs();
+          logger.info('stream', 'Agent said', { sessionId, transcript: event.text });
+        }
+        break;
+
+      // --- Barge-in handling (works for both modes) ---
+      case 'input_audio_buffer.speech_started':
+        if (!responseIsPlaying) break;
+
         if (Date.now() - lastAudioSentAt < echoSuppressionMs) {
           logger.debug('stream', 'Speech detected within echo window — suppressing', { sessionId });
           break;
         }
 
-        // Start debounce: require sustained speech to confirm real barge-in
         if (bargeInTimer) clearTimeout(bargeInTimer);
         logger.debug('stream', 'Potential barge-in — starting debounce', { sessionId });
         bargeInTimer = setTimeout(() => {
           bargeInTimer = null;
           logger.info('stream', 'Barge-in confirmed — canceling response', { sessionId });
-          // Cancel the model's in-progress response
+
           if (openaiWs?.readyState === WebSocket.OPEN) {
             openaiWs.send(JSON.stringify({ type: 'response.cancel' }));
           }
-          // Flush Twilio's outbound audio queue
+          // In ElevenLabs mode, reset the WS to stop audio generation
+          if (useElevenLabs) {
+            resetElevenLabs();
+          }
           sendClearToTwilio();
           responseIsPlaying = false;
         }, bargeInDebounceMs);
         break;
 
       case 'input_audio_buffer.speech_stopped':
-        // If speech stopped before debounce window, it was echo or noise — cancel
         if (bargeInTimer) {
           clearTimeout(bargeInTimer);
           bargeInTimer = null;
@@ -293,13 +412,18 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         break;
 
       case 'response.done':
-        responseIsPlaying = false;
-        // Clear any pending barge-in timer since response is done anyway
+        // In ElevenLabs mode, reset the WS for the next turn
+        if (useElevenLabs && elevenLabsWs) {
+          // Give ElevenLabs time to finish flushing audio, then reset for next turn
+          setTimeout(() => resetElevenLabs(), 500);
+        }
+        if (!useElevenLabs) {
+          responseIsPlaying = false;
+        }
         if (bargeInTimer) {
           clearTimeout(bargeInTimer);
           bargeInTimer = null;
         }
-        // Check for function calls in the completed response
         if (event.response?.output) {
           for (const item of event.response.output) {
             if (item.type === 'function_call') {
@@ -309,9 +433,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
         break;
 
-      case 'response.audio_transcript.done':              // Beta event name
-      case 'response.output_audio_transcript.done':       // GA event name
-        logger.info('stream', 'Agent said', { sessionId, transcript: event.transcript });
+      case 'response.audio_transcript.done':
+      case 'response.output_audio_transcript.done':
+        if (!useElevenLabs) {
+          logger.info('stream', 'Agent said', { sessionId, transcript: event.transcript });
+        }
         break;
 
       case 'conversation.item.input_audio_transcription.completed':
@@ -328,7 +454,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         break;
 
       default:
-        // Only log non-streaming events at debug level
         if (!event.type.includes('.delta')) {
           logger.debug('stream', `OpenAI: ${event.type}`, { sessionId });
         }
@@ -336,7 +461,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     }
   }
 
-  // --- Function call handling (transfers, end call) ---
+  // --- Function call handling ---
 
   async function handleFunctionCall(item: any): Promise<void> {
     const { name, call_id } = item;
@@ -363,11 +488,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         targetNumber = transferConfig?.non_allstate_number || transferConfig?.allstate_number;
       }
 
-      // Acknowledge the function call
       sendFunctionOutput(call_id, { status: 'transferring', target: targetNumber ? 'found' : 'not_configured' });
 
       if (targetNumber) {
-        // Brief delay so the model's transfer message audio finishes playing
         await new Promise(r => setTimeout(r, 1500));
         logger.info('stream', 'Executing warm transfer', { sessionId, route, target: targetNumber });
         const success = await executeWarmTransfer(callSid, targetNumber);
@@ -383,7 +506,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       logger.info('stream', 'Call ending via function', { sessionId, reason: args.reason });
       sendFunctionOutput(call_id, { status: 'ending' });
 
-      // Wait for farewell audio to finish playing, then hang up
       await new Promise(r => setTimeout(r, 3000));
       try {
         await endCall(callSid);
@@ -409,7 +531,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       },
     }));
 
-    // Let the model respond to the function result
     openaiWs.send(JSON.stringify({ type: 'response.create' }));
   }
 
@@ -448,10 +569,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     logger.debug('stream', 'Sent clear to Twilio', { sessionId });
   }
 
-  function cleanupOpenAI(): void {
+  function cleanup(): void {
     if (openaiWs) {
       openaiWs.close();
       openaiWs = null;
+    }
+    if (elevenLabsWs) {
+      elevenLabsWs.close();
+      elevenLabsWs = null;
     }
   }
 }

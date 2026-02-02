@@ -274,11 +274,45 @@ export function getDashboardHtml(): string {
     filter: grayscale(1);
   }
   .voice-card.disabled .vc-play { display: none; }
+  .provider-toggle {
+    display: flex;
+    gap: 0;
+    background: var(--surface2);
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .provider-toggle button {
+    flex: 1;
+    padding: 12px 20px;
+    border: none;
+    background: transparent;
+    color: var(--text2);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .provider-toggle button:hover { background: var(--border); }
+  .provider-toggle button.active {
+    background: var(--accent);
+    color: white;
+  }
+  .provider-toggle button .prov-label { font-size: 14px; }
+  .provider-toggle button .prov-sub { font-size: 11px; opacity: 0.7; }
+  .el-settings { margin-top: 16px; }
+  .el-settings .el-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px; }
   @media (max-width: 640px) {
-    .grid, .grid-3 { grid-template-columns: 1fr; }
+    .grid, .grid-3, .el-settings .el-row { grid-template-columns: 1fr; }
     .call-row { flex-direction: column; }
     .voice-grid { grid-template-columns: 1fr 1fr; }
     main { padding: 16px 10px; }
+    .provider-toggle { flex-direction: column; }
   }
 </style>
 </head>
@@ -324,9 +358,24 @@ export function getDashboardHtml(): string {
     <div id="callHistory" style="font-size:13px;color:var(--text2)">Loading...</div>
   </div>
 
-  <!-- Voice Selection -->
+  <!-- Voice Provider -->
   <div class="card">
-    <h2><span class="icon">&#127908;</span> Voice</h2>
+    <h2><span class="icon">&#127908;</span> Voice Provider</h2>
+    <input type="hidden" id="voiceProvider" value="openai">
+    <div class="provider-toggle">
+      <button id="provOpenai" class="active" onclick="setProvider('openai')">
+        <span class="prov-label">OpenAI Realtime</span>
+        <span class="prov-sub">(speech-to-speech)</span>
+      </button>
+      <button id="provElevenlabs" onclick="setProvider('elevenlabs')">
+        <span class="prov-label">ElevenLabs</span>
+        <span class="prov-sub">(TTS via ElevenLabs)</span>
+      </button>
+    </div>
+
+    <!-- OpenAI voice cards (shown when OpenAI selected) -->
+    <div id="openaiVoiceSection" style="margin-top:16px">
+    <label>OpenAI Voice</label>
     <input type="hidden" id="voice" value="coral">
     <div class="voice-grid" id="voiceGrid">
       <div class="voice-card" data-voice="coral" onclick="selectVoice('coral')">
@@ -385,6 +434,44 @@ export function getDashboardHtml(): string {
         <span class="vc-tag neutral">Versatile</span>
         <span class="vc-check">&#10003;</span>
       </div>
+    </div>
+    </div>
+
+    <!-- ElevenLabs settings (shown when ElevenLabs selected) -->
+    <div id="elevenlabsVoiceSection" class="el-settings" style="display:none">
+      <div class="el-row">
+        <div>
+          <label>ElevenLabs Voice ID</label>
+          <input type="text" id="elevenlabsVoiceId" placeholder="e.g. 21m00Tcm4TlvDq8ikWAM">
+        </div>
+        <div>
+          <label>ElevenLabs Model</label>
+          <select id="elevenlabsModelId">
+            <option value="eleven_turbo_v2_5">Turbo v2.5 (fastest)</option>
+            <option value="eleven_multilingual_v2">Multilingual v2</option>
+            <option value="eleven_monolingual_v1">Monolingual v1</option>
+          </select>
+        </div>
+      </div>
+      <div class="el-row">
+        <div>
+          <label>Stability (0.0 - 1.0)</label>
+          <div class="range-wrap">
+            <input type="range" id="elevenlabsStability" min="0" max="1" step="0.05" value="0.5">
+            <span class="range-val" id="elevenlabsStabilityVal">0.50</span>
+          </div>
+        </div>
+        <div>
+          <label>Similarity Boost (0.0 - 1.0)</label>
+          <div class="range-wrap">
+            <input type="range" id="elevenlabsSimilarityBoost" min="0" max="1" step="0.05" value="0.75">
+            <span class="range-val" id="elevenlabsSimilarityBoostVal">0.75</span>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--text2);margin-top:4px">
+        Get your Voice ID from the ElevenLabs dashboard. OpenAI Realtime still handles speech recognition and conversation logic.
+      </p>
     </div>
   </div>
 
@@ -500,13 +587,15 @@ export function getDashboardHtml(): string {
 
 <script>
 const SETTINGS_FIELDS = [
-  'voice','realtimeModel','temperature','vadThreshold','silenceDurationMs',
+  'voiceProvider','voice','realtimeModel','temperature','vadThreshold','silenceDurationMs',
   'prefixPaddingMs','bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
-  'agentName','companyName','systemPromptOverride','allstateNumber','nonAllstateNumber'
+  'agentName','companyName','systemPromptOverride','allstateNumber','nonAllstateNumber',
+  'elevenlabsVoiceId','elevenlabsModelId','elevenlabsStability','elevenlabsSimilarityBoost'
 ];
 const NUMBER_FIELDS = [
   'temperature','vadThreshold','silenceDurationMs','prefixPaddingMs',
-  'bargeInDebounceMs','echoSuppressionMs','maxResponseTokens'
+  'bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
+  'elevenlabsStability','elevenlabsSimilarityBoost'
 ];
 
 // Voice-model compatibility map
@@ -519,6 +608,14 @@ const ALL_VOICES = ['alloy','ash','ballad','coral','echo','sage','shimmer','vers
 function getCompatibleVoices() {
   const model = document.getElementById('realtimeModel').value;
   return MODEL_VOICES[model] || ALL_VOICES;
+}
+
+function setProvider(provider) {
+  document.getElementById('voiceProvider').value = provider;
+  document.getElementById('provOpenai').classList.toggle('active', provider === 'openai');
+  document.getElementById('provElevenlabs').classList.toggle('active', provider === 'elevenlabs');
+  document.getElementById('openaiVoiceSection').style.display = provider === 'openai' ? '' : 'none';
+  document.getElementById('elevenlabsVoiceSection').style.display = provider === 'elevenlabs' ? '' : 'none';
 }
 
 function updateVoiceAvailability() {
@@ -569,6 +666,9 @@ async function loadSettings() {
       }
     }
 
+    // Set voice provider toggle
+    if (s.voiceProvider) setProvider(s.voiceProvider);
+
     // Highlight the selected voice card and update availability
     updateVoiceAvailability();
     if (s.voice) selectVoice(s.voice);
@@ -585,12 +685,25 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
-  // Validate voice-model compatibility before saving
-  const allowed = getCompatibleVoices();
-  const selectedVoice = document.getElementById('voice').value;
-  if (!allowed.includes(selectedVoice)) {
-    toast('Voice "' + selectedVoice + '" is not compatible with the selected model. Pick a different voice.', 'error');
-    return;
+  const provider = document.getElementById('voiceProvider').value;
+
+  // Validate voice-model compatibility before saving (only for OpenAI provider)
+  if (provider === 'openai') {
+    const allowed = getCompatibleVoices();
+    const selectedVoice = document.getElementById('voice').value;
+    if (!allowed.includes(selectedVoice)) {
+      toast('Voice "' + selectedVoice + '" is not compatible with the selected model. Pick a different voice.', 'error');
+      return;
+    }
+  }
+
+  // Validate ElevenLabs voice ID is set when using ElevenLabs
+  if (provider === 'elevenlabs') {
+    const voiceId = document.getElementById('elevenlabsVoiceId').value.trim();
+    if (!voiceId) {
+      toast('Enter an ElevenLabs Voice ID before saving', 'error');
+      return;
+    }
   }
 
   const btn = document.getElementById('saveBtn');
@@ -731,6 +844,7 @@ async function loadCallHistory() {
       + '<th style="padding:6px 8px">Time</th>'
       + '<th style="padding:6px 8px">To</th>'
       + '<th style="padding:6px 8px">Lead</th>'
+      + '<th style="padding:6px 8px">Provider</th>'
       + '<th style="padding:6px 8px">Voice</th>'
       + '<th style="padding:6px 8px">VAD</th>'
       + '<th style="padding:6px 8px">Silence</th>'
@@ -746,6 +860,7 @@ async function loadCallHistory() {
         + '<td style="padding:6px 8px;color:var(--text2)">' + t + '</td>'
         + '<td style="padding:6px 8px">' + c.to + '</td>'
         + '<td style="padding:6px 8px">' + c.leadName + '</td>'
+        + '<td style="padding:6px 8px">' + (s.voiceProvider || 'openai') + '</td>'
         + '<td style="padding:6px 8px;color:var(--accent)">' + s.voice + '</td>'
         + '<td style="padding:6px 8px">' + s.vadThreshold + '</td>'
         + '<td style="padding:6px 8px">' + s.silenceDurationMs + 'ms</td>'

@@ -430,14 +430,23 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         if (useElevenLabs) {
           connectElevenLabs();
           // Wait for ElevenLabs to connect before triggering greeting
+          let greetingSent = false;
           const waitForEl = setInterval(() => {
-            if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
+            if (!greetingSent && elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
               clearInterval(waitForEl);
+              greetingSent = true;
               triggerGreeting();
             }
           }, 100);
           // Safety timeout — don't wait forever
-          setTimeout(() => { clearInterval(waitForEl); triggerGreeting(); }, 3000);
+          setTimeout(() => {
+            clearInterval(waitForEl);
+            if (!greetingSent) {
+              greetingSent = true;
+              logger.warn('stream', 'ElevenLabs connect timeout, triggering greeting anyway', { sessionId });
+              triggerGreeting();
+            }
+          }, 3000);
         } else {
           setTimeout(() => triggerGreeting(), 300);
         }

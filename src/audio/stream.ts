@@ -47,6 +47,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let useElevenLabs = false;
   let elevenLabsWs: WebSocket | null = null;
 
+  // Pending text buffer for ElevenLabs lazy reconnect
+  let elevenLabsPendingText: string[] = [];
+
   // Barge-in state
   let bargeInDebounceMs = 250;
   let echoSuppressionMs = 100;
@@ -361,6 +364,15 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         },
         xi_api_key: config.elevenlabs.apiKey,
       }));
+
+      // Flush any pending text that was buffered while connecting
+      if (elevenLabsPendingText.length > 0) {
+        logger.info('stream', 'Flushing pending ElevenLabs text', { sessionId, chunks: elevenLabsPendingText.length });
+        for (const chunk of elevenLabsPendingText) {
+          ws.send(JSON.stringify({ text: chunk }));
+        }
+        elevenLabsPendingText = [];
+      }
     });
 
     ws.on('message', (data: WebSocket.Data) => {
@@ -406,14 +418,32 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   }
 
   function sendTextToElevenLabs(text: string): void {
-    if (!elevenLabsWs || elevenLabsWs.readyState !== WebSocket.OPEN) return;
-    elevenLabsWs.send(JSON.stringify({ text }));
     currentElevenLabsText += text;
     if (analytics) analytics.addElevenLabsCharacters(text.length);
+
+    // If WS is open, send immediately
+    if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
+      elevenLabsWs.send(JSON.stringify({ text }));
+      return;
+    }
+
+    // Buffer text and lazily reconnect
+    elevenLabsPendingText.push(text);
+    if (!elevenLabsWs || elevenLabsWs.readyState === WebSocket.CLOSED || elevenLabsWs.readyState === WebSocket.CLOSING) {
+      logger.info('stream', 'ElevenLabs WS not open, reconnecting on demand', { sessionId });
+      connectElevenLabs();
+    }
+    // else: WS is in CONNECTING state, pending text will flush on open
   }
 
   function flushElevenLabs(): void {
-    if (!elevenLabsWs || elevenLabsWs.readyState !== WebSocket.OPEN) return;
+    if (!elevenLabsWs || elevenLabsWs.readyState !== WebSocket.OPEN) {
+      // If not connected, add flush marker to pending buffer
+      if (elevenLabsPendingText.length > 0) {
+        elevenLabsPendingText.push('');
+      }
+      return;
+    }
     elevenLabsWs.send(JSON.stringify({ text: '' }));
   }
 
@@ -543,8 +573,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           if (openaiWs?.readyState === WebSocket.OPEN) {
             openaiWs.send(JSON.stringify({ type: 'response.cancel' }));
           }
-          if (useElevenLabs) {
-            resetElevenLabs();
+          if (useElevenLabs && elevenLabsWs) {
+            elevenLabsWs.close();
+            elevenLabsWs = null;
+            elevenLabsPendingText = [];
           }
           sendClearToTwilio();
           responseIsPlaying = false;
@@ -564,7 +596,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       case 'response.done':
         if (useElevenLabs && elevenLabsWs) {
-          setTimeout(() => resetElevenLabs(), 500);
+          // Don't eagerly reconnect — just close. Next sendTextToElevenLabs will reconnect on demand.
+          // This avoids ElevenLabs idle timeout killing the connection.
+          setTimeout(() => {
+            if (elevenLabsWs) {
+              elevenLabsWs.close();
+              elevenLabsWs = null;
+            }
+          }, 500);
         }
         if (!useElevenLabs) {
           responseIsPlaying = false;

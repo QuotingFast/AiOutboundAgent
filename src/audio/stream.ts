@@ -278,7 +278,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           },
           tools: [],
           max_response_output_tokens: 1,
-          temperature: 0,
+          temperature: 0.6,
         },
       }));
     } else if (useElevenLabs) {

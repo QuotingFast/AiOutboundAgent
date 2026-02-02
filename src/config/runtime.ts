@@ -68,7 +68,7 @@ export interface CallRecord {
 }
 
 const settings: RuntimeSettings = {
-  voiceProvider: 'openai',
+  voiceProvider: config.ttsProvider as 'openai' | 'elevenlabs',
   voice: config.openai.voice,
   realtimeModel: config.openai.realtimeModel,
   temperature: 0.7,

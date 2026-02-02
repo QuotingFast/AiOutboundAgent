@@ -4,7 +4,7 @@ export function getDashboardHtml(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Outbound Agent</title>
+<title>Quoting Fast AI</title>
 <style>
   :root {
     --bg: #0f1117;
@@ -348,7 +348,7 @@ export function getDashboardHtml(): string {
 </head>
 <body>
 <header>
-  <h1><span>AI</span> Voice Agent</h1>
+  <h1><img src="https://quotingfast.com/qflogo1.png" alt="Quoting Fast" style="height:32px;vertical-align:middle;margin-right:8px">Quoting Fast AI</h1>
   <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)">
     <span class="status-dot"></span> Connected
   </div>

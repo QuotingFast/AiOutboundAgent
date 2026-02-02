@@ -523,19 +523,19 @@ export function getDashboardHtml(): string {
   <!-- Voice Provider -->
   <div class="card">
     <h2><span class="icon">&#127908;</span> Voice Provider</h2>
-    <input type="hidden" id="voiceProvider" value="openai">
+    <input type="hidden" id="voiceProvider" value="elevenlabs">
     <div class="provider-toggle">
-      <button id="provOpenai" class="active" onclick="setProvider('openai')">
+      <button id="provOpenai" onclick="setProvider('openai')">
         <span class="prov-label">OpenAI Realtime</span>
         <span class="prov-sub">(speech-to-speech)</span>
       </button>
-      <button id="provElevenlabs" onclick="setProvider('elevenlabs')">
+      <button id="provElevenlabs" class="active" onclick="setProvider('elevenlabs')">
         <span class="prov-label">ElevenLabs</span>
         <span class="prov-sub">(TTS via ElevenLabs)</span>
       </button>
     </div>
 
-    <div id="openaiVoiceSection" style="margin-top:16px">
+    <div id="openaiVoiceSection" style="margin-top:16px;display:none">
     <label>OpenAI Voice</label>
     <input type="hidden" id="voice" value="coral">
     <div class="voice-grid" id="voiceGrid">
@@ -582,7 +582,7 @@ export function getDashboardHtml(): string {
     </div>
     </div>
 
-    <div id="elevenlabsVoiceSection" class="el-settings" style="display:none">
+    <div id="elevenlabsVoiceSection" class="el-settings">
       <label>ElevenLabs Voice</label>
       <input type="hidden" id="elevenlabsVoiceId" value="">
       <div class="voice-grid" id="elVoiceGrid">

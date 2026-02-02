@@ -649,6 +649,16 @@ export function getDashboardHtml(): string {
           <div class="vc-name">Adam</div><div class="vc-desc">Deep, authoritative male</div>
           <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
         </div>
+        <div class="voice-card ds-vc" data-dsvoice="yoZ06aMxZJJ28mfd3POQ" onclick="selectDsVoice('yoZ06aMxZJJ28mfd3POQ')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('yoZ06aMxZJJ28mfd3POQ',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Sam</div><div class="vc-desc">Raspy, natural male</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="XB0fDUnXU5powFXDhCwa" onclick="selectDsVoice('XB0fDUnXU5powFXDhCwa')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('XB0fDUnXU5powFXDhCwa',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Charlotte</div><div class="vc-desc">Warm, natural female</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
       </div>
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <label>Custom Voice ID (optional)</label>
@@ -726,6 +736,16 @@ export function getDashboardHtml(): string {
           <button class="vc-play" onclick="event.stopPropagation();previewElVoice('pNInz6obpgDQGcFmaJgB',this)" title="Preview">&#9654;</button>
           <div class="vc-name">Adam</div><div class="vc-desc">Deep, authoritative male</div>
           <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="yoZ06aMxZJJ28mfd3POQ" onclick="selectElVoice('yoZ06aMxZJJ28mfd3POQ')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('yoZ06aMxZJJ28mfd3POQ',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Sam</div><div class="vc-desc">Raspy, natural male</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="XB0fDUnXU5powFXDhCwa" onclick="selectElVoice('XB0fDUnXU5powFXDhCwa')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('XB0fDUnXU5powFXDhCwa',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Charlotte</div><div class="vc-desc">Warm, natural female</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
         </div>
       </div>
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
@@ -1139,7 +1159,7 @@ async function previewVoice(voice, btn) {
   } catch (e) { btn.classList.remove('loading'); btn.innerHTML = '&#9654;'; }
 }
 
-var EL_VOICES = {'21m00Tcm4TlvDq8ikWAM':'Rachel','EXAVITQu4vr4xnSDxMaL':'Bella','AZnzlk1XvdvUeBnXmlld':'Domi','MF3mGyEYCl7XYWbV9V6O':'Elli','ErXwobaYiN019PkySvjV':'Antoni','TxGEqnHWrfWFTfGW9XjX':'Josh','VR6AewLTigWG4xSOukaG':'Arnold','pNInz6obpgDQGcFmaJgB':'Adam'};
+var EL_VOICES = {'21m00Tcm4TlvDq8ikWAM':'Rachel','EXAVITQu4vr4xnSDxMaL':'Bella','AZnzlk1XvdvUeBnXmlld':'Domi','MF3mGyEYCl7XYWbV9V6O':'Elli','ErXwobaYiN019PkySvjV':'Antoni','TxGEqnHWrfWFTfGW9XjX':'Josh','VR6AewLTigWG4xSOukaG':'Arnold','pNInz6obpgDQGcFmaJgB':'Adam','yoZ06aMxZJJ28mfd3POQ':'Sam','XB0fDUnXU5powFXDhCwa':'Charlotte'};
 
 function selectElVoice(voiceId) {
   document.getElementById('elevenlabsVoiceId').value = voiceId;

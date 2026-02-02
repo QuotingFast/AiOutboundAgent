@@ -55,6 +55,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let deepseekHistory: Array<any> = [];
   let deepseekInstructions = '';
   let deepseekAbortController: AbortController | null = null;
+  let deepseekAuthFailed = false;
+
+  // Guard against double greeting on session reconfiguration
+  let initialGreetingDone = false;
 
   // Barge-in state
   let bargeInDebounceMs = 250;
@@ -176,7 +180,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       useDeepSeek = false;
     }
 
-    useElevenLabs = s.voiceProvider === 'elevenlabs' || useDeepSeek;
+    useElevenLabs = s.voiceProvider === 'elevenlabs' || s.voiceProvider === 'deepseek';
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
 
     logger.info('stream', 'Connecting to OpenAI Realtime', {
@@ -501,6 +505,35 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
   // --- DeepSeek streaming LLM ---
 
+  /** Reconfigure OpenAI Realtime from STT-only to full ElevenLabs-mode LLM after DeepSeek auth failure */
+  function reconfigureOpenAIForFallback(): void {
+    if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
+
+    const s = getSettings();
+    logger.info('stream', 'Reconfiguring OpenAI Realtime for ElevenLabs fallback (was STT-only)', { sessionId });
+
+    openaiWs.send(JSON.stringify({
+      type: 'session.update',
+      session: {
+        modalities: ['text'],
+        instructions: deepseekInstructions,
+        input_audio_format: 'g711_ulaw',
+        input_audio_transcription: { model: 'whisper-1' },
+        turn_detection: {
+          type: 'server_vad',
+          threshold: s.vadThreshold,
+          prefix_padding_ms: s.prefixPaddingMs,
+          silence_duration_ms: s.silenceDurationMs,
+          create_response: true,
+          interrupt_response: true,
+        },
+        tools: getRealtimeTools(),
+        max_response_output_tokens: s.maxResponseTokens,
+        temperature: Math.max(s.temperature, 0.6),
+      },
+    }));
+  }
+
   function getDeepSeekTools(): any[] {
     const tools = getRealtimeTools();
     return tools.map((t: any) => ({
@@ -514,6 +547,12 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   }
 
   async function callDeepSeekStreaming(userMessage: string, role: 'user' | 'tool' = 'user', toolCallId?: string): Promise<void> {
+    // If DeepSeek already failed auth, route through OpenAI instead
+    if (deepseekAuthFailed) {
+      sendUserMessage(userMessage);
+      return;
+    }
+
     if (role === 'user') {
       deepseekHistory.push({ role: 'user', content: userMessage });
     } else if (role === 'tool' && toolCallId) {
@@ -559,6 +598,18 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       if (!response.ok) {
         const errText = await response.text();
         logger.error('stream', 'DeepSeek API error', { sessionId, status: response.status, error: errText });
+
+        if (response.status === 401) {
+          logger.error('stream', 'DeepSeek auth failed, falling back to OpenAI for rest of session', { sessionId });
+          deepseekAuthFailed = true;
+          useDeepSeek = false;
+
+          // Reconfigure OpenAI Realtime from STT-only to full ElevenLabs-mode LLM
+          reconfigureOpenAIForFallback();
+
+          // Route the current message through OpenAI so the caller hears something
+          sendUserMessage(userMessage);
+        }
         return;
       }
 
@@ -701,6 +752,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       case 'session.updated':
         logger.info('stream', 'Realtime session configured', { sessionId, useElevenLabs });
+        // Only trigger greeting on the first session.updated (not on reconfiguration fallback)
+        if (initialGreetingDone) break;
+        initialGreetingDone = true;
         if (useElevenLabs) {
           connectElevenLabs();
           // Wait for ElevenLabs to connect before triggering greeting

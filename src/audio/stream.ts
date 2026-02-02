@@ -50,6 +50,12 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   // Pending text buffer for ElevenLabs lazy reconnect
   let elevenLabsPendingText: string[] = [];
 
+  // DeepSeek state
+  let useDeepSeek = false;
+  let deepseekHistory: Array<any> = [];
+  let deepseekInstructions = '';
+  let deepseekAbortController: AbortController | null = null;
+
   // Barge-in state
   let bargeInDebounceMs = 250;
   let echoSuppressionMs = 100;
@@ -162,7 +168,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   function connectToOpenAIRealtime(): void {
     const s = getSettings();
     const model = s.realtimeModel;
-    useElevenLabs = s.voiceProvider === 'elevenlabs';
+    useDeepSeek = s.voiceProvider === 'deepseek';
+    useElevenLabs = s.voiceProvider === 'elevenlabs' || useDeepSeek;
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
 
     logger.info('stream', 'Connecting to OpenAI Realtime', {
@@ -250,7 +257,31 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       maxTokens: s.maxResponseTokens,
     });
 
-    if (useElevenLabs) {
+    if (useDeepSeek) {
+      // DeepSeek mode: OpenAI Realtime is STT-only (no auto-response)
+      // Store instructions for DeepSeek API calls
+      deepseekInstructions = instructions;
+      openaiWs.send(JSON.stringify({
+        type: 'session.update',
+        session: {
+          modalities: ['text'],
+          instructions: 'You are a speech-to-text transcription relay. Do not generate responses.',
+          input_audio_format: 'g711_ulaw',
+          input_audio_transcription: { model: 'whisper-1' },
+          turn_detection: {
+            type: 'server_vad',
+            threshold: s.vadThreshold,
+            prefix_padding_ms: s.prefixPaddingMs,
+            silence_duration_ms: s.silenceDurationMs,
+            create_response: false,
+            interrupt_response: true,
+          },
+          tools: [],
+          max_response_output_tokens: 1,
+          temperature: 0,
+        },
+      }));
+    } else if (useElevenLabs) {
       openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
@@ -298,8 +329,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   }
 
   function triggerGreeting(): void {
-    if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
-
     const s = getSettings();
     logger.info('stream', 'Triggering greeting', { sessionId, direction: callDirection, lead: leadData.first_name });
     responseRequestedAt = Date.now();
@@ -311,6 +340,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     } else {
       greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "Hey — is this ${leadData.first_name}?"]`;
     }
+
+    if (useDeepSeek) {
+      // DeepSeek handles the greeting via its own API
+      callDeepSeekStreaming(greetingInstruction);
+      return;
+    }
+
+    if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
 
     openaiWs.send(JSON.stringify({
       type: 'conversation.item.create',
@@ -455,6 +492,198 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     connectElevenLabs();
   }
 
+  // --- DeepSeek streaming LLM ---
+
+  function getDeepSeekTools(): any[] {
+    const tools = getRealtimeTools();
+    return tools.map((t: any) => ({
+      type: 'function',
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+      },
+    }));
+  }
+
+  async function callDeepSeekStreaming(userMessage: string, role: 'user' | 'tool' = 'user', toolCallId?: string): Promise<void> {
+    if (role === 'user') {
+      deepseekHistory.push({ role: 'user', content: userMessage });
+    } else if (role === 'tool' && toolCallId) {
+      deepseekHistory.push({ role: 'tool', tool_call_id: toolCallId, content: userMessage });
+    }
+
+    // Keep history manageable (last 30 messages)
+    if (deepseekHistory.length > 30) {
+      deepseekHistory = deepseekHistory.slice(-30);
+    }
+
+    deepseekAbortController = new AbortController();
+    const s = getSettings();
+
+    logger.info('stream', 'Calling DeepSeek', {
+      sessionId,
+      model: s.deepseekModel,
+      historyLength: deepseekHistory.length,
+      role,
+    });
+
+    try {
+      const response = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.deepseek.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: s.deepseekModel || 'deepseek-chat',
+          messages: [
+            { role: 'system', content: deepseekInstructions },
+            ...deepseekHistory,
+          ],
+          stream: true,
+          max_tokens: s.maxResponseTokens * 4,
+          temperature: s.temperature,
+          tools: getDeepSeekTools(),
+        }),
+        signal: deepseekAbortController.signal,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        logger.error('stream', 'DeepSeek API error', { sessionId, status: response.status, error: errText });
+        return;
+      }
+
+      const body = response.body;
+      if (!body) {
+        logger.error('stream', 'DeepSeek: no response body', { sessionId });
+        return;
+      }
+
+      const reader = (body as any).getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = '';
+      let fullResponse = '';
+      let toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith(':')) continue;
+          if (!trimmed.startsWith('data: ')) continue;
+
+          const data = trimmed.slice(6);
+          if (data === '[DONE]') continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const choice = parsed.choices?.[0];
+            if (!choice) continue;
+            const delta = choice.delta;
+
+            // Text content
+            if (delta?.content) {
+              fullResponse += delta.content;
+              responseIsPlaying = true;
+              sendTextToElevenLabs(delta.content);
+
+              // Track LLM latency on first text chunk
+              if (firstAudioAt === 0 && analytics && responseRequestedAt > 0) {
+                firstAudioAt = Date.now();
+                analytics.recordLLMLatency(Date.now() - responseRequestedAt);
+                analytics.agentStartedSpeaking();
+              }
+            }
+
+            // Tool calls (function calling)
+            if (delta?.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index ?? 0;
+                if (!toolCalls[idx]) {
+                  toolCalls[idx] = { id: tc.id || '', name: '', arguments: '' };
+                }
+                if (tc.id) toolCalls[idx].id = tc.id;
+                if (tc.function?.name) toolCalls[idx].name += tc.function.name;
+                if (tc.function?.arguments) toolCalls[idx].arguments += tc.function.arguments;
+              }
+            }
+          } catch {
+            // Skip unparseable lines
+          }
+        }
+      }
+
+      deepseekAbortController = null;
+
+      // Handle function calls
+      if (toolCalls.length > 0 && toolCalls[0].name) {
+        // Add assistant message with tool_calls to history
+        deepseekHistory.push({
+          role: 'assistant',
+          content: fullResponse || null,
+          tool_calls: toolCalls.map(tc => ({
+            id: tc.id,
+            type: 'function',
+            function: { name: tc.name, arguments: tc.arguments },
+          })),
+        });
+
+        // Execute each function call
+        for (const tc of toolCalls) {
+          if (!tc.name) continue;
+          logger.info('stream', 'DeepSeek function call', { sessionId, name: tc.name, args: tc.arguments });
+
+          let args: any = {};
+          try { args = JSON.parse(tc.arguments || '{}'); } catch {}
+
+          // Execute via existing handler
+          const fakeItem = { name: tc.name, call_id: tc.id, arguments: tc.arguments };
+          handleFunctionCall(fakeItem);
+
+          // Send function result back to DeepSeek for follow-up
+          const result = { status: tc.name === 'transfer_call' ? 'transferring' : 'ending' };
+          await callDeepSeekStreaming(JSON.stringify(result), 'tool', tc.id);
+        }
+        return;
+      }
+
+      // Text response complete
+      if (fullResponse) {
+        flushElevenLabs();
+
+        deepseekHistory.push({ role: 'assistant', content: fullResponse });
+
+        logger.info('stream', 'DeepSeek response', { sessionId, transcript: redactPII(fullResponse) });
+        if (conversation) conversation.processAgentTurn(fullResponse);
+        if (analytics) analytics.addTranscriptEntry('agent', fullResponse);
+        emitTranscript('agent', fullResponse);
+
+        // Close ElevenLabs WS after response (lazy reconnect pattern)
+        setTimeout(() => {
+          if (elevenLabsWs) {
+            elevenLabsWs.close();
+            elevenLabsWs = null;
+          }
+        }, 500);
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        logger.info('stream', 'DeepSeek request aborted (barge-in)', { sessionId });
+      } else {
+        logger.error('stream', 'DeepSeek streaming error', { sessionId, error: err.message });
+      }
+      deepseekAbortController = null;
+    }
+  }
+
   // --- OpenAI event handling ---
 
   function handleOpenAIEvent(event: any): void {
@@ -578,6 +807,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             elevenLabsWs = null;
             elevenLabsPendingText = [];
           }
+          if (useDeepSeek && deepseekAbortController) {
+            deepseekAbortController.abort();
+            deepseekAbortController = null;
+          }
           sendClearToTwilio();
           responseIsPlaying = false;
         }, bargeInDebounceMs);
@@ -667,6 +900,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
 
         emitTranscript('user', userText);
+
+        // DeepSeek mode: OpenAI doesn't auto-respond, so we call DeepSeek
+        if (useDeepSeek && userText.trim()) {
+          responseRequestedAt = Date.now();
+          firstAudioAt = 0;
+          audioChunkCount = 0;
+          callDeepSeekStreaming(userText);
+        }
         break;
       }
 
@@ -826,6 +1067,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     if (elevenLabsWs) {
       elevenLabsWs.close();
       elevenLabsWs = null;
+    }
+    if (deepseekAbortController) {
+      deepseekAbortController.abort();
+      deepseekAbortController = null;
     }
 
     // Finalize analytics and run post-call workflows

@@ -1,8 +1,8 @@
 import { config } from './index';
 
 export interface RuntimeSettings {
-  // Voice provider: 'openai' = Realtime speech-to-speech, 'elevenlabs' = text-to-speech via ElevenLabs
-  voiceProvider: 'openai' | 'elevenlabs';
+  // Voice provider: 'openai' = Realtime speech-to-speech, 'elevenlabs' = OpenAI LLM + EL TTS, 'deepseek' = DeepSeek LLM + EL TTS
+  voiceProvider: 'openai' | 'elevenlabs' | 'deepseek';
 
   // Voice & Model (OpenAI)
   voice: string;
@@ -14,6 +14,9 @@ export interface RuntimeSettings {
   elevenlabsModelId: string;
   elevenlabsStability: number;
   elevenlabsSimilarityBoost: number;
+
+  // DeepSeek settings
+  deepseekModel: string;
 
   // VAD & Barge-in
   vadThreshold: number;
@@ -68,7 +71,7 @@ export interface CallRecord {
 }
 
 const settings: RuntimeSettings = {
-  voiceProvider: config.ttsProvider as 'openai' | 'elevenlabs',
+  voiceProvider: config.ttsProvider as 'openai' | 'elevenlabs' | 'deepseek',
   voice: config.openai.voice,
   realtimeModel: config.openai.realtimeModel,
   temperature: 0.7,
@@ -76,6 +79,7 @@ const settings: RuntimeSettings = {
   elevenlabsModelId: 'eleven_turbo_v2_5',
   elevenlabsStability: 0.5,
   elevenlabsSimilarityBoost: 0.75,
+  deepseekModel: config.deepseek.model || 'deepseek-chat',
   vadThreshold: 0.75,
   silenceDurationMs: 700,
   prefixPaddingMs: 300,
@@ -119,7 +123,7 @@ export function recordCall(callSid: string, to: string, leadName: string): void 
     timestamp: new Date().toISOString(),
     settings: {
       voiceProvider: s.voiceProvider,
-      voice: s.voiceProvider === 'openai' ? s.voice : `elevenlabs:${s.elevenlabsVoiceId}`,
+      voice: s.voiceProvider === 'openai' ? s.voice : s.voiceProvider === 'deepseek' ? `deepseek+el:${s.elevenlabsVoiceId}` : `elevenlabs:${s.elevenlabsVoiceId}`,
       realtimeModel: s.realtimeModel,
       temperature: s.temperature,
       vadThreshold: s.vadThreshold,

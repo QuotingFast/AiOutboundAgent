@@ -685,7 +685,7 @@ function updateVoiceAvailability() {
   const currentVoice = document.getElementById('voice').value;
   let needsSwitch = !allowed.includes(currentVoice);
 
-  document.querySelectorAll('.voice-card').forEach(c => {
+  document.querySelectorAll('#voiceGrid .voice-card').forEach(c => {
     const v = c.dataset.voice;
     if (allowed.includes(v)) {
       c.classList.remove('disabled');

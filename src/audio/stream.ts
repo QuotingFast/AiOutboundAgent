@@ -2,7 +2,7 @@ import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config';
 import { getSettings } from '../config/runtime';
-import { buildSystemPrompt, getRealtimeTools, LeadData, TransferConfig } from '../agent/prompts';
+import { buildSystemPrompt, buildInboundSystemPrompt, buildInboundGreetingText, getRealtimeTools, LeadData, TransferConfig } from '../agent/prompts';
 import { executeWarmTransfer } from '../twilio/transfer';
 import { endCall } from '../twilio/client';
 import { logger } from '../utils/logger';
@@ -38,6 +38,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let openaiWs: WebSocket | null = null;
   let transferConfig: TransferConfig | undefined;
   let leadData: LeadData = { first_name: 'there' };
+
+  // Call direction and caller info
+  let callDirection: 'outbound' | 'inbound' = 'outbound';
+  let callerNumber = '';
 
   // Voice provider determined at call start
   let useElevenLabs = false;
@@ -77,26 +81,40 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         case 'start': {
           streamSid = msg.start?.streamSid || '';
           callSid = msg.start?.callSid || '';
-          logger.info('stream', 'Stream started', { sessionId, streamSid, callSid });
 
-          const session = pendingSessions.get(callSid);
-          if (session) {
-            leadData = session.lead;
-            transferConfig = session.transfer;
-            pendingSessions.delete(callSid);
-            logger.info('stream', 'Session found', { sessionId, lead: leadData.first_name });
+          // Read custom parameters sent via TwiML <Parameter>
+          const customParams = msg.start?.customParameters || {};
+          callDirection = customParams.direction === 'inbound' ? 'inbound' : 'outbound';
+          callerNumber = customParams.callerNumber || '';
+
+          logger.info('stream', 'Stream started', { sessionId, streamSid, callSid, direction: callDirection, callerNumber });
+
+          if (callDirection === 'inbound') {
+            // Inbound call — no pending session expected, create lead from caller info
+            leadData = { first_name: 'there' };  // We don't know their name yet
+            logger.info('stream', 'Inbound call connected', { sessionId, callerNumber });
           } else {
-            logger.warn('stream', 'No session found, using default', {
-              sessionId,
-              callSid,
-              pendingKeys: [...pendingSessions.keys()],
-            });
+            // Outbound call — look up pending session
+            const session = pendingSessions.get(callSid);
+            if (session) {
+              leadData = session.lead;
+              transferConfig = session.transfer;
+              pendingSessions.delete(callSid);
+              logger.info('stream', 'Session found', { sessionId, lead: leadData.first_name });
+            } else {
+              logger.warn('stream', 'No session found, using default', {
+                sessionId,
+                callSid,
+                pendingKeys: [...pendingSessions.keys()],
+              });
+            }
           }
 
           // Initialize modules
           analytics = createCallAnalytics(callSid);
+          if (analytics) analytics.addTag(callDirection);
           conversation = new ConversationIntelligence(callSid);
-          registerSession(callSid, '', leadData.first_name);
+          registerSession(callSid, callerNumber, leadData.first_name);
 
           connectToOpenAIRealtime();
           break;
@@ -193,12 +211,19 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         .replace(/\{\{first_name\}\}/g, leadData.first_name)
         .replace(/\{\{state\}\}/g, leadData.state || 'unknown')
         .replace(/\{\{current_insurer\}\}/g, leadData.current_insurer || 'unknown');
+    } else if (callDirection === 'inbound') {
+      instructions = s.inboundPromptOverride
+        ? s.inboundPromptOverride
+            .replace(/\{\{caller_number\}\}/g, callerNumber)
+            .replace(/\{\{agent_name\}\}/g, s.agentName)
+            .replace(/\{\{company_name\}\}/g, s.companyName)
+        : buildInboundSystemPrompt(callerNumber, { agentName: s.agentName, companyName: s.companyName });
     } else {
       instructions = buildSystemPrompt(leadData, { agentName: s.agentName, companyName: s.companyName });
     }
 
     // Inject lead memory context if available
-    const leadContext = buildLeadContext('');  // phone not available in stream, memory works by phone
+    const leadContext = buildLeadContext(callerNumber);
     if (leadContext) {
       instructions += '\n\n' + leadContext;
     }
@@ -272,8 +297,17 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   function triggerGreeting(): void {
     if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
 
-    logger.info('stream', 'Triggering greeting', { sessionId, lead: leadData.first_name });
+    const s = getSettings();
+    logger.info('stream', 'Triggering greeting', { sessionId, direction: callDirection, lead: leadData.first_name });
     responseRequestedAt = Date.now();
+
+    let greetingInstruction: string;
+    if (callDirection === 'inbound') {
+      const greetingText = buildInboundGreetingText({ agentName: s.agentName, companyName: s.companyName });
+      greetingInstruction = `[An inbound call has just connected. Someone is calling your company. Answer the phone warmly. Start with: "${greetingText}"]`;
+    } else {
+      greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "Hey — is this ${leadData.first_name}?"]`;
+    }
 
     openaiWs.send(JSON.stringify({
       type: 'conversation.item.create',
@@ -282,7 +316,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         role: 'user',
         content: [{
           type: 'input_text',
-          text: `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "Hey — is this ${leadData.first_name}?"]`,
+          text: greetingInstruction,
         }],
       },
     }));
@@ -729,7 +763,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         const s = getSettings();
 
         // Record to lead memory
-        recordCallToLead('', {
+        recordCallToLead(callerNumber, {
           callSid,
           timestamp: new Date().toISOString(),
           durationMs: analyticsData.durationMs || 0,
@@ -744,7 +778,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         });
 
         // Run post-call workflow (async, don't block cleanup)
-        runPostCallWorkflow(analyticsData, '', leadData.first_name, s.agentName, s.companyName)
+        runPostCallWorkflow(analyticsData, callerNumber, leadData.first_name, s.agentName, s.companyName)
           .catch(err => logger.error('stream', 'Post-call workflow error', { error: String(err) }));
       }
 

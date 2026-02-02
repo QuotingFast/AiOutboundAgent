@@ -348,7 +348,7 @@ export function getDashboardHtml(): string {
 </head>
 <body>
 <header>
-  <h1><span>AI</span> Outbound Agent</h1>
+  <h1><span>AI</span> Voice Agent</h1>
   <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)">
     <span class="status-dot"></span> Connected
   </div>
@@ -746,6 +746,35 @@ export function getDashboardHtml(): string {
     </div>
   </div>
 
+  <!-- Inbound Calls -->
+  <div class="card">
+    <h2><span class="icon">&#128222;</span> Inbound Calls</h2>
+    <div style="margin-bottom:14px">
+      <label>Inbound Enabled</label>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="inboundEnabled" checked style="width:auto">
+        <span style="font-size:13px;color:var(--text2)">Accept incoming calls to your Twilio number</span>
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <label>Twilio Webhook URL</label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="text" id="inboundWebhookUrl" readonly style="font-family:monospace;font-size:12px;color:var(--accent);background:var(--bg)">
+        <button class="btn btn-secondary btn-sm" onclick="copyWebhookUrl()">Copy</button>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:6px">Set this as the Voice webhook URL in your Twilio Console under Phone Numbers.</div>
+    </div>
+    <div>
+      <label>Inbound System Prompt</label>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:8px">
+        Override the inbound prompt. Use <code style="background:var(--surface2);padding:2px 6px;border-radius:3px">{{caller_number}}</code>,
+        <code style="background:var(--surface2);padding:2px 6px;border-radius:3px">{{agent_name}}</code>,
+        <code style="background:var(--surface2);padding:2px 6px;border-radius:3px">{{company_name}}</code>. Leave empty for default.
+      </p>
+      <textarea id="inboundPromptOverride" placeholder="Leave empty for default inbound prompt..." style="min-height:120px"></textarea>
+    </div>
+  </div>
+
   <!-- Transfer Numbers -->
   <div class="card">
     <h2><span class="icon">&#128260;</span> Transfer Numbers</h2>
@@ -791,7 +820,7 @@ function switchTab(name) {
 var SETTINGS_FIELDS = [
   'voiceProvider','voice','realtimeModel','temperature','vadThreshold','silenceDurationMs',
   'prefixPaddingMs','bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
-  'agentName','companyName','systemPromptOverride','allstateNumber','nonAllstateNumber',
+  'agentName','companyName','systemPromptOverride','inboundPromptOverride','allstateNumber','nonAllstateNumber',
   'elevenlabsVoiceId','elevenlabsModelId','elevenlabsStability','elevenlabsSimilarityBoost'
 ];
 var NUMBER_FIELDS = [
@@ -855,6 +884,8 @@ async function loadSettings() {
     syncElVoiceSelection();
     if (s.defaultToNumber) document.getElementById('callTo').value = s.defaultToNumber;
     if (s.defaultFromNumber) document.getElementById('callFrom').value = s.defaultFromNumber;
+    document.getElementById('inboundEnabled').checked = s.inboundEnabled !== false;
+    document.getElementById('inboundWebhookUrl').value = location.origin + '/twilio/incoming';
     toast('Settings loaded', 'success');
   } catch (e) { toast('Failed to load settings', 'error'); }
 }
@@ -883,6 +914,7 @@ async function saveSettings() {
       if (NUMBER_FIELDS.includes(key)) val = parseFloat(val);
       body[key] = val;
     }
+    body.inboundEnabled = document.getElementById('inboundEnabled').checked;
     var ct = document.getElementById('callTo').value.trim();
     var cf = document.getElementById('callFrom').value.trim();
     if (ct) body.defaultToNumber = ct;
@@ -940,6 +972,11 @@ async function loadDefaultPrompt() {
   catch (e) { toast('Failed', 'error'); }
 }
 function clearPrompt() { document.getElementById('systemPromptOverride').value = ''; toast('Cleared', 'success'); }
+
+function copyWebhookUrl() {
+  var url = document.getElementById('inboundWebhookUrl').value;
+  navigator.clipboard.writeText(url).then(function() { toast('Copied!', 'success'); }).catch(function() { toast('Copy failed', 'error'); });
+}
 
 async function loadCallHistory() {
   try {

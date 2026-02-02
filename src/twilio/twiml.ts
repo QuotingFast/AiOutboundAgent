@@ -2,14 +2,21 @@ import { config } from '../config';
 
 // Build raw TwiML strings to avoid version-specific API issues with the Twilio helper lib
 
-export function buildMediaStreamTwiml(): string {
+export function buildMediaStreamTwiml(direction: 'outbound' | 'inbound' = 'outbound', callerNumber?: string): string {
   const wsUrl = config.baseUrl.replace(/^http/, 'ws') + '/twilio/stream';
+
+  const params = [
+    `      <Parameter name="direction" value="${direction}" />`,
+  ];
+  if (callerNumber) {
+    params.push(`      <Parameter name="callerNumber" value="${escapeXml(callerNumber)}" />`);
+  }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
     <Stream url="${wsUrl}">
-      <Parameter name="direction" value="outbound" />
+${params.join('\n')}
     </Stream>
   </Connect>
 </Response>`;

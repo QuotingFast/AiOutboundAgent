@@ -32,6 +32,12 @@ export interface RuntimeSettings {
   // Full system prompt (empty = use default template)
   systemPromptOverride: string;
 
+  // Inbound call prompt (empty = use default inbound template)
+  inboundPromptOverride: string;
+
+  // Whether inbound calls are enabled
+  inboundEnabled: boolean;
+
   // Transfer numbers
   allstateNumber: string;
   nonAllstateNumber: string;
@@ -79,6 +85,8 @@ const settings: RuntimeSettings = {
   agentName: 'Sarah',
   companyName: 'QuotingFast',
   systemPromptOverride: '',
+  inboundPromptOverride: '',
+  inboundEnabled: true,
   allstateNumber: '',
   nonAllstateNumber: '',
   defaultFromNumber: config.twilio.fromNumber,

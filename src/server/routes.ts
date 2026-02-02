@@ -128,7 +128,40 @@ router.post('/twilio/voice', (req: Request, res: Response) => {
     registerPendingSession(callSid, lead, transfer);
   }
 
-  const twiml = buildMediaStreamTwiml();
+  const twiml = buildMediaStreamTwiml('outbound');
+  res.type('text/xml');
+  res.send(twiml);
+});
+
+/**
+ * POST /twilio/incoming
+ * Twilio webhook for incoming calls to the Twilio number.
+ * Configure this URL in Twilio Console > Phone Numbers > Voice webhook.
+ */
+router.post('/twilio/incoming', (req: Request, res: Response) => {
+  const callSid = req.body?.CallSid || 'unknown';
+  const callerNumber = req.body?.From || 'unknown';
+  const calledNumber = req.body?.To || 'unknown';
+
+  logger.info('routes', 'Incoming call received', { callSid, from: callerNumber, to: calledNumber });
+
+  // Check if inbound is enabled
+  const s = getSettings();
+  if (!s.inboundEnabled) {
+    logger.info('routes', 'Inbound calls disabled, rejecting', { callSid });
+    res.type('text/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Matthew">We're sorry, we are not accepting calls at this time. Please try again later.</Say>
+  <Hangup/>
+</Response>`);
+    return;
+  }
+
+  // Record in call history
+  recordCall(callSid, callerNumber, `Inbound: ${callerNumber}`);
+
+  const twiml = buildMediaStreamTwiml('inbound', callerNumber);
   res.type('text/xml');
   res.send(twiml);
 });

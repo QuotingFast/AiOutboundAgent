@@ -329,11 +329,16 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   function connectElevenLabs(): void {
     const s = getSettings();
     if (!config.elevenlabs.apiKey || !s.elevenlabsVoiceId) {
-      logger.error('stream', 'ElevenLabs API key or voice ID not configured', { sessionId });
+      logger.error('stream', 'ElevenLabs MISSING config', {
+        sessionId,
+        hasApiKey: !!config.elevenlabs.apiKey,
+        voiceId: s.elevenlabsVoiceId || '(empty)',
+      });
       return;
     }
 
     const voiceId = s.elevenlabsVoiceId;
+    logger.info('stream', 'ElevenLabs connecting', { sessionId, voiceId });
     const modelId = s.elevenlabsModelId || 'eleven_turbo_v2_5';
     const url = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=${modelId}&output_format=ulaw_8000`;
 
@@ -421,16 +426,30 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         break;
 
       case 'session.updated':
-        logger.info('stream', 'Realtime session configured', { sessionId });
+        logger.info('stream', 'Realtime session configured', { sessionId, useElevenLabs });
         if (useElevenLabs) {
           connectElevenLabs();
+          // Wait for ElevenLabs to connect before triggering greeting
+          const waitForEl = setInterval(() => {
+            if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
+              clearInterval(waitForEl);
+              triggerGreeting();
+            }
+          }, 100);
+          // Safety timeout — don't wait forever
+          setTimeout(() => { clearInterval(waitForEl); triggerGreeting(); }, 3000);
+        } else {
+          setTimeout(() => triggerGreeting(), 300);
         }
-        setTimeout(() => triggerGreeting(), 300);
         break;
 
-      // --- OpenAI voice output (only fires in OpenAI mode) ---
+      // --- OpenAI voice output (only when NOT using ElevenLabs) ---
       case 'response.audio.delta':
       case 'response.output_audio.delta':
+        if (useElevenLabs) {
+          // ElevenLabs mode — ignore OpenAI audio, text path handles TTS
+          break;
+        }
         responseIsPlaying = true;
         lastAudioSentAt = Date.now();
         if (event.delta) {
@@ -452,7 +471,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       case 'response.audio.done':
       case 'response.output_audio.done':
-        responseIsPlaying = false;
+        if (!useElevenLabs) {
+          responseIsPlaying = false;
+        }
         break;
 
       // --- Text output (for ElevenLabs mode + transcript) ---

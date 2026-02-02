@@ -6,12 +6,29 @@ import { buildSystemPrompt, getRealtimeTools, LeadData, TransferConfig } from '.
 import { executeWarmTransfer } from '../twilio/transfer';
 import { endCall } from '../twilio/client';
 import { logger } from '../utils/logger';
+import { createCallAnalytics, finalizeCallAnalytics, CallAnalytics } from '../analytics';
+import { ConversationIntelligence } from '../conversation/intelligence';
+import { registerSession, removeSession, updateSessionStatus, onSessionFreed } from '../performance';
+import { buildLeadContext, recordCallToLead } from '../memory';
+import { runPostCallWorkflow } from '../workflows';
+import { redactPII } from '../security';
 
 // Map of callSid -> session data for passing lead/transfer info
 const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig }>();
 
+// Active live transcript listeners (callSid -> callback)
+const liveTranscriptListeners = new Map<string, (entry: { role: string; text: string; timestamp: number }) => void>();
+
 export function registerPendingSession(callSid: string, lead: LeadData, transfer?: TransferConfig): void {
   pendingSessions.set(callSid, { lead, transfer });
+}
+
+export function registerTranscriptListener(callSid: string, callback: (entry: { role: string; text: string; timestamp: number }) => void): void {
+  liveTranscriptListeners.set(callSid, callback);
+}
+
+export function removeTranscriptListener(callSid: string): void {
+  liveTranscriptListeners.delete(callSid);
 }
 
 export function handleMediaStream(twilioWs: WebSocket): void {
@@ -26,12 +43,23 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let useElevenLabs = false;
   let elevenLabsWs: WebSocket | null = null;
 
-  // Barge-in state (thresholds read from runtime settings at call start)
+  // Barge-in state
   let bargeInDebounceMs = 250;
   let echoSuppressionMs = 100;
   let bargeInTimer: ReturnType<typeof setTimeout> | null = null;
   let responseIsPlaying = false;
   let lastAudioSentAt = 0;
+
+  // Module instances (created when call starts)
+  let analytics: CallAnalytics | null = null;
+  let conversation: ConversationIntelligence | null = null;
+
+  // Latency tracking
+  let responseRequestedAt = 0;
+  let firstAudioAt = 0;
+  let audioChunkCount = 0;
+  let currentAgentText = '';
+  let currentElevenLabsText = '';
 
   logger.info('stream', 'Twilio WS opened', { sessionId });
 
@@ -65,17 +93,23 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             });
           }
 
+          // Initialize modules
+          analytics = createCallAnalytics(callSid);
+          conversation = new ConversationIntelligence(callSid);
+          registerSession(callSid, '', leadData.first_name);
+
           connectToOpenAIRealtime();
           break;
         }
 
         case 'media':
-          // Forward raw g711_ulaw audio to OpenAI Realtime (already base64)
           if (msg.media?.payload && openaiWs?.readyState === WebSocket.OPEN) {
             openaiWs.send(JSON.stringify({
               type: 'input_audio_buffer.append',
               audio: msg.media.payload,
             }));
+            // Track audio input for cost estimation (~20ms per chunk at 8kHz ulaw)
+            if (analytics) analytics.addAudioInputSeconds(0.02);
           }
           break;
 
@@ -163,6 +197,12 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       instructions = buildSystemPrompt(leadData, { agentName: s.agentName, companyName: s.companyName });
     }
 
+    // Inject lead memory context if available
+    const leadContext = buildLeadContext('');  // phone not available in stream, memory works by phone
+    if (leadContext) {
+      instructions += '\n\n' + leadContext;
+    }
+
     if (!transferConfig) {
       if (s.allstateNumber || s.nonAllstateNumber) {
         transferConfig = {
@@ -183,7 +223,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     });
 
     if (useElevenLabs) {
-      // ElevenLabs mode: text-only output from OpenAI, audio routed through ElevenLabs
       openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
@@ -205,7 +244,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         },
       }));
     } else {
-      // OpenAI mode: full speech-to-speech
       openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
@@ -235,6 +273,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
 
     logger.info('stream', 'Triggering greeting', { sessionId, lead: leadData.first_name });
+    responseRequestedAt = Date.now();
 
     openaiWs.send(JSON.stringify({
       type: 'conversation.item.create',
@@ -270,7 +309,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
     elevenLabsWs.on('open', () => {
       logger.info('stream', 'ElevenLabs WS connected', { sessionId });
-      // Send initial config (BOS - beginning of stream)
       elevenLabsWs!.send(JSON.stringify({
         text: ' ',
         voice_settings: {
@@ -285,13 +323,24 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.audio) {
-          // ElevenLabs sends base64-encoded ulaw_8000 audio
           responseIsPlaying = true;
           lastAudioSentAt = Date.now();
           sendAudioToTwilio(msg.audio);
+
+          // Track first audio latency (TTS latency)
+          if (firstAudioAt === 0) {
+            firstAudioAt = Date.now();
+            if (analytics && responseRequestedAt > 0) {
+              analytics.recordTTSLatency(firstAudioAt - responseRequestedAt);
+            }
+          }
+          audioChunkCount++;
+          if (analytics) analytics.addAudioOutputSeconds(0.02);
         }
         if (msg.isFinal) {
           responseIsPlaying = false;
+          if (analytics) analytics.agentFinishedSpeaking(currentElevenLabsText);
+          currentElevenLabsText = '';
         }
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
@@ -312,16 +361,16 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   function sendTextToElevenLabs(text: string): void {
     if (!elevenLabsWs || elevenLabsWs.readyState !== WebSocket.OPEN) return;
     elevenLabsWs.send(JSON.stringify({ text }));
+    currentElevenLabsText += text;
+    if (analytics) analytics.addElevenLabsCharacters(text.length);
   }
 
   function flushElevenLabs(): void {
     if (!elevenLabsWs || elevenLabsWs.readyState !== WebSocket.OPEN) return;
-    // Send empty text to signal EOS (end of stream) and flush remaining audio
     elevenLabsWs.send(JSON.stringify({ text: '' }));
   }
 
   function resetElevenLabs(): void {
-    // Close current connection and open a fresh one for the next utterance
     if (elevenLabsWs) {
       elevenLabsWs.close();
       elevenLabsWs = null;
@@ -339,7 +388,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       case 'session.updated':
         logger.info('stream', 'Realtime session configured', { sessionId });
-        // Connect ElevenLabs if in that mode
         if (useElevenLabs) {
           connectElevenLabs();
         }
@@ -353,6 +401,18 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         lastAudioSentAt = Date.now();
         if (event.delta) {
           sendAudioToTwilio(event.delta);
+
+          // Track first audio latency
+          if (firstAudioAt === 0) {
+            firstAudioAt = Date.now();
+            if (analytics && responseRequestedAt > 0) {
+              const totalLatency = firstAudioAt - responseRequestedAt;
+              analytics.recordLLMLatency(totalLatency);
+              analytics.agentStartedSpeaking();
+            }
+          }
+          audioChunkCount++;
+          if (analytics) analytics.addAudioOutputSeconds(0.02);
         }
         break;
 
@@ -361,27 +421,42 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         responseIsPlaying = false;
         break;
 
-      // --- Text output (only fires in ElevenLabs mode) ---
+      // --- Text output (for ElevenLabs mode + transcript) ---
       case 'response.text.delta':
         if (useElevenLabs && event.delta) {
           responseIsPlaying = true;
           sendTextToElevenLabs(event.delta);
+
+          // Track LLM latency (time to first text token)
+          if (firstAudioAt === 0 && analytics && responseRequestedAt > 0) {
+            firstAudioAt = Date.now(); // reuse flag
+            analytics.recordLLMLatency(Date.now() - responseRequestedAt);
+            analytics.agentStartedSpeaking();
+          }
         }
         break;
 
       case 'response.text.done':
         if (useElevenLabs) {
           flushElevenLabs();
-          logger.info('stream', 'Agent said', { sessionId, transcript: event.text });
+          const agentText = event.text || currentElevenLabsText;
+          logger.info('stream', 'Agent said', { sessionId, transcript: redactPII(agentText) });
+
+          // Process agent turn
+          if (conversation) conversation.processAgentTurn(agentText);
+          if (analytics) analytics.addTranscriptEntry('agent', agentText);
+          emitTranscript('agent', agentText);
         }
         break;
 
-      // --- Barge-in handling (works for both modes) ---
+      // --- Barge-in handling ---
       case 'input_audio_buffer.speech_started':
+        if (analytics) analytics.userStartedSpeaking();
+
         if (!responseIsPlaying) break;
 
         if (Date.now() - lastAudioSentAt < echoSuppressionMs) {
-          logger.debug('stream', 'Speech detected within echo window — suppressing', { sessionId });
+          logger.debug('stream', 'Speech within echo window — suppressing', { sessionId });
           break;
         }
 
@@ -391,10 +466,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           bargeInTimer = null;
           logger.info('stream', 'Barge-in confirmed — canceling response', { sessionId });
 
+          if (analytics) analytics.recordInterruption();
+
           if (openaiWs?.readyState === WebSocket.OPEN) {
             openaiWs.send(JSON.stringify({ type: 'response.cancel' }));
           }
-          // In ElevenLabs mode, reset the WS to stop audio generation
           if (useElevenLabs) {
             resetElevenLabs();
           }
@@ -407,18 +483,23 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         if (bargeInTimer) {
           clearTimeout(bargeInTimer);
           bargeInTimer = null;
-          logger.debug('stream', 'Speech stopped before debounce — ignored as echo/noise', { sessionId });
+          logger.debug('stream', 'Speech stopped before debounce — ignored', { sessionId });
         }
+        responseRequestedAt = Date.now(); // Mark when user stopped = when we expect response
+        firstAudioAt = 0;
+        audioChunkCount = 0;
         break;
 
       case 'response.done':
-        // In ElevenLabs mode, reset the WS for the next turn
         if (useElevenLabs && elevenLabsWs) {
-          // Give ElevenLabs time to finish flushing audio, then reset for next turn
           setTimeout(() => resetElevenLabs(), 500);
         }
         if (!useElevenLabs) {
           responseIsPlaying = false;
+          if (analytics && currentAgentText) {
+            analytics.agentFinishedSpeaking(currentAgentText);
+          }
+          currentAgentText = '';
         }
         if (bargeInTimer) {
           clearTimeout(bargeInTimer);
@@ -431,18 +512,52 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             }
           }
         }
+        // Reset latency tracking for next turn
+        firstAudioAt = 0;
+        audioChunkCount = 0;
         break;
 
       case 'response.audio_transcript.done':
       case 'response.output_audio_transcript.done':
         if (!useElevenLabs) {
-          logger.info('stream', 'Agent said', { sessionId, transcript: event.transcript });
+          const agentText = event.transcript || '';
+          currentAgentText = agentText;
+          logger.info('stream', 'Agent said', { sessionId, transcript: redactPII(agentText) });
+
+          if (conversation) conversation.processAgentTurn(agentText);
+          if (analytics) analytics.addTranscriptEntry('agent', agentText);
+          emitTranscript('agent', agentText);
         }
         break;
 
-      case 'conversation.item.input_audio_transcription.completed':
-        logger.info('stream', 'User said', { sessionId, transcript: event.transcript });
+      case 'conversation.item.input_audio_transcription.completed': {
+        const userText = event.transcript || '';
+        logger.info('stream', 'User said', { sessionId, transcript: redactPII(userText) });
+
+        // Process through conversation intelligence
+        if (conversation && userText) {
+          const result = conversation.processUserTurn(userText);
+          if (analytics) {
+            analytics.userFinishedSpeaking(userText);
+            analytics.recordSentiment(result.sentiment, 0.7);
+
+            // Add tags from conversation flags
+            for (const flag of conversation.getFlags()) {
+              analytics.addTag(flag);
+            }
+          }
+
+          // Log warnings from conversation intelligence
+          for (const warning of result.warnings) {
+            logger.warn('stream', 'Conversation warning', { sessionId, warning });
+          }
+        } else if (analytics) {
+          analytics.userFinishedSpeaking(userText);
+        }
+
+        emitTranscript('user', userText);
         break;
+      }
 
       case 'error':
         logger.error('stream', 'OpenAI Realtime error', {
@@ -490,12 +605,19 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       sendFunctionOutput(call_id, { status: 'transferring', target: targetNumber ? 'found' : 'not_configured' });
 
+      if (analytics) {
+        analytics.setOutcome('transferred', `Route: ${route}`);
+        analytics.setTransferRoute(route);
+      }
+      if (callSid) updateSessionStatus(callSid, 'transferring');
+
       if (targetNumber) {
         await new Promise(r => setTimeout(r, 1500));
         logger.info('stream', 'Executing warm transfer', { sessionId, route, target: targetNumber });
         const success = await executeWarmTransfer(callSid, targetNumber);
         if (!success) {
           logger.error('stream', 'Transfer failed', { sessionId, route });
+          if (analytics) analytics.setOutcome('ended', 'Transfer failed');
           sendUserMessage('[System: The transfer failed. The line did not connect. Let the caller know and ask if they want to try again.]');
         }
       } else {
@@ -505,6 +627,15 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     } else if (name === 'end_call') {
       logger.info('stream', 'Call ending via function', { sessionId, reason: args.reason });
       sendFunctionOutput(call_id, { status: 'ending' });
+
+      if (analytics) analytics.setOutcome('ended', args.reason);
+      if (callSid) updateSessionStatus(callSid, 'ending');
+
+      // Check if user requested DNC
+      const reason = (args.reason || '').toLowerCase();
+      if (reason.includes('not interested') || reason.includes('remove') || reason.includes('stop calling')) {
+        if (analytics) analytics.addTag('dnc_request');
+      }
 
       await new Promise(r => setTimeout(r, 3000));
       try {
@@ -569,6 +700,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     logger.debug('stream', 'Sent clear to Twilio', { sessionId });
   }
 
+  function emitTranscript(role: string, text: string): void {
+    const listener = liveTranscriptListeners.get(callSid);
+    if (listener) {
+      listener({ role, text, timestamp: Date.now() });
+    }
+  }
+
   function cleanup(): void {
     if (openaiWs) {
       openaiWs.close();
@@ -577,6 +715,42 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     if (elevenLabsWs) {
       elevenLabsWs.close();
       elevenLabsWs = null;
+    }
+
+    // Finalize analytics and run post-call workflows
+    if (callSid) {
+      if (analytics && analytics.getData().outcome === 'in_progress') {
+        analytics.setOutcome('dropped', 'Connection closed without explicit end');
+      }
+
+      const analyticsData = finalizeCallAnalytics(callSid);
+
+      if (analyticsData) {
+        const s = getSettings();
+
+        // Record to lead memory
+        recordCallToLead('', {
+          callSid,
+          timestamp: new Date().toISOString(),
+          durationMs: analyticsData.durationMs || 0,
+          outcome: analyticsData.outcome,
+          score: analyticsData.score || 0,
+          agentName: s.agentName,
+          voiceProvider: s.voiceProvider,
+          keyMoments: analyticsData.tags,
+          sentimentOverall: analyticsData.sentiment.length > 0
+            ? analyticsData.sentiment[analyticsData.sentiment.length - 1].sentiment
+            : 'neutral',
+        });
+
+        // Run post-call workflow (async, don't block cleanup)
+        runPostCallWorkflow(analyticsData, '', leadData.first_name, s.agentName, s.companyName)
+          .catch(err => logger.error('stream', 'Post-call workflow error', { error: String(err) }));
+      }
+
+      removeSession(callSid);
+      removeTranscriptListener(callSid);
+      onSessionFreed();
     }
   }
 }

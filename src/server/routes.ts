@@ -8,11 +8,56 @@ import { getDashboardHtml } from './dashboard';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
+// Module imports
+import { getAnalyticsHistory, getAnalyticsSummary, getActiveAnalytics } from '../analytics';
+import {
+  addToDnc, removeFromDnc, getDncList, getDncCount,
+  runPreCallComplianceCheck, checkCallTimeAllowed,
+  recordConsent, getConsent,
+  getAuditLog, getAuditLogCount,
+  requiresRecordingDisclosure,
+} from '../compliance';
+import {
+  getActiveSessions, getActiveSessionCount, getQueue, getQueueSize,
+  getSystemHealth, setMaxConcurrency, getMaxConcurrency,
+} from '../performance';
+import {
+  createABTest, getABTest, getAllABTests, deleteABTest,
+  toggleABTest, recordABResult,
+} from '../testing/ab';
+import {
+  getAllLeads, getLeadMemory, createOrUpdateLead,
+  setLeadDisposition, addLeadNote, scheduleCallback,
+  getLeadCount, getLeadsByDisposition, getLeadsForCallback,
+} from '../memory';
+import {
+  savePromptVersion, getActivePrompt, getPromptVersions,
+  rollbackPrompt, getAllPromptNames,
+  setFeatureFlag, getFeatureFlags, deleteFeatureFlag, isFeatureEnabled,
+  getHotSwapConfig, updateHotSwapConfig, getGuardrails,
+  setEnvironment, getEnvironment,
+} from '../prompts/manager';
+import {
+  redactPII, containsPII, detectPIITypes,
+  checkRateLimit,
+} from '../security';
+import {
+  registerWebhook, removeWebhook, getWebhooks,
+  getWorkflowConfig, updateWorkflowConfig,
+  scoreCall,
+} from '../workflows';
+import {
+  getProviders, registerProvider, removeProvider,
+  getProviderHealth, getRoutingStrategy, setRoutingStrategy,
+} from '../routing';
+
 const router = Router();
 
 // In-memory cache for voice preview audio (voice -> mp3 Buffer)
 const voicePreviewCache = new Map<string, Buffer>();
 const PREVIEW_TEXT = "Hey there! This is a quick preview of how I sound. Pretty natural, right?";
+
+// ── Call Endpoints ──────────────────────────────────────────────────
 
 /**
  * POST /call/start
@@ -31,6 +76,21 @@ router.post('/call/start', async (req: Request, res: Response) => {
       return;
     }
 
+    // Pre-call compliance check
+    const compliance = runPreCallComplianceCheck(to, lead.state);
+    if (!compliance.allowed) {
+      const reasons = [
+        !compliance.checks.dnc.passed ? compliance.checks.dnc.reason : null,
+        !compliance.checks.time.passed ? compliance.checks.time.reason : null,
+      ].filter(Boolean);
+      res.status(403).json({
+        error: 'Compliance check failed',
+        reasons,
+        warnings: compliance.warnings,
+      });
+      return;
+    }
+
     const result = await startOutboundCall({ to, from, lead });
 
     // Register session data so the WebSocket handler can pick it up when the call connects
@@ -44,6 +104,7 @@ router.post('/call/start', async (req: Request, res: Response) => {
     res.json({
       call_sid: result.callSid,
       status: result.status,
+      compliance_warnings: compliance.warnings,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -55,7 +116,6 @@ router.post('/call/start', async (req: Request, res: Response) => {
 /**
  * POST /twilio/voice
  * Twilio webhook when the outbound call is answered.
- * Returns TwiML that starts a Media Stream to our WebSocket.
  */
 router.post('/twilio/voice', (req: Request, res: Response) => {
   const callSid = req.body?.CallSid || 'unknown';
@@ -64,7 +124,6 @@ router.post('/twilio/voice', (req: Request, res: Response) => {
 
   logger.info('routes', 'Voice webhook hit', { callSid });
 
-  // If we got lead data via query params, register the session
   if (lead && callSid !== 'unknown') {
     registerPendingSession(callSid, lead, transfer);
   }
@@ -76,7 +135,6 @@ router.post('/twilio/voice', (req: Request, res: Response) => {
 
 /**
  * POST /twilio/transfer
- * TwiML endpoint for warm transfer. Called when we update the call URL.
  */
 router.post('/twilio/transfer', (req: Request, res: Response) => {
   const target = req.query.target as string;
@@ -88,7 +146,6 @@ router.post('/twilio/transfer', (req: Request, res: Response) => {
   }
 
   logger.info('routes', 'Transfer TwiML requested', { target });
-
   const twiml = buildTransferTwiml(target, phrase);
   res.type('text/xml');
   res.send(twiml);
@@ -96,7 +153,6 @@ router.post('/twilio/transfer', (req: Request, res: Response) => {
 
 /**
  * POST /twilio/status
- * Status callback for call events.
  */
 router.post('/twilio/status', (req: Request, res: Response) => {
   const { CallSid, CallStatus } = req.body || {};
@@ -104,63 +160,39 @@ router.post('/twilio/status', (req: Request, res: Response) => {
   res.sendStatus(200);
 });
 
-/**
- * GET /health
- * Health check endpoint.
- */
+// ── General Endpoints ───────────────────────────────────────────────
+
 router.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const health = getSystemHealth();
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), system: health });
 });
 
-/**
- * GET /dashboard
- * Web dashboard for managing settings and making test calls.
- */
 router.get('/dashboard', (_req: Request, res: Response) => {
   res.type('text/html');
   res.send(getDashboardHtml());
 });
 
-/**
- * GET /api/settings
- * Returns current runtime settings.
- */
 router.get('/api/settings', (_req: Request, res: Response) => {
   res.json(getSettings());
 });
 
-/**
- * PUT /api/settings
- * Update runtime settings. Partial updates supported.
- */
 router.put('/api/settings', (req: Request, res: Response) => {
   const updated = updateSettings(req.body);
   logger.info('routes', 'Settings updated', { keys: Object.keys(req.body) });
   res.json(updated);
 });
 
-/**
- * GET /api/calls
- * Returns recent call history with the settings used for each call.
- */
 router.get('/api/calls', (_req: Request, res: Response) => {
   res.json(getCallHistory());
 });
 
-/**
- * GET /api/default-prompt
- * Returns the default system prompt template for reference.
- */
 router.get('/api/default-prompt', (_req: Request, res: Response) => {
   const prompt = buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}' });
   res.json({ prompt });
 });
 
-/**
- * GET /api/voice-preview/:voice
- * Returns an MP3 audio preview of the given voice using OpenAI TTS.
- * Results are cached in memory so each voice is only generated once.
- */
+// ── Voice Preview Endpoints ─────────────────────────────────────────
+
 router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
   const voice = req.params.voice;
   const validVoices = ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'];
@@ -170,14 +202,12 @@ router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
   }
 
   try {
-    // Check cache first
     if (voicePreviewCache.has(voice)) {
       res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'public, max-age=86400' });
       res.send(voicePreviewCache.get(voice));
       return;
     }
 
-    // Generate via OpenAI TTS API
     const ttsRes = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: {
@@ -201,8 +231,6 @@ router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
 
     const arrayBuf = await ttsRes.arrayBuffer();
     const buffer = Buffer.from(arrayBuf);
-
-    // Cache for future requests
     voicePreviewCache.set(voice, buffer);
     logger.info('routes', 'Voice preview generated and cached', { voice, bytes: buffer.length });
 
@@ -215,11 +243,6 @@ router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /api/elevenlabs-voice-preview/:voiceId
- * Returns an MP3 audio preview of the given ElevenLabs voice.
- * Results are cached in memory so each voice is only generated once.
- */
 const elPreviewCache = new Map<string, Buffer>();
 const EL_PREVIEW_TEXT = "Hey there! This is a quick preview of how I sound. Pretty natural, right?";
 
@@ -266,7 +289,6 @@ router.get('/api/elevenlabs-voice-preview/:voiceId', async (req: Request, res: R
 
     const arrayBuf = await ttsRes.arrayBuffer();
     const buffer = Buffer.from(arrayBuf);
-
     elPreviewCache.set(voiceId, buffer);
     logger.info('routes', 'ElevenLabs preview generated and cached', { voiceId, bytes: buffer.length });
 
@@ -277,6 +299,440 @@ router.get('/api/elevenlabs-voice-preview/:voiceId', async (req: Request, res: R
     logger.error('routes', 'ElevenLabs preview error', { voiceId, error: msg });
     res.status(500).json({ error: msg });
   }
+});
+
+// ── Analytics Endpoints ─────────────────────────────────────────────
+
+router.get('/api/analytics/history', (_req: Request, res: Response) => {
+  res.json(getAnalyticsHistory());
+});
+
+router.get('/api/analytics/summary', (_req: Request, res: Response) => {
+  res.json(getAnalyticsSummary());
+});
+
+router.get('/api/analytics/:callSid', (req: Request, res: Response) => {
+  const history = getAnalyticsHistory();
+  const found = history.find(a => a.callSid === req.params.callSid);
+  if (!found) {
+    // Check active calls
+    const active = getActiveAnalytics(req.params.callSid);
+    if (active) {
+      res.json(active.getData());
+      return;
+    }
+    res.status(404).json({ error: 'Call not found' });
+    return;
+  }
+  res.json(found);
+});
+
+// ── Compliance Endpoints ────────────────────────────────────────────
+
+router.get('/api/compliance/dnc', (_req: Request, res: Response) => {
+  res.json({ list: getDncList(), count: getDncCount() });
+});
+
+router.post('/api/compliance/dnc', (req: Request, res: Response) => {
+  const { phone } = req.body;
+  if (!phone) {
+    res.status(400).json({ error: 'Missing phone' });
+    return;
+  }
+  addToDnc(phone);
+  res.json({ success: true, count: getDncCount() });
+});
+
+router.delete('/api/compliance/dnc/:phone', (req: Request, res: Response) => {
+  removeFromDnc(req.params.phone);
+  res.json({ success: true, count: getDncCount() });
+});
+
+router.post('/api/compliance/check', (req: Request, res: Response) => {
+  const { phone, state } = req.body;
+  if (!phone) {
+    res.status(400).json({ error: 'Missing phone' });
+    return;
+  }
+  const result = runPreCallComplianceCheck(phone, state);
+  res.json(result);
+});
+
+router.get('/api/compliance/time-check', (req: Request, res: Response) => {
+  const state = req.query.state as string;
+  res.json(checkCallTimeAllowed(state));
+});
+
+router.post('/api/compliance/consent', (req: Request, res: Response) => {
+  const { phone, consentType, source, leadId, trustedFormUrl, jornayaId, ip } = req.body;
+  if (!phone || !consentType || !source) {
+    res.status(400).json({ error: 'Missing required fields: phone, consentType, source' });
+    return;
+  }
+  recordConsent({
+    phone, consentType, source,
+    timestamp: new Date().toISOString(),
+    leadId, trustedFormUrl, jornayaId, ip,
+  });
+  res.json({ success: true });
+});
+
+router.get('/api/compliance/consent/:phone', (req: Request, res: Response) => {
+  const consent = getConsent(req.params.phone);
+  res.json(consent || { found: false });
+});
+
+router.get('/api/compliance/recording-disclosure', (req: Request, res: Response) => {
+  const state = req.query.state as string;
+  res.json({
+    required: requiresRecordingDisclosure(state),
+    state: state || 'unknown',
+  });
+});
+
+router.get('/api/compliance/audit-log', (req: Request, res: Response) => {
+  const limit = parseInt(req.query.limit as string) || 50;
+  res.json({ entries: getAuditLog(limit), total: getAuditLogCount() });
+});
+
+// ── Performance Endpoints ───────────────────────────────────────────
+
+router.get('/api/performance/sessions', (_req: Request, res: Response) => {
+  res.json({
+    sessions: getActiveSessions(),
+    count: getActiveSessionCount(),
+    max: getMaxConcurrency(),
+  });
+});
+
+router.get('/api/performance/queue', (_req: Request, res: Response) => {
+  res.json({ queue: getQueue(), size: getQueueSize() });
+});
+
+router.get('/api/performance/health', (_req: Request, res: Response) => {
+  res.json(getSystemHealth());
+});
+
+router.put('/api/performance/concurrency', (req: Request, res: Response) => {
+  const { max } = req.body;
+  if (typeof max !== 'number' || max < 1) {
+    res.status(400).json({ error: 'max must be a positive number' });
+    return;
+  }
+  setMaxConcurrency(max);
+  res.json({ max: getMaxConcurrency() });
+});
+
+// ── A/B Testing Endpoints ───────────────────────────────────────────
+
+router.get('/api/ab-tests', (_req: Request, res: Response) => {
+  res.json(getAllABTests());
+});
+
+router.post('/api/ab-tests', (req: Request, res: Response) => {
+  try {
+    const { id, name, description, active, type, variants } = req.body;
+    if (!id || !name || !variants?.length) {
+      res.status(400).json({ error: 'Missing required fields: id, name, variants' });
+      return;
+    }
+    const test = createABTest({
+      id, name, description: description || '', active: active ?? true,
+      type: type || 'settings', variants,
+    });
+    res.json(test);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg });
+  }
+});
+
+router.get('/api/ab-tests/:id', (req: Request, res: Response) => {
+  const test = getABTest(req.params.id);
+  if (!test) {
+    res.status(404).json({ error: 'Test not found' });
+    return;
+  }
+  res.json(test);
+});
+
+router.delete('/api/ab-tests/:id', (req: Request, res: Response) => {
+  const deleted = deleteABTest(req.params.id);
+  res.json({ success: deleted });
+});
+
+router.put('/api/ab-tests/:id/toggle', (req: Request, res: Response) => {
+  const { active } = req.body;
+  const test = toggleABTest(req.params.id, active ?? true);
+  if (!test) {
+    res.status(404).json({ error: 'Test not found' });
+    return;
+  }
+  res.json(test);
+});
+
+router.post('/api/ab-tests/:id/record', (req: Request, res: Response) => {
+  const { variantId, transferred, durationMs, score, costUsd } = req.body;
+  if (!variantId) {
+    res.status(400).json({ error: 'Missing variantId' });
+    return;
+  }
+  recordABResult(req.params.id, variantId, {
+    transferred: transferred ?? false,
+    durationMs: durationMs ?? 0,
+    score: score ?? 0,
+    costUsd: costUsd ?? 0,
+  });
+  res.json({ success: true });
+});
+
+// ── Lead Memory Endpoints ───────────────────────────────────────────
+
+router.get('/api/leads', (req: Request, res: Response) => {
+  const disposition = req.query.disposition as string;
+  if (disposition) {
+    res.json(getLeadsByDisposition(disposition as any));
+    return;
+  }
+  res.json({ leads: getAllLeads(), count: getLeadCount() });
+});
+
+router.get('/api/leads/callbacks', (_req: Request, res: Response) => {
+  res.json(getLeadsForCallback());
+});
+
+router.get('/api/leads/:phone', (req: Request, res: Response) => {
+  const lead = getLeadMemory(req.params.phone);
+  if (!lead) {
+    res.status(404).json({ error: 'Lead not found' });
+    return;
+  }
+  res.json(lead);
+});
+
+router.post('/api/leads', (req: Request, res: Response) => {
+  const { phone, name, state, currentInsurer, tags, notes, customFields } = req.body;
+  if (!phone) {
+    res.status(400).json({ error: 'Missing phone' });
+    return;
+  }
+  const lead = createOrUpdateLead(phone, { name, state, currentInsurer, tags, notes, customFields });
+  res.json(lead);
+});
+
+router.put('/api/leads/:phone/disposition', (req: Request, res: Response) => {
+  const { disposition } = req.body;
+  if (!disposition) {
+    res.status(400).json({ error: 'Missing disposition' });
+    return;
+  }
+  setLeadDisposition(req.params.phone, disposition);
+  res.json({ success: true });
+});
+
+router.post('/api/leads/:phone/note', (req: Request, res: Response) => {
+  const { note } = req.body;
+  if (!note) {
+    res.status(400).json({ error: 'Missing note' });
+    return;
+  }
+  addLeadNote(req.params.phone, note);
+  res.json({ success: true });
+});
+
+router.post('/api/leads/:phone/callback', (req: Request, res: Response) => {
+  const { dateTime } = req.body;
+  if (!dateTime) {
+    res.status(400).json({ error: 'Missing dateTime' });
+    return;
+  }
+  scheduleCallback(req.params.phone, dateTime);
+  res.json({ success: true });
+});
+
+// ── Prompt Management Endpoints ─────────────────────────────────────
+
+router.get('/api/prompts', (_req: Request, res: Response) => {
+  res.json({
+    names: getAllPromptNames(),
+    environment: getEnvironment(),
+  });
+});
+
+router.get('/api/prompts/config', (_req: Request, res: Response) => {
+  res.json(getHotSwapConfig());
+});
+
+router.put('/api/prompts/config', (req: Request, res: Response) => {
+  const updated = updateHotSwapConfig(req.body);
+  res.json(updated);
+});
+
+router.get('/api/prompts/guardrails', (_req: Request, res: Response) => {
+  res.json(getGuardrails());
+});
+
+router.put('/api/prompts/environment', (req: Request, res: Response) => {
+  const { environment } = req.body;
+  if (!environment || !['dev', 'staging', 'prod'].includes(environment)) {
+    res.status(400).json({ error: 'Invalid environment. Must be dev, staging, or prod' });
+    return;
+  }
+  setEnvironment(environment);
+  res.json({ environment: getEnvironment() });
+});
+
+router.get('/api/prompts/flags', (_req: Request, res: Response) => {
+  res.json(getFeatureFlags());
+});
+
+router.post('/api/prompts/flags', (req: Request, res: Response) => {
+  const { id, enabled, description, environments, percentage } = req.body;
+  if (!id) {
+    res.status(400).json({ error: 'Missing id' });
+    return;
+  }
+  const flag = setFeatureFlag(id, enabled ?? true, description, environments, percentage);
+  res.json(flag);
+});
+
+router.delete('/api/prompts/flags/:id', (req: Request, res: Response) => {
+  const deleted = deleteFeatureFlag(req.params.id);
+  res.json({ success: deleted });
+});
+
+router.get('/api/prompts/flags/:id/check', (req: Request, res: Response) => {
+  const env = req.query.environment as string;
+  res.json({ enabled: isFeatureEnabled(req.params.id, env as any) });
+});
+
+router.get('/api/prompts/:name/versions', (req: Request, res: Response) => {
+  res.json(getPromptVersions(req.params.name));
+});
+
+router.get('/api/prompts/:name/active', (req: Request, res: Response) => {
+  const env = req.query.environment as string;
+  const prompt = getActivePrompt(req.params.name, env as any);
+  if (!prompt) {
+    res.status(404).json({ error: 'No active prompt found' });
+    return;
+  }
+  res.json(prompt);
+});
+
+router.post('/api/prompts/:name', (req: Request, res: Response) => {
+  const { content, environment, metadata } = req.body;
+  if (!content) {
+    res.status(400).json({ error: 'Missing content' });
+    return;
+  }
+  const pv = savePromptVersion(req.params.name, content, environment, metadata);
+  res.json(pv);
+});
+
+router.post('/api/prompts/:name/rollback', (req: Request, res: Response) => {
+  const { version } = req.body;
+  if (!version) {
+    res.status(400).json({ error: 'Missing version' });
+    return;
+  }
+  const pv = rollbackPrompt(req.params.name, version);
+  if (!pv) {
+    res.status(404).json({ error: 'Version not found' });
+    return;
+  }
+  res.json(pv);
+});
+
+// ── Security Endpoints ──────────────────────────────────────────────
+
+router.post('/api/security/pii-check', (req: Request, res: Response) => {
+  const { text } = req.body;
+  if (!text) {
+    res.status(400).json({ error: 'Missing text' });
+    return;
+  }
+  res.json({
+    containsPII: containsPII(text),
+    types: detectPIITypes(text),
+    redacted: redactPII(text),
+  });
+});
+
+router.get('/api/security/rate-limit/:key', (req: Request, res: Response) => {
+  const maxReq = parseInt(req.query.max as string) || 60;
+  const windowMs = parseInt(req.query.window as string) || 60000;
+  const result = checkRateLimit(req.params.key, maxReq, windowMs);
+  res.json(result);
+});
+
+// ── Workflow Endpoints ──────────────────────────────────────────────
+
+router.get('/api/workflows/webhooks', (_req: Request, res: Response) => {
+  res.json(getWebhooks());
+});
+
+router.post('/api/workflows/webhooks', (req: Request, res: Response) => {
+  const { id, url, events, active, headers, secret } = req.body;
+  if (!id || !url || !events?.length) {
+    res.status(400).json({ error: 'Missing required fields: id, url, events' });
+    return;
+  }
+  registerWebhook({ id, url, events, active: active ?? true, headers, secret });
+  res.json({ success: true });
+});
+
+router.delete('/api/workflows/webhooks/:id', (req: Request, res: Response) => {
+  const removed = removeWebhook(req.params.id);
+  res.json({ success: removed });
+});
+
+router.get('/api/workflows/config', (_req: Request, res: Response) => {
+  res.json(getWorkflowConfig());
+});
+
+router.put('/api/workflows/config', (req: Request, res: Response) => {
+  const updated = updateWorkflowConfig(req.body);
+  res.json(updated);
+});
+
+// ── Routing Endpoints ───────────────────────────────────────────────
+
+router.get('/api/routing/providers', (_req: Request, res: Response) => {
+  res.json(getProviders());
+});
+
+router.post('/api/routing/providers', (req: Request, res: Response) => {
+  try {
+    registerProvider(req.body);
+    res.json({ success: true });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg });
+  }
+});
+
+router.delete('/api/routing/providers/:id', (req: Request, res: Response) => {
+  const removed = removeProvider(req.params.id);
+  res.json({ success: removed });
+});
+
+router.get('/api/routing/health', (_req: Request, res: Response) => {
+  res.json(getProviderHealth());
+});
+
+router.get('/api/routing/strategy', (_req: Request, res: Response) => {
+  res.json({ strategy: getRoutingStrategy() });
+});
+
+router.put('/api/routing/strategy', (req: Request, res: Response) => {
+  const { strategy } = req.body;
+  if (!strategy) {
+    res.status(400).json({ error: 'Missing strategy' });
+    return;
+  }
+  setRoutingStrategy(strategy);
+  res.json({ strategy: getRoutingStrategy() });
 });
 
 export { router };

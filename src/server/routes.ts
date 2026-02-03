@@ -53,6 +53,33 @@ import {
 
 const router = Router();
 
+// ── Recording store ─────────────────────────────────────────────────
+
+export interface CallRecording {
+  recordingSid: string;
+  callSid: string;
+  recordingUrl: string;
+  durationSec: number;
+  channels: number;
+  source: string;
+  timestamp: string;
+}
+
+const recordingStore: CallRecording[] = [];
+const MAX_RECORDINGS = 200;
+
+export function getRecordings(): CallRecording[] {
+  return [...recordingStore];
+}
+
+export function getRecordingByCallSid(callSid: string): CallRecording | undefined {
+  return recordingStore.find(r => r.callSid === callSid);
+}
+
+export function getRecordingBySid(recordingSid: string): CallRecording | undefined {
+  return recordingStore.find(r => r.recordingSid === recordingSid);
+}
+
 // In-memory cache for voice preview audio (voice -> mp3 Buffer)
 const voicePreviewCache = new Map<string, Buffer>();
 const PREVIEW_TEXT = "Hey there! This is a quick preview of how I sound. Pretty natural, right?";
@@ -190,6 +217,46 @@ router.post('/twilio/transfer', (req: Request, res: Response) => {
 router.post('/twilio/status', (req: Request, res: Response) => {
   const { CallSid, CallStatus } = req.body || {};
   logger.info('routes', 'Call status update', { callSid: CallSid, status: CallStatus });
+  res.sendStatus(200);
+});
+
+/**
+ * POST /twilio/recording-status
+ * Twilio webhook when a call recording is completed.
+ */
+router.post('/twilio/recording-status', (req: Request, res: Response) => {
+  const {
+    RecordingSid,
+    CallSid,
+    RecordingUrl,
+    RecordingDuration,
+    RecordingChannels,
+    RecordingSource,
+  } = req.body || {};
+
+  if (RecordingSid && CallSid) {
+    const recording: CallRecording = {
+      recordingSid: RecordingSid,
+      callSid: CallSid,
+      recordingUrl: RecordingUrl || '',
+      durationSec: parseInt(RecordingDuration || '0', 10),
+      channels: parseInt(RecordingChannels || '1', 10),
+      source: RecordingSource || 'unknown',
+      timestamp: new Date().toISOString(),
+    };
+
+    recordingStore.unshift(recording);
+    if (recordingStore.length > MAX_RECORDINGS) {
+      recordingStore.length = MAX_RECORDINGS;
+    }
+
+    logger.info('routes', 'Recording completed', {
+      recordingSid: RecordingSid,
+      callSid: CallSid,
+      durationSec: recording.durationSec,
+    });
+  }
+
   res.sendStatus(200);
 });
 
@@ -358,6 +425,22 @@ router.get('/api/analytics/:callSid', (req: Request, res: Response) => {
     return;
   }
   res.json(found);
+});
+
+// ── Recording Endpoints ─────────────────────────────────────────────
+
+router.get('/api/recordings', (_req: Request, res: Response) => {
+  const recordings = getRecordings();
+  res.json({ recordings, count: recordings.length });
+});
+
+router.get('/api/recordings/:callSid', (req: Request, res: Response) => {
+  const recording = getRecordingByCallSid(req.params.callSid);
+  if (!recording) {
+    res.status(404).json({ error: 'No recording found for this call' });
+    return;
+  }
+  res.json(recording);
 });
 
 // ── Compliance Endpoints ────────────────────────────────────────────

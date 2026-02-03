@@ -4,7 +4,7 @@ import { config } from '../config';
 import { getSettings } from '../config/runtime';
 import { buildSystemPrompt, buildInboundSystemPrompt, buildInboundGreetingText, getRealtimeTools, LeadData, TransferConfig } from '../agent/prompts';
 import { executeWarmTransfer } from '../twilio/transfer';
-import { endCall } from '../twilio/client';
+import { endCall, startCallRecording } from '../twilio/client';
 import { logger } from '../utils/logger';
 import { createCallAnalytics, finalizeCallAnalytics, CallAnalytics } from '../analytics';
 import { ConversationIntelligence } from '../conversation/intelligence';
@@ -115,6 +115,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           if (analytics) analytics.addTag(callDirection);
           conversation = new ConversationIntelligence(callSid);
           registerSession(callSid, callerNumber, leadData.first_name);
+
+          // Start recording for inbound calls (outbound calls use record=true on calls.create)
+          if (callDirection === 'inbound') {
+            startCallRecording(callSid).catch(err =>
+              logger.error('stream', 'Failed to start inbound recording', { sessionId, error: String(err) })
+            );
+          }
 
           connectToOpenAIRealtime();
           break;

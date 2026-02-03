@@ -34,7 +34,7 @@ export async function startOutboundCall(params: StartCallParams): Promise<{ call
 
   logger.info('twilio-client', 'Placing outbound call', { to: params.to, from: fromNumber });
 
-  const call = await twilioClient.calls.create({
+  const callOptions: any = {
     to: params.to,
     from: fromNumber,
     url: webhookUrl.toString(),
@@ -42,7 +42,17 @@ export async function startOutboundCall(params: StartCallParams): Promise<{ call
     statusCallback: `${config.baseUrl}/twilio/status`,
     statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
     statusCallbackMethod: 'POST',
-  });
+  };
+
+  if (config.recording.enabled) {
+    callOptions.record = true;
+    callOptions.recordingChannels = config.recording.channels;
+    callOptions.recordingStatusCallback = `${config.baseUrl}/twilio/recording-status`;
+    callOptions.recordingStatusCallbackMethod = 'POST';
+    callOptions.recordingStatusCallbackEvent = ['completed'];
+  }
+
+  const call = await twilioClient.calls.create(callOptions);
 
   logger.info('twilio-client', 'Call created', { callSid: call.sid, status: call.status });
 
@@ -60,6 +70,26 @@ export async function transferCall(callSid: string, targetNumber: string, bridge
     url: twimlUrl.toString(),
     method: 'POST',
   });
+}
+
+export async function startCallRecording(callSid: string): Promise<string | null> {
+  if (!config.recording.enabled) return null;
+
+  try {
+    logger.info('twilio-client', 'Starting call recording', { callSid });
+    const recording = await twilioClient.calls(callSid).recordings.create({
+      recordingChannels: String(config.recording.channels),
+      recordingStatusCallback: `${config.baseUrl}/twilio/recording-status`,
+      recordingStatusCallbackMethod: 'POST',
+      recordingStatusCallbackEvent: ['completed'],
+    });
+    logger.info('twilio-client', 'Recording started', { callSid, recordingSid: recording.sid });
+    return recording.sid;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error('twilio-client', 'Failed to start recording', { callSid, error: msg });
+    return null;
+  }
 }
 
 export async function endCall(callSid: string): Promise<void> {

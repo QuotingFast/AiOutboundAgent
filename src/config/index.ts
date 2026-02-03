@@ -38,5 +38,10 @@ export const config = {
   ttsProvider: optional('TTS_PROVIDER', 'elevenlabs') as 'openai' | 'elevenlabs',
   sttProvider: optional('STT_PROVIDER', 'openai') as 'openai' | 'deepgram',
 
+  recording: {
+    enabled: optional('RECORDING_ENABLED', 'true') === 'true',
+    channels: parseInt(optional('RECORDING_CHANNELS', '2'), 10) as 1 | 2,
+  },
+
   debug: optional('DEBUG', 'false') === 'true',
 };

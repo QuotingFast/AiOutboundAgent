@@ -706,6 +706,215 @@ export function getDashboardHtml(): string {
           <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
         </div>
       </div>
+      <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 8px;font-weight:500">Southern Voices</div>
+      <div class="voice-grid">
+        <div class="voice-card ds-vc" data-dsvoice="S2fYVrVpl5QYHVJ1LkgT" onclick="selectDsVoice('S2fYVrVpl5QYHVJ1LkgT')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('S2fYVrVpl5QYHVJ1LkgT',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Daisy Mae</div><div class="vc-desc">Southern drawl, charming</div>
+          <span class="vc-tag neutral">Southern</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="WXOyQFCgL1KW7Rv9Fln0" onclick="selectDsVoice('WXOyQFCgL1KW7Rv9Fln0')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('WXOyQFCgL1KW7Rv9Fln0',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Outbound Caller</div><div class="vc-desc">Clear, slight southern</div>
+          <span class="vc-tag sales">Southern</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="c4TutCiAuWP4vwb1xebb" onclick="selectDsVoice('c4TutCiAuWP4vwb1xebb')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('c4TutCiAuWP4vwb1xebb',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Annie-Beth</div><div class="vc-desc">Sweet, southern belle</div>
+          <span class="vc-tag neutral">Southern</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="8kvxG72xUMYnIFhZYwWj" onclick="selectDsVoice('8kvxG72xUMYnIFhZYwWj')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('8kvxG72xUMYnIFhZYwWj',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Billy Bob</div><div class="vc-desc">Passionate, warm</div>
+          <span class="vc-tag neutral">Southern</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="Bj9UqZbhQsanLzgalpEG" onclick="selectDsVoice('Bj9UqZbhQsanLzgalpEG')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('Bj9UqZbhQsanLzgalpEG',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Austin</div><div class="vc-desc">Deep, gravelly, Texas</div>
+          <span class="vc-tag neutral">Southern</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="DwEFbvGTcJhAk9eY9m0f" onclick="selectDsVoice('DwEFbvGTcJhAk9eY9m0f')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('DwEFbvGTcJhAk9eY9m0f',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Southern Mike</div><div class="vc-desc">Deep, smooth southern</div>
+          <span class="vc-tag sales">Southern</span><span class="vc-check">&#10003;</span>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 8px;font-weight:500">Your Library &ndash; Female</div>
+      <div class="voice-grid">
+        <div class="voice-card ds-vc" data-dsvoice="56AoDkrOh6qfVPDXZ7Pt" onclick="selectDsVoice('56AoDkrOh6qfVPDXZ7Pt')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('56AoDkrOh6qfVPDXZ7Pt',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Cassidy</div><div class="vc-desc">Warm, professional</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="5l5f8iK3YPeGga21rQIX" onclick="selectDsVoice('5l5f8iK3YPeGga21rQIX')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('5l5f8iK3YPeGga21rQIX',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Adeline</div><div class="vc-desc">Friendly, engaging</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="5u41aNhyCU6hXOykdSKco" onclick="selectDsVoice('5u41aNhyCU6hXOykdSKco')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('5u41aNhyCU6hXOykdSKco',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Carol</div><div class="vc-desc">Mature, wise, warm</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="PoHUWWWMHFrA8z7Q88pu" onclick="selectDsVoice('PoHUWWWMHFrA8z7Q88pu')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('PoHUWWWMHFrA8z7Q88pu',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Miranda</div><div class="vc-desc">Young, dynamic, clear</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="uYXf8XasLslADfZ2MB4u" onclick="selectDsVoice('uYXf8XasLslADfZ2MB4u')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('uYXf8XasLslADfZ2MB4u',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Hope</div><div class="vc-desc">Bright, young, upbeat</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="oWjuL7HSoaEJRMDMP3HD" onclick="selectDsVoice('oWjuL7HSoaEJRMDMP3HD')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('oWjuL7HSoaEJRMDMP3HD',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Lina</div><div class="vc-desc">Dominican accent, warm</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 8px;font-weight:500">Your Library &ndash; Male</div>
+      <div class="voice-grid">
+        <div class="voice-card ds-vc" data-dsvoice="1SM7GgM6IMuvQlz2BwM3" onclick="selectDsVoice('1SM7GgM6IMuvQlz2BwM3')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('1SM7GgM6IMuvQlz2BwM3',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Mark ConvoAI</div><div class="vc-desc">Conversational, natural</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="1cvhXKE3uxgoijz9BMLU" onclick="selectDsVoice('1cvhXKE3uxgoijz9BMLU')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('1cvhXKE3uxgoijz9BMLU',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Marcus Jackson</div><div class="vc-desc">Smooth, confident</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="46Gz2MoWgXGvpJ9yRzmw" onclick="selectDsVoice('46Gz2MoWgXGvpJ9yRzmw')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('46Gz2MoWgXGvpJ9yRzmw',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Leo</div><div class="vc-desc">Concierge, polished</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="68RUZBDjLe2YBQvv8zFx" onclick="selectDsVoice('68RUZBDjLe2YBQvv8zFx')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('68RUZBDjLe2YBQvv8zFx',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Kal Jones</div><div class="vc-desc">Steady, professional</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="ChO6kqkVouUn0s7HMunx" onclick="selectDsVoice('ChO6kqkVouUn0s7HMunx')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('ChO6kqkVouUn0s7HMunx',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Pete</div><div class="vc-desc">Direct, friendly</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="DTKMou8ccj1ZaWGBiotd" onclick="selectDsVoice('DTKMou8ccj1ZaWGBiotd')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('DTKMou8ccj1ZaWGBiotd',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Jamahal</div><div class="vc-desc">Northeast, articulate</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="FYZl5JbWOAm6O1fPKAOu" onclick="selectDsVoice('FYZl5JbWOAm6O1fPKAOu')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('FYZl5JbWOAm6O1fPKAOu',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Matt Schmitz</div><div class="vc-desc">Clear, authoritative</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="HfjqMQ0GHcNkhBWnIhy3" onclick="selectDsVoice('HfjqMQ0GHcNkhBWnIhy3')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('HfjqMQ0GHcNkhBWnIhy3',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Hayden</div><div class="vc-desc">Confident, warm</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="UgBBYS2sOqTuMpoF3BR0" onclick="selectDsVoice('UgBBYS2sOqTuMpoF3BR0')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('UgBBYS2sOqTuMpoF3BR0',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Mark Natural</div><div class="vc-desc">Young, natural, easy</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="Ybqj6CIlqb6M85s9Bl4n" onclick="selectDsVoice('Ybqj6CIlqb6M85s9Bl4n')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('Ybqj6CIlqb6M85s9Bl4n',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Jamal</div><div class="vc-desc">Strong, engaging</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="Z9hrfEHGU3dykHntWvIY" onclick="selectDsVoice('Z9hrfEHGU3dykHntWvIY')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('Z9hrfEHGU3dykHntWvIY',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">David Ashby</div><div class="vc-desc">Authoritative, deep</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="c6SfcYrb2t09NHXiT80T" onclick="selectDsVoice('c6SfcYrb2t09NHXiT80T')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('c6SfcYrb2t09NHXiT80T',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Jarnathan</div><div class="vc-desc">Unique, distinctive</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="f5HLTX707KIM4SzJYzSz" onclick="selectDsVoice('f5HLTX707KIM4SzJYzSz')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('f5HLTX707KIM4SzJYzSz',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Hey Its Brad</div><div class="vc-desc">Young, casual, chill</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="gOkFV1JMCt0G0n9xmBwV" onclick="selectDsVoice('gOkFV1JMCt0G0n9xmBwV')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('gOkFV1JMCt0G0n9xmBwV',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">W. L. Oxley</div><div class="vc-desc">Mature, distinguished</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="gfRt6Z3Z8aTbpLfexQ7N" onclick="selectDsVoice('gfRt6Z3Z8aTbpLfexQ7N')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('gfRt6Z3Z8aTbpLfexQ7N',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Boyd</div><div class="vc-desc">Grounded, reliable</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="rYW2LlWtM70M5vc3HBtm" onclick="selectDsVoice('rYW2LlWtM70M5vc3HBtm')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('rYW2LlWtM70M5vc3HBtm',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Sam Chang</div><div class="vc-desc">Young, clear, crisp</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="s3TPKV1kjDlVtZbl4Ksh" onclick="selectDsVoice('s3TPKV1kjDlVtZbl4Ksh')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('s3TPKV1kjDlVtZbl4Ksh',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Adam Authentic</div><div class="vc-desc">Young, authentic</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="pwMBn0SsmN1220Aorv15" onclick="selectDsVoice('pwMBn0SsmN1220Aorv15')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('pwMBn0SsmN1220Aorv15',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Matt Hyper</div><div class="vc-desc">Hyper-conversational</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="vBKc2FfBKJfcZNyEt1n6" onclick="selectDsVoice('vBKc2FfBKJfcZNyEt1n6')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('vBKc2FfBKJfcZNyEt1n6',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Finn</div><div class="vc-desc">Young, energetic</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="yl2ZDV1MzN4HbQJbMihG" onclick="selectDsVoice('yl2ZDV1MzN4HbQJbMihG')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('yl2ZDV1MzN4HbQJbMihG',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Alex</div><div class="vc-desc">Young, relatable</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="jn34bTlmmOgOJU9XfPuy" onclick="selectDsVoice('jn34bTlmmOgOJU9XfPuy')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('jn34bTlmmOgOJU9XfPuy',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Steve</div><div class="vc-desc">Friendly, easygoing</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="kdVjFjOXaqExaDvXZECX" onclick="selectDsVoice('kdVjFjOXaqExaDvXZECX')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('kdVjFjOXaqExaDvXZECX',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Burt</div><div class="vc-desc">Young, punchy</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="CVRACyqNcQefTlxMj9bt" onclick="selectDsVoice('CVRACyqNcQefTlxMj9bt')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('CVRACyqNcQefTlxMj9bt',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Lamar Lincoln</div><div class="vc-desc">Young, dynamic</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="r4iCyrmUEMCbsi7eGtf8" onclick="selectDsVoice('r4iCyrmUEMCbsi7eGtf8')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('r4iCyrmUEMCbsi7eGtf8',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Voice of America</div><div class="vc-desc">Rich, broadcast</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="rWyjfFeMZ6PxkHqD3wGC" onclick="selectDsVoice('rWyjfFeMZ6PxkHqD3wGC')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('rWyjfFeMZ6PxkHqD3wGC',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Tyrese Tate</div><div class="vc-desc">Young, vibrant</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="Z7HhYXzYeRsQk3RnXqiG" onclick="selectDsVoice('Z7HhYXzYeRsQk3RnXqiG')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('Z7HhYXzYeRsQk3RnXqiG',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Attank</div><div class="vc-desc">African accent, warm</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="1THll2MhJjluQYaSQxDr" onclick="selectDsVoice('1THll2MhJjluQYaSQxDr')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('1THll2MhJjluQYaSQxDr',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Sanchez</div><div class="vc-desc">Spanish accent, warm</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="NFJlRMNv6b8kbunXwjHC" onclick="selectDsVoice('NFJlRMNv6b8kbunXwjHC')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('NFJlRMNv6b8kbunXwjHC',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Luis Plata</div><div class="vc-desc">Colombian, friendly</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+      </div>
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <label>Custom Voice ID (optional)</label>
         <input type="text" id="dsCustomVoiceId" placeholder="Paste a custom ElevenLabs Voice ID here">
@@ -831,6 +1040,215 @@ export function getDashboardHtml(): string {
           <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
         </div>
       </div>
+      <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 8px;font-weight:500">Southern Voices</div>
+      <div class="voice-grid">
+        <div class="voice-card el-vc" data-elvoice="S2fYVrVpl5QYHVJ1LkgT" onclick="selectElVoice('S2fYVrVpl5QYHVJ1LkgT')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('S2fYVrVpl5QYHVJ1LkgT',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Daisy Mae</div><div class="vc-desc">Southern drawl, charming</div>
+          <span class="vc-tag neutral">Southern</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="WXOyQFCgL1KW7Rv9Fln0" onclick="selectElVoice('WXOyQFCgL1KW7Rv9Fln0')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('WXOyQFCgL1KW7Rv9Fln0',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Outbound Caller</div><div class="vc-desc">Clear, slight southern</div>
+          <span class="vc-tag sales">Southern</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="c4TutCiAuWP4vwb1xebb" onclick="selectElVoice('c4TutCiAuWP4vwb1xebb')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('c4TutCiAuWP4vwb1xebb',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Annie-Beth</div><div class="vc-desc">Sweet, southern belle</div>
+          <span class="vc-tag neutral">Southern</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="8kvxG72xUMYnIFhZYwWj" onclick="selectElVoice('8kvxG72xUMYnIFhZYwWj')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('8kvxG72xUMYnIFhZYwWj',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Billy Bob</div><div class="vc-desc">Passionate, warm</div>
+          <span class="vc-tag neutral">Southern</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="Bj9UqZbhQsanLzgalpEG" onclick="selectElVoice('Bj9UqZbhQsanLzgalpEG')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('Bj9UqZbhQsanLzgalpEG',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Austin</div><div class="vc-desc">Deep, gravelly, Texas</div>
+          <span class="vc-tag neutral">Southern</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="DwEFbvGTcJhAk9eY9m0f" onclick="selectElVoice('DwEFbvGTcJhAk9eY9m0f')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('DwEFbvGTcJhAk9eY9m0f',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Southern Mike</div><div class="vc-desc">Deep, smooth southern</div>
+          <span class="vc-tag sales">Southern</span><span class="vc-check">&#10003;</span>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 8px;font-weight:500">Your Library &ndash; Female</div>
+      <div class="voice-grid">
+        <div class="voice-card el-vc" data-elvoice="56AoDkrOh6qfVPDXZ7Pt" onclick="selectElVoice('56AoDkrOh6qfVPDXZ7Pt')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('56AoDkrOh6qfVPDXZ7Pt',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Cassidy</div><div class="vc-desc">Warm, professional</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="5l5f8iK3YPeGga21rQIX" onclick="selectElVoice('5l5f8iK3YPeGga21rQIX')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('5l5f8iK3YPeGga21rQIX',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Adeline</div><div class="vc-desc">Friendly, engaging</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="5u41aNhyCU6hXOykdSKco" onclick="selectElVoice('5u41aNhyCU6hXOykdSKco')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('5u41aNhyCU6hXOykdSKco',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Carol</div><div class="vc-desc">Mature, wise, warm</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="PoHUWWWMHFrA8z7Q88pu" onclick="selectElVoice('PoHUWWWMHFrA8z7Q88pu')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('PoHUWWWMHFrA8z7Q88pu',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Miranda</div><div class="vc-desc">Young, dynamic, clear</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="uYXf8XasLslADfZ2MB4u" onclick="selectElVoice('uYXf8XasLslADfZ2MB4u')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('uYXf8XasLslADfZ2MB4u',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Hope</div><div class="vc-desc">Bright, young, upbeat</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="oWjuL7HSoaEJRMDMP3HD" onclick="selectElVoice('oWjuL7HSoaEJRMDMP3HD')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('oWjuL7HSoaEJRMDMP3HD',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Lina</div><div class="vc-desc">Dominican accent, warm</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 8px;font-weight:500">Your Library &ndash; Male</div>
+      <div class="voice-grid">
+        <div class="voice-card el-vc" data-elvoice="1SM7GgM6IMuvQlz2BwM3" onclick="selectElVoice('1SM7GgM6IMuvQlz2BwM3')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('1SM7GgM6IMuvQlz2BwM3',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Mark ConvoAI</div><div class="vc-desc">Conversational, natural</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="1cvhXKE3uxgoijz9BMLU" onclick="selectElVoice('1cvhXKE3uxgoijz9BMLU')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('1cvhXKE3uxgoijz9BMLU',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Marcus Jackson</div><div class="vc-desc">Smooth, confident</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="46Gz2MoWgXGvpJ9yRzmw" onclick="selectElVoice('46Gz2MoWgXGvpJ9yRzmw')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('46Gz2MoWgXGvpJ9yRzmw',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Leo</div><div class="vc-desc">Concierge, polished</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="68RUZBDjLe2YBQvv8zFx" onclick="selectElVoice('68RUZBDjLe2YBQvv8zFx')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('68RUZBDjLe2YBQvv8zFx',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Kal Jones</div><div class="vc-desc">Steady, professional</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="ChO6kqkVouUn0s7HMunx" onclick="selectElVoice('ChO6kqkVouUn0s7HMunx')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('ChO6kqkVouUn0s7HMunx',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Pete</div><div class="vc-desc">Direct, friendly</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="DTKMou8ccj1ZaWGBiotd" onclick="selectElVoice('DTKMou8ccj1ZaWGBiotd')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('DTKMou8ccj1ZaWGBiotd',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Jamahal</div><div class="vc-desc">Northeast, articulate</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="FYZl5JbWOAm6O1fPKAOu" onclick="selectElVoice('FYZl5JbWOAm6O1fPKAOu')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('FYZl5JbWOAm6O1fPKAOu',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Matt Schmitz</div><div class="vc-desc">Clear, authoritative</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="HfjqMQ0GHcNkhBWnIhy3" onclick="selectElVoice('HfjqMQ0GHcNkhBWnIhy3')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('HfjqMQ0GHcNkhBWnIhy3',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Hayden</div><div class="vc-desc">Confident, warm</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="UgBBYS2sOqTuMpoF3BR0" onclick="selectElVoice('UgBBYS2sOqTuMpoF3BR0')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('UgBBYS2sOqTuMpoF3BR0',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Mark Natural</div><div class="vc-desc">Young, natural, easy</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="Ybqj6CIlqb6M85s9Bl4n" onclick="selectElVoice('Ybqj6CIlqb6M85s9Bl4n')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('Ybqj6CIlqb6M85s9Bl4n',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Jamal</div><div class="vc-desc">Strong, engaging</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="Z9hrfEHGU3dykHntWvIY" onclick="selectElVoice('Z9hrfEHGU3dykHntWvIY')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('Z9hrfEHGU3dykHntWvIY',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">David Ashby</div><div class="vc-desc">Authoritative, deep</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="c6SfcYrb2t09NHXiT80T" onclick="selectElVoice('c6SfcYrb2t09NHXiT80T')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('c6SfcYrb2t09NHXiT80T',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Jarnathan</div><div class="vc-desc">Unique, distinctive</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="f5HLTX707KIM4SzJYzSz" onclick="selectElVoice('f5HLTX707KIM4SzJYzSz')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('f5HLTX707KIM4SzJYzSz',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Hey Its Brad</div><div class="vc-desc">Young, casual, chill</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="gOkFV1JMCt0G0n9xmBwV" onclick="selectElVoice('gOkFV1JMCt0G0n9xmBwV')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('gOkFV1JMCt0G0n9xmBwV',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">W. L. Oxley</div><div class="vc-desc">Mature, distinguished</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="gfRt6Z3Z8aTbpLfexQ7N" onclick="selectElVoice('gfRt6Z3Z8aTbpLfexQ7N')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('gfRt6Z3Z8aTbpLfexQ7N',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Boyd</div><div class="vc-desc">Grounded, reliable</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="rYW2LlWtM70M5vc3HBtm" onclick="selectElVoice('rYW2LlWtM70M5vc3HBtm')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('rYW2LlWtM70M5vc3HBtm',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Sam Chang</div><div class="vc-desc">Young, clear, crisp</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="s3TPKV1kjDlVtZbl4Ksh" onclick="selectElVoice('s3TPKV1kjDlVtZbl4Ksh')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('s3TPKV1kjDlVtZbl4Ksh',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Adam Authentic</div><div class="vc-desc">Young, authentic</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="pwMBn0SsmN1220Aorv15" onclick="selectElVoice('pwMBn0SsmN1220Aorv15')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('pwMBn0SsmN1220Aorv15',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Matt Hyper</div><div class="vc-desc">Hyper-conversational</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="vBKc2FfBKJfcZNyEt1n6" onclick="selectElVoice('vBKc2FfBKJfcZNyEt1n6')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('vBKc2FfBKJfcZNyEt1n6',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Finn</div><div class="vc-desc">Young, energetic</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="yl2ZDV1MzN4HbQJbMihG" onclick="selectElVoice('yl2ZDV1MzN4HbQJbMihG')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('yl2ZDV1MzN4HbQJbMihG',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Alex</div><div class="vc-desc">Young, relatable</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="jn34bTlmmOgOJU9XfPuy" onclick="selectElVoice('jn34bTlmmOgOJU9XfPuy')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('jn34bTlmmOgOJU9XfPuy',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Steve</div><div class="vc-desc">Friendly, easygoing</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="kdVjFjOXaqExaDvXZECX" onclick="selectElVoice('kdVjFjOXaqExaDvXZECX')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('kdVjFjOXaqExaDvXZECX',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Burt</div><div class="vc-desc">Young, punchy</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="CVRACyqNcQefTlxMj9bt" onclick="selectElVoice('CVRACyqNcQefTlxMj9bt')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('CVRACyqNcQefTlxMj9bt',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Lamar Lincoln</div><div class="vc-desc">Young, dynamic</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="r4iCyrmUEMCbsi7eGtf8" onclick="selectElVoice('r4iCyrmUEMCbsi7eGtf8')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('r4iCyrmUEMCbsi7eGtf8',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Voice of America</div><div class="vc-desc">Rich, broadcast</div>
+          <span class="vc-tag sales">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="rWyjfFeMZ6PxkHqD3wGC" onclick="selectElVoice('rWyjfFeMZ6PxkHqD3wGC')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('rWyjfFeMZ6PxkHqD3wGC',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Tyrese Tate</div><div class="vc-desc">Young, vibrant</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="Z7HhYXzYeRsQk3RnXqiG" onclick="selectElVoice('Z7HhYXzYeRsQk3RnXqiG')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('Z7HhYXzYeRsQk3RnXqiG',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Attank</div><div class="vc-desc">African accent, warm</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="1THll2MhJjluQYaSQxDr" onclick="selectElVoice('1THll2MhJjluQYaSQxDr')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('1THll2MhJjluQYaSQxDr',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Sanchez</div><div class="vc-desc">Spanish accent, warm</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="NFJlRMNv6b8kbunXwjHC" onclick="selectElVoice('NFJlRMNv6b8kbunXwjHC')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('NFJlRMNv6b8kbunXwjHC',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Luis Plata</div><div class="vc-desc">Colombian, friendly</div>
+          <span class="vc-tag neutral">Pro</span><span class="vc-check">&#10003;</span>
+        </div>
+      </div>
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <label>Custom Voice ID (optional)</label>
         <input type="text" id="elCustomVoiceId" placeholder="Paste a custom ElevenLabs Voice ID here">
@@ -911,11 +1329,11 @@ export function getDashboardHtml(): string {
       </div>
       <div>
         <label>Echo Suppression (ms)</label>
-        <input type="number" id="echoSuppressionMs" value="100" min="0" max="500" step="25">
+        <input type="number" id="echoSuppressionMs" value="200" min="0" max="500" step="25">
       </div>
       <div>
         <label>Max Response Tokens</label>
-        <input type="number" id="maxResponseTokens" value="120" min="30" max="500" step="10">
+        <input type="number" id="maxResponseTokens" value="275" min="30" max="500" step="10">
       </div>
     </div>
   </div>
@@ -1210,15 +1628,30 @@ async function loadCallHistory() {
   try {
     var res = await fetch('/api/calls');
     var calls = await res.json();
+    var recRes = await fetch('/api/recordings');
+    var recData = await recRes.json();
+    var recs = recData.recordings || [];
+    var recMap = {};
+    for (var r = 0; r < recs.length; r++) { recMap[recs[r].callSid] = recs[r]; }
     var el = document.getElementById('callHistory');
     if (!calls.length) { el.innerHTML = '<div class="empty-state">No calls yet</div>'; return; }
-    var html = '<table class="data-table"><tr><th>Time</th><th>To</th><th>Lead</th><th>Provider</th><th>Voice</th><th>Agent</th></tr>';
+    var totalCost = 0;
+    var html = '<table class="data-table"><tr><th>Time</th><th>To</th><th>Lead</th><th>Provider</th><th>Voice</th><th>Agent</th><th>Duration</th><th>Est. Cost</th></tr>';
     for (var i = 0; i < calls.length; i++) {
       var c = calls[i]; var t = new Date(c.timestamp).toLocaleString(); var s = c.settings;
+      var rec = recMap[c.callSid];
+      var dur = rec ? rec.durationSec : 0;
+      var durStr = dur ? dur + 's' : '--';
+      var cost = dur ? (dur / 60) * 0.014 : 0;
+      totalCost += cost;
+      var costStr = cost > 0 ? '$' + cost.toFixed(3) : '--';
       html += '<tr><td style="font-size:11px">' + t + '</td><td>' + c.to + '</td><td>' + c.leadName + '</td>'
-        + '<td>' + (s.voiceProvider || 'openai') + '</td><td style="color:var(--accent)">' + s.voice + '</td><td>' + s.agentName + '</td></tr>';
+        + '<td>' + (s.voiceProvider || 'openai') + '</td><td style="color:var(--accent)">' + s.voice + '</td><td>' + s.agentName + '</td>'
+        + '<td>' + durStr + '</td><td style="color:#4ade80">' + costStr + '</td></tr>';
     }
-    el.innerHTML = html + '</table>';
+    html += '</table>';
+    if (totalCost > 0) html += '<div style="margin-top:8px;font-size:12px;color:var(--text2)">Total Twilio cost: <span style="color:#4ade80;font-weight:600">$' + totalCost.toFixed(3) + '</span></div>';
+    el.innerHTML = html;
   } catch (e) { document.getElementById('callHistory').innerHTML = '<span class="err">Failed</span>'; }
 }
 
@@ -1230,11 +1663,15 @@ async function loadRecordings() {
     var el = document.getElementById('recordingsTable');
     var recordings = data.recordings || [];
     if (!recordings.length) { el.innerHTML = '<div class="empty-state">No recordings yet. Recordings appear after calls complete.</div>'; return; }
-    var html = '<table class="data-table"><tr><th>Time</th><th>Call SID</th><th>Duration</th><th>Channels</th><th>Source</th><th>Play</th></tr>';
+    var totalCost = 0;
+    var html = '<table class="data-table"><tr><th>Time</th><th>Call SID</th><th>Duration</th><th>Channels</th><th>Source</th><th>Est. Cost</th><th>Play</th></tr>';
     for (var i = 0; i < recordings.length; i++) {
       var r = recordings[i];
       var t = new Date(r.timestamp).toLocaleString();
       var dur = r.durationSec + 's';
+      var cost = (r.durationSec / 60) * 0.014;
+      totalCost += cost;
+      var costStr = '$' + cost.toFixed(3);
       var playUrl = r.recordingUrl ? r.recordingUrl + '.mp3' : '';
       html += '<tr>'
         + '<td style="font-size:11px">' + t + '</td>'
@@ -1242,10 +1679,13 @@ async function loadRecordings() {
         + '<td>' + dur + '</td>'
         + '<td>' + r.channels + 'ch</td>'
         + '<td>' + r.source + '</td>'
+        + '<td style="color:#4ade80">' + costStr + '</td>'
         + '<td>' + (playUrl ? '<audio controls preload="none" style="height:30px;max-width:200px"><source src="' + playUrl + '" type="audio/mpeg"></audio>' : '--') + '</td>'
         + '</tr>';
     }
-    el.innerHTML = html + '</table>';
+    html += '</table>';
+    html += '<div style="margin-top:8px;font-size:12px;color:var(--text2)">Total Twilio cost: <span style="color:#4ade80;font-weight:600">$' + totalCost.toFixed(3) + '</span> (' + recordings.length + ' recordings)</div>';
+    el.innerHTML = html;
   } catch (e) { document.getElementById('recordingsTable').innerHTML = '<span class="err">Failed to load recordings</span>'; }
 }
 
@@ -1270,7 +1710,7 @@ async function previewVoice(voice, btn) {
   } catch (e) { btn.classList.remove('loading'); btn.innerHTML = '&#9654;'; }
 }
 
-var EL_VOICES = {'EXAVITQu4vr4xnSDxMaL':'Sarah','cgSgspJ2msm6clMCkdW9':'Jessica','hpp4J3VqNfWAUOO0d1Us':'Bella','FGY2WhTYpPnrIDTdsKH5':'Laura','XrExE9yKIg1WjnnlVkGX':'Matilda','cjVigY5qzO86Huf0OWal':'Eric','iP95p4xoKVk53GoZ742B':'Chris','CwhRBWXzGAHq8TQ4Fs17':'Roger','bIHbv24MWmeRgasZH58o':'Will','nPczCjzI2devNBz1zQrb':'Brian','TX3LPaxmHKxFdv7VOQHJ':'Liam','pNInz6obpgDQGcFmaJgB':'Adam','pqHfZKP75CvOlQylNhV4':'Bill','N2lVS1w4EtoT3dr4eOWO':'Callum','SOYHLrjzK2X1ezoPC6cr':'Harry','SAz9YHcvj6GT2YYXdXww':'River'};
+var EL_VOICES = {'EXAVITQu4vr4xnSDxMaL':'Sarah','cgSgspJ2msm6clMCkdW9':'Jessica','hpp4J3VqNfWAUOO0d1Us':'Bella','FGY2WhTYpPnrIDTdsKH5':'Laura','XrExE9yKIg1WjnnlVkGX':'Matilda','cjVigY5qzO86Huf0OWal':'Eric','iP95p4xoKVk53GoZ742B':'Chris','CwhRBWXzGAHq8TQ4Fs17':'Roger','bIHbv24MWmeRgasZH58o':'Will','nPczCjzI2devNBz1zQrb':'Brian','TX3LPaxmHKxFdv7VOQHJ':'Liam','pNInz6obpgDQGcFmaJgB':'Adam','pqHfZKP75CvOlQylNhV4':'Bill','N2lVS1w4EtoT3dr4eOWO':'Callum','SOYHLrjzK2X1ezoPC6cr':'Harry','SAz9YHcvj6GT2YYXdXww':'River','S2fYVrVpl5QYHVJ1LkgT':'Daisy Mae','WXOyQFCgL1KW7Rv9Fln0':'Outbound Caller','c4TutCiAuWP4vwb1xebb':'Annie-Beth','8kvxG72xUMYnIFhZYwWj':'Billy Bob','Bj9UqZbhQsanLzgalpEG':'Austin','DwEFbvGTcJhAk9eY9m0f':'Southern Mike','56AoDkrOh6qfVPDXZ7Pt':'Cassidy','5l5f8iK3YPeGga21rQIX':'Adeline','5u41aNhyCU6hXOykdSKco':'Carol','PoHUWWWMHFrA8z7Q88pu':'Miranda','uYXf8XasLslADfZ2MB4u':'Hope','oWjuL7HSoaEJRMDMP3HD':'Lina','1SM7GgM6IMuvQlz2BwM3':'Mark ConvoAI','1cvhXKE3uxgoijz9BMLU':'Marcus Jackson','46Gz2MoWgXGvpJ9yRzmw':'Leo','68RUZBDjLe2YBQvv8zFx':'Kal Jones','ChO6kqkVouUn0s7HMunx':'Pete','DTKMou8ccj1ZaWGBiotd':'Jamahal','FYZl5JbWOAm6O1fPKAOu':'Matt Schmitz','HfjqMQ0GHcNkhBWnIhy3':'Hayden','UgBBYS2sOqTuMpoF3BR0':'Mark Natural','Ybqj6CIlqb6M85s9Bl4n':'Jamal','Z9hrfEHGU3dykHntWvIY':'David Ashby','c6SfcYrb2t09NHXiT80T':'Jarnathan','f5HLTX707KIM4SzJYzSz':'Hey Its Brad','gOkFV1JMCt0G0n9xmBwV':'W. L. Oxley','gfRt6Z3Z8aTbpLfexQ7N':'Boyd','rYW2LlWtM70M5vc3HBtm':'Sam Chang','s3TPKV1kjDlVtZbl4Ksh':'Adam Authentic','pwMBn0SsmN1220Aorv15':'Matt Hyper','vBKc2FfBKJfcZNyEt1n6':'Finn','yl2ZDV1MzN4HbQJbMihG':'Alex','jn34bTlmmOgOJU9XfPuy':'Steve','kdVjFjOXaqExaDvXZECX':'Burt','CVRACyqNcQefTlxMj9bt':'Lamar Lincoln','r4iCyrmUEMCbsi7eGtf8':'Voice of America','rWyjfFeMZ6PxkHqD3wGC':'Tyrese Tate','Z7HhYXzYeRsQk3RnXqiG':'Attank','1THll2MhJjluQYaSQxDr':'Sanchez','NFJlRMNv6b8kbunXwjHC':'Luis Plata'};
 
 function selectElVoice(voiceId) {
   document.getElementById('elevenlabsVoiceId').value = voiceId;

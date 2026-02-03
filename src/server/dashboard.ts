@@ -585,45 +585,129 @@ export function getDashboardHtml(): string {
     <div id="elevenlabsVoiceSection" class="el-settings" style="display:none">
       <label>ElevenLabs Voice</label>
       <input type="hidden" id="elevenlabsVoiceId" value="">
+      <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;font-weight:500">Female Voices</div>
       <div class="voice-grid" id="elVoiceGrid">
         <div class="voice-card el-vc" data-elvoice="21m00Tcm4TlvDq8ikWAM" onclick="selectElVoice('21m00Tcm4TlvDq8ikWAM')">
           <button class="vc-play" onclick="event.stopPropagation();previewElVoice('21m00Tcm4TlvDq8ikWAM',this)" title="Preview">&#9654;</button>
-          <div class="vc-name">Rachel</div><div class="vc-desc">Calm, warm female</div>
+          <div class="vc-name">Rachel</div><div class="vc-desc">Calm, warm, natural</div>
           <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
         </div>
         <div class="voice-card el-vc" data-elvoice="EXAVITQu4vr4xnSDxMaL" onclick="selectElVoice('EXAVITQu4vr4xnSDxMaL')">
           <button class="vc-play" onclick="event.stopPropagation();previewElVoice('EXAVITQu4vr4xnSDxMaL',this)" title="Preview">&#9654;</button>
-          <div class="vc-name">Bella</div><div class="vc-desc">Soft, friendly female</div>
+          <div class="vc-name">Sarah</div><div class="vc-desc">Soft, friendly, approachable</div>
           <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
         </div>
         <div class="voice-card el-vc" data-elvoice="AZnzlk1XvdvUeBnXmlld" onclick="selectElVoice('AZnzlk1XvdvUeBnXmlld')">
           <button class="vc-play" onclick="event.stopPropagation();previewElVoice('AZnzlk1XvdvUeBnXmlld',this)" title="Preview">&#9654;</button>
-          <div class="vc-name">Domi</div><div class="vc-desc">Confident, assertive female</div>
+          <div class="vc-name">Domi</div><div class="vc-desc">Confident, assertive, strong</div>
           <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
         </div>
         <div class="voice-card el-vc" data-elvoice="MF3mGyEYCl7XYWbV9V6O" onclick="selectElVoice('MF3mGyEYCl7XYWbV9V6O')">
           <button class="vc-play" onclick="event.stopPropagation();previewElVoice('MF3mGyEYCl7XYWbV9V6O',this)" title="Preview">&#9654;</button>
-          <div class="vc-name">Elli</div><div class="vc-desc">Expressive, emotional female</div>
+          <div class="vc-name">Elli</div><div class="vc-desc">Expressive, emotional, youthful</div>
           <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
         </div>
+        <div class="voice-card el-vc" data-elvoice="XrExE9yKIg1WjnnlVkGX" onclick="selectElVoice('XrExE9yKIg1WjnnlVkGX')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('XrExE9yKIg1WjnnlVkGX',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Matilda</div><div class="vc-desc">Warm, friendly, storytelling</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="pMsXgVXv3BLzUgSXRplE" onclick="selectElVoice('pMsXgVXv3BLzUgSXRplE')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('pMsXgVXv3BLzUgSXRplE',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Serena</div><div class="vc-desc">Pleasant, interactive, engaging</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="LcfcDJNUP1GQjkzn1xUU" onclick="selectElVoice('LcfcDJNUP1GQjkzn1xUU')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('LcfcDJNUP1GQjkzn1xUU',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Emily</div><div class="vc-desc">Calm, gentle, reassuring</div>
+          <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="jsCqWAovK2LkecY7zXl4" onclick="selectElVoice('jsCqWAovK2LkecY7zXl4')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('jsCqWAovK2LkecY7zXl4',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Freya</div><div class="vc-desc">Expressive, lively, youthful</div>
+          <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="oWAxZDx7w5VEj9dCyTzz" onclick="selectElVoice('oWAxZDx7w5VEj9dCyTzz')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('oWAxZDx7w5VEj9dCyTzz',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Grace</div><div class="vc-desc">Southern, warm, personable</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="piTKgcLEGmPE4e6mEKli" onclick="selectElVoice('piTKgcLEGmPE4e6mEKli')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('piTKgcLEGmPE4e6mEKli',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Nicole</div><div class="vc-desc">Soft, intimate, whispery</div>
+          <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 8px;font-weight:500">Male Voices</div>
+      <div class="voice-grid">
         <div class="voice-card el-vc" data-elvoice="ErXwobaYiN019PkySvjV" onclick="selectElVoice('ErXwobaYiN019PkySvjV')">
           <button class="vc-play" onclick="event.stopPropagation();previewElVoice('ErXwobaYiN019PkySvjV',this)" title="Preview">&#9654;</button>
-          <div class="vc-name">Antoni</div><div class="vc-desc">Warm, conversational male</div>
+          <div class="vc-name">Antoni</div><div class="vc-desc">Warm, conversational, natural</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="iP95p4xoKVk53GoZ742B" onclick="selectElVoice('iP95p4xoKVk53GoZ742B')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('iP95p4xoKVk53GoZ742B',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Chris</div><div class="vc-desc">Casual, easy-going, friendly</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="nPczCjzI2devNBz1zQrb" onclick="selectElVoice('nPczCjzI2devNBz1zQrb')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('nPczCjzI2devNBz1zQrb',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Brian</div><div class="vc-desc">Deep, steady, trustworthy</div>
           <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
         </div>
         <div class="voice-card el-vc" data-elvoice="TxGEqnHWrfWFTfGW9XjX" onclick="selectElVoice('TxGEqnHWrfWFTfGW9XjX')">
           <button class="vc-play" onclick="event.stopPropagation();previewElVoice('TxGEqnHWrfWFTfGW9XjX',this)" title="Preview">&#9654;</button>
-          <div class="vc-name">Josh</div><div class="vc-desc">Deep, friendly male</div>
+          <div class="vc-name">Josh</div><div class="vc-desc">Deep, friendly, engaging</div>
           <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="29vD33N1CtxCmqQRPOHJ" onclick="selectElVoice('29vD33N1CtxCmqQRPOHJ')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('29vD33N1CtxCmqQRPOHJ',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Drew</div><div class="vc-desc">Professional, well-rounded, clear</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="pqHfZKP75CvOlQylNhV4" onclick="selectElVoice('pqHfZKP75CvOlQylNhV4')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('pqHfZKP75CvOlQylNhV4',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Bill</div><div class="vc-desc">Trustworthy, strong, authoritative</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="TX3LPaxmHKxFdv7VOQHJ" onclick="selectElVoice('TX3LPaxmHKxFdv7VOQHJ')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('TX3LPaxmHKxFdv7VOQHJ',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Liam</div><div class="vc-desc">Articulate, clear, polished</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
         </div>
         <div class="voice-card el-vc" data-elvoice="VR6AewLTigWG4xSOukaG" onclick="selectElVoice('VR6AewLTigWG4xSOukaG')">
           <button class="vc-play" onclick="event.stopPropagation();previewElVoice('VR6AewLTigWG4xSOukaG',this)" title="Preview">&#9654;</button>
-          <div class="vc-name">Arnold</div><div class="vc-desc">Crisp, confident male</div>
+          <div class="vc-name">Arnold</div><div class="vc-desc">Crisp, confident, direct</div>
           <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
         </div>
         <div class="voice-card el-vc" data-elvoice="pNInz6obpgDQGcFmaJgB" onclick="selectElVoice('pNInz6obpgDQGcFmaJgB')">
           <button class="vc-play" onclick="event.stopPropagation();previewElVoice('pNInz6obpgDQGcFmaJgB',this)" title="Preview">&#9654;</button>
-          <div class="vc-name">Adam</div><div class="vc-desc">Deep, authoritative male</div>
+          <div class="vc-name">Adam</div><div class="vc-desc">Deep, authoritative, commanding</div>
+          <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="yoZ06aMxZJJ28mfd3POQ" onclick="selectElVoice('yoZ06aMxZJJ28mfd3POQ')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('yoZ06aMxZJJ28mfd3POQ',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Sam</div><div class="vc-desc">Raspy, youthful, laid-back</div>
+          <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="g5CIjZEefAph4nQFvHAz" onclick="selectElVoice('g5CIjZEefAph4nQFvHAz')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('g5CIjZEefAph4nQFvHAz',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Ethan</div><div class="vc-desc">Soft, gentle, calming</div>
+          <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="GBv7mTt0atIp3Br8iCZE" onclick="selectElVoice('GBv7mTt0atIp3Br8iCZE')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('GBv7mTt0atIp3Br8iCZE',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Thomas</div><div class="vc-desc">Calm, soothing, measured</div>
+          <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="5Q0t7uMcjvnagumLfvZi" onclick="selectElVoice('5Q0t7uMcjvnagumLfvZi')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('5Q0t7uMcjvnagumLfvZi',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Paul</div><div class="vc-desc">Broadcast, professional, clear</div>
+          <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="flq6f7yk4E4fJM5XTYuZ" onclick="selectElVoice('flq6f7yk4E4fJM5XTYuZ')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('flq6f7yk4E4fJM5XTYuZ',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Michael</div><div class="vc-desc">Mature, deep, experienced</div>
           <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
         </div>
       </div>
@@ -1015,7 +1099,7 @@ async function previewVoice(voice, btn) {
   } catch (e) { btn.classList.remove('loading'); btn.innerHTML = '&#9654;'; }
 }
 
-var EL_VOICES = {'21m00Tcm4TlvDq8ikWAM':'Rachel','EXAVITQu4vr4xnSDxMaL':'Bella','AZnzlk1XvdvUeBnXmlld':'Domi','MF3mGyEYCl7XYWbV9V6O':'Elli','ErXwobaYiN019PkySvjV':'Antoni','TxGEqnHWrfWFTfGW9XjX':'Josh','VR6AewLTigWG4xSOukaG':'Arnold','pNInz6obpgDQGcFmaJgB':'Adam'};
+var EL_VOICES = {'21m00Tcm4TlvDq8ikWAM':'Rachel','EXAVITQu4vr4xnSDxMaL':'Sarah','AZnzlk1XvdvUeBnXmlld':'Domi','MF3mGyEYCl7XYWbV9V6O':'Elli','XrExE9yKIg1WjnnlVkGX':'Matilda','pMsXgVXv3BLzUgSXRplE':'Serena','LcfcDJNUP1GQjkzn1xUU':'Emily','jsCqWAovK2LkecY7zXl4':'Freya','oWAxZDx7w5VEj9dCyTzz':'Grace','piTKgcLEGmPE4e6mEKli':'Nicole','ErXwobaYiN019PkySvjV':'Antoni','iP95p4xoKVk53GoZ742B':'Chris','nPczCjzI2devNBz1zQrb':'Brian','TxGEqnHWrfWFTfGW9XjX':'Josh','29vD33N1CtxCmqQRPOHJ':'Drew','pqHfZKP75CvOlQylNhV4':'Bill','TX3LPaxmHKxFdv7VOQHJ':'Liam','VR6AewLTigWG4xSOukaG':'Arnold','pNInz6obpgDQGcFmaJgB':'Adam','yoZ06aMxZJJ28mfd3POQ':'Sam','g5CIjZEefAph4nQFvHAz':'Ethan','GBv7mTt0atIp3Br8iCZE':'Thomas','5Q0t7uMcjvnagumLfvZi':'Paul','flq6f7yk4E4fJM5XTYuZ':'Michael'};
 
 function selectElVoice(voiceId) {
   document.getElementById('elevenlabsVoiceId').value = voiceId;

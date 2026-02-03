@@ -356,6 +356,7 @@ export function getDashboardHtml(): string {
 
 <div class="tab-bar">
   <button class="active" onclick="switchTab('calls')">Calls</button>
+  <button onclick="switchTab('recordings')">Recordings</button>
   <button onclick="switchTab('analytics')">Analytics</button>
   <button onclick="switchTab('monitoring')">Monitoring</button>
   <button onclick="switchTab('compliance')">Compliance</button>
@@ -396,6 +397,14 @@ export function getDashboardHtml(): string {
   <div class="card">
     <h2><span class="icon">&#128203;</span> Recent Calls <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadCallHistory()">Refresh</button></h2>
     <div id="callHistory" style="font-size:13px;color:var(--text2)">Loading...</div>
+  </div>
+</div>
+
+<!-- RECORDINGS TAB -->
+<div class="tab-content" id="tab-recordings">
+  <div class="card">
+    <h2><span class="icon">&#127908;</span> Call Recordings <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadRecordings()">Refresh</button></h2>
+    <div id="recordingsTable"><div class="empty-state">Loading...</div></div>
   </div>
 </div>
 
@@ -1015,6 +1024,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-bar button').forEach(function(btn) {
     if (btn.getAttribute('onclick') && btn.getAttribute('onclick').indexOf("'" + name + "'") > -1) btn.classList.add('active');
   });
+  if (name === 'recordings') loadRecordings();
   if (name === 'analytics') loadAnalytics();
   if (name === 'monitoring') loadMonitoring();
   if (name === 'compliance') { loadDnc(); loadAuditLog(); }
@@ -1220,6 +1230,33 @@ async function loadCallHistory() {
     }
     el.innerHTML = html + '</table>';
   } catch (e) { document.getElementById('callHistory').innerHTML = '<span class="err">Failed</span>'; }
+}
+
+// ── Recordings ──
+async function loadRecordings() {
+  try {
+    var res = await fetch('/api/recordings');
+    var data = await res.json();
+    var el = document.getElementById('recordingsTable');
+    var recordings = data.recordings || [];
+    if (!recordings.length) { el.innerHTML = '<div class="empty-state">No recordings yet. Recordings appear after calls complete.</div>'; return; }
+    var html = '<table class="data-table"><tr><th>Time</th><th>Call SID</th><th>Duration</th><th>Channels</th><th>Source</th><th>Play</th></tr>';
+    for (var i = 0; i < recordings.length; i++) {
+      var r = recordings[i];
+      var t = new Date(r.timestamp).toLocaleString();
+      var dur = r.durationSec + 's';
+      var playUrl = r.recordingUrl ? r.recordingUrl + '.mp3' : '';
+      html += '<tr>'
+        + '<td style="font-size:11px">' + t + '</td>'
+        + '<td style="font-size:11px;word-break:break-all">' + r.callSid + '</td>'
+        + '<td>' + dur + '</td>'
+        + '<td>' + r.channels + 'ch</td>'
+        + '<td>' + r.source + '</td>'
+        + '<td>' + (playUrl ? '<audio controls preload="none" style="height:30px;max-width:200px"><source src="' + playUrl + '" type="audio/mpeg"></audio>' : '--') + '</td>'
+        + '</tr>';
+    }
+    el.innerHTML = html + '</table>';
+  } catch (e) { document.getElementById('recordingsTable').innerHTML = '<span class="err">Failed to load recordings</span>'; }
 }
 
 // ── Voice ──

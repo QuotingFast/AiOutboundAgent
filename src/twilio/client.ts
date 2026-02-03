@@ -46,7 +46,7 @@ export async function startOutboundCall(params: StartCallParams): Promise<{ call
 
   if (config.recording.enabled) {
     callOptions.record = true;
-    callOptions.recordingChannels = config.recording.channels;
+    callOptions.recordingChannels = config.recording.channels === 2 ? 'dual' : 'mono';
     callOptions.recordingStatusCallback = `${config.baseUrl}/twilio/recording-status`;
     callOptions.recordingStatusCallbackMethod = 'POST';
     callOptions.recordingStatusCallbackEvent = ['completed'];
@@ -78,7 +78,7 @@ export async function startCallRecording(callSid: string): Promise<string | null
   try {
     logger.info('twilio-client', 'Starting call recording', { callSid });
     const recording = await twilioClient.calls(callSid).recordings.create({
-      recordingChannels: String(config.recording.channels),
+      recordingChannels: config.recording.channels === 2 ? 'dual' : 'mono',
       recordingStatusCallback: `${config.baseUrl}/twilio/recording-status`,
       recordingStatusCallbackMethod: 'POST',
       recordingStatusCallbackEvent: ['completed'],

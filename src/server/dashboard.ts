@@ -4,7 +4,7 @@ export function getDashboardHtml(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Outbound Agent</title>
+<title>Quoting Fast AI</title>
 <style>
   :root {
     --bg: #0f1117;
@@ -348,7 +348,7 @@ export function getDashboardHtml(): string {
 </head>
 <body>
 <header>
-  <h1><span>AI</span> Voice Agent</h1>
+  <h1><img src="https://quotingfast.com/qflogo1.png" alt="Quoting Fast" style="height:32px;vertical-align:middle;margin-right:8px">Quoting Fast AI</h1>
   <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)">
     <span class="status-dot"></span> Connected
   </div>
@@ -523,19 +523,23 @@ export function getDashboardHtml(): string {
   <!-- Voice Provider -->
   <div class="card">
     <h2><span class="icon">&#127908;</span> Voice Provider</h2>
-    <input type="hidden" id="voiceProvider" value="openai">
+    <input type="hidden" id="voiceProvider" value="elevenlabs">
     <div class="provider-toggle">
-      <button id="provOpenai" class="active" onclick="setProvider('openai')">
+      <button id="provOpenai" onclick="setProvider('openai')">
         <span class="prov-label">OpenAI Realtime</span>
         <span class="prov-sub">(speech-to-speech)</span>
       </button>
-      <button id="provElevenlabs" onclick="setProvider('elevenlabs')">
+      <button id="provElevenlabs" class="active" onclick="setProvider('elevenlabs')">
         <span class="prov-label">ElevenLabs</span>
-        <span class="prov-sub">(TTS via ElevenLabs)</span>
+        <span class="prov-sub">(OpenAI LLM + EL TTS)</span>
+      </button>
+      <button id="provDeepseek" onclick="setProvider('deepseek')">
+        <span class="prov-label">DeepSeek</span>
+        <span class="prov-sub">(DeepSeek LLM + EL TTS)</span>
       </button>
     </div>
 
-    <div id="openaiVoiceSection" style="margin-top:16px">
+    <div id="openaiVoiceSection" style="margin-top:16px;display:none">
     <label>OpenAI Voice</label>
     <input type="hidden" id="voice" value="coral">
     <div class="voice-grid" id="voiceGrid">
@@ -582,7 +586,114 @@ export function getDashboardHtml(): string {
     </div>
     </div>
 
-    <div id="elevenlabsVoiceSection" class="el-settings" style="display:none">
+    <div id="deepseekVoiceSection" style="margin-top:16px;display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="width:8px;height:8px;background:var(--green);border-radius:50%"></div>
+        <span style="font-size:14px;font-weight:600;color:var(--text)">DeepSeek LLM</span>
+        <span style="font-size:12px;color:var(--text2)">+</span>
+        <span style="font-size:14px;font-weight:600;color:var(--text)">ElevenLabs TTS</span>
+      </div>
+      <div class="el-row">
+        <div>
+          <label>DeepSeek Model</label>
+          <select id="deepseekModel">
+            <option value="deepseek-chat">DeepSeek V3 (fast, affordable)</option>
+            <option value="deepseek-reasoner">DeepSeek R1 (reasoning)</option>
+          </select>
+        </div>
+        <div></div>
+      </div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:14px">
+        DeepSeek handles the conversation intelligence. Pick an ElevenLabs voice below for speech output.
+      </p>
+      <label>Voice (ElevenLabs TTS)</label>
+      <input type="hidden" id="dsElevenlabsVoiceId" value="">
+      <div class="voice-grid" id="dsVoiceGrid">
+        <div class="voice-card ds-vc" data-dsvoice="21m00Tcm4TlvDq8ikWAM" onclick="selectDsVoice('21m00Tcm4TlvDq8ikWAM')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('21m00Tcm4TlvDq8ikWAM',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Rachel</div><div class="vc-desc">Calm, warm female</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="EXAVITQu4vr4xnSDxMaL" onclick="selectDsVoice('EXAVITQu4vr4xnSDxMaL')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('EXAVITQu4vr4xnSDxMaL',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Bella</div><div class="vc-desc">Soft, friendly female</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="AZnzlk1XvdvUeBnXmlld" onclick="selectDsVoice('AZnzlk1XvdvUeBnXmlld')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('AZnzlk1XvdvUeBnXmlld',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Domi</div><div class="vc-desc">Confident, assertive female</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="MF3mGyEYCl7XYWbV9V6O" onclick="selectDsVoice('MF3mGyEYCl7XYWbV9V6O')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('MF3mGyEYCl7XYWbV9V6O',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Elli</div><div class="vc-desc">Expressive, emotional female</div>
+          <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="ErXwobaYiN019PkySvjV" onclick="selectDsVoice('ErXwobaYiN019PkySvjV')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('ErXwobaYiN019PkySvjV',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Antoni</div><div class="vc-desc">Warm, conversational male</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="TxGEqnHWrfWFTfGW9XjX" onclick="selectDsVoice('TxGEqnHWrfWFTfGW9XjX')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('TxGEqnHWrfWFTfGW9XjX',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Josh</div><div class="vc-desc">Deep, friendly male</div>
+          <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="VR6AewLTigWG4xSOukaG" onclick="selectDsVoice('VR6AewLTigWG4xSOukaG')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('VR6AewLTigWG4xSOukaG',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Arnold</div><div class="vc-desc">Crisp, confident male</div>
+          <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="pNInz6obpgDQGcFmaJgB" onclick="selectDsVoice('pNInz6obpgDQGcFmaJgB')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('pNInz6obpgDQGcFmaJgB',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Adam</div><div class="vc-desc">Deep, authoritative male</div>
+          <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="yoZ06aMxZJJ28mfd3POQ" onclick="selectDsVoice('yoZ06aMxZJJ28mfd3POQ')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('yoZ06aMxZJJ28mfd3POQ',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Sam</div><div class="vc-desc">Raspy, natural male</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card ds-vc" data-dsvoice="XB0fDUnXU5powFXDhCwa" onclick="selectDsVoice('XB0fDUnXU5powFXDhCwa')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('XB0fDUnXU5powFXDhCwa',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Charlotte</div><div class="vc-desc">Warm, natural female</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+      </div>
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <label>Custom Voice ID (optional)</label>
+        <input type="text" id="dsCustomVoiceId" placeholder="Paste a custom ElevenLabs Voice ID here">
+      </div>
+      <div class="el-row" style="margin-top:14px">
+        <div>
+          <label>ElevenLabs TTS Model</label>
+          <select id="dsElevenlabsModelId">
+            <option value="eleven_turbo_v2_5">Turbo v2.5 (fastest)</option>
+            <option value="eleven_multilingual_v2">Multilingual v2</option>
+            <option value="eleven_monolingual_v1">Monolingual v1</option>
+          </select>
+        </div>
+        <div></div>
+      </div>
+      <div class="el-row">
+        <div>
+          <label>Stability (0.0 - 1.0)</label>
+          <div class="range-wrap">
+            <input type="range" id="dsStability" min="0" max="1" step="0.05" value="0.5">
+            <span class="range-val" id="dsStabilityVal">0.50</span>
+          </div>
+        </div>
+        <div>
+          <label>Similarity Boost (0.0 - 1.0)</label>
+          <div class="range-wrap">
+            <input type="range" id="dsSimilarityBoost" min="0" max="1" step="0.05" value="0.75">
+            <span class="range-val" id="dsSimilarityBoostVal">0.75</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="elevenlabsVoiceSection" class="el-settings">
       <label>ElevenLabs Voice</label>
       <input type="hidden" id="elevenlabsVoiceId" value="">
       <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;font-weight:500">Female Voices</div>
@@ -709,6 +820,16 @@ export function getDashboardHtml(): string {
           <button class="vc-play" onclick="event.stopPropagation();previewElVoice('flq6f7yk4E4fJM5XTYuZ',this)" title="Preview">&#9654;</button>
           <div class="vc-name">Michael</div><div class="vc-desc">Mature, deep, experienced</div>
           <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="yoZ06aMxZJJ28mfd3POQ" onclick="selectElVoice('yoZ06aMxZJJ28mfd3POQ')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('yoZ06aMxZJJ28mfd3POQ',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Sam</div><div class="vc-desc">Raspy, natural male</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
+        </div>
+        <div class="voice-card el-vc" data-elvoice="XB0fDUnXU5powFXDhCwa" onclick="selectElVoice('XB0fDUnXU5powFXDhCwa')">
+          <button class="vc-play" onclick="event.stopPropagation();previewElVoice('XB0fDUnXU5powFXDhCwa',this)" title="Preview">&#9654;</button>
+          <div class="vc-name">Charlotte</div><div class="vc-desc">Warm, natural female</div>
+          <span class="vc-tag sales">Sales</span><span class="vc-check">&#10003;</span>
         </div>
       </div>
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
@@ -905,7 +1026,8 @@ var SETTINGS_FIELDS = [
   'voiceProvider','voice','realtimeModel','temperature','vadThreshold','silenceDurationMs',
   'prefixPaddingMs','bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
   'agentName','companyName','systemPromptOverride','inboundPromptOverride','allstateNumber','nonAllstateNumber',
-  'elevenlabsVoiceId','elevenlabsModelId','elevenlabsStability','elevenlabsSimilarityBoost'
+  'elevenlabsVoiceId','elevenlabsModelId','elevenlabsStability','elevenlabsSimilarityBoost',
+  'deepseekModel'
 ];
 var NUMBER_FIELDS = [
   'temperature','vadThreshold','silenceDurationMs','prefixPaddingMs',
@@ -926,8 +1048,10 @@ function setProvider(provider) {
   document.getElementById('voiceProvider').value = provider;
   document.getElementById('provOpenai').classList.toggle('active', provider === 'openai');
   document.getElementById('provElevenlabs').classList.toggle('active', provider === 'elevenlabs');
+  document.getElementById('provDeepseek').classList.toggle('active', provider === 'deepseek');
   document.getElementById('openaiVoiceSection').style.display = provider === 'openai' ? '' : 'none';
   document.getElementById('elevenlabsVoiceSection').style.display = provider === 'elevenlabs' ? '' : 'none';
+  document.getElementById('deepseekVoiceSection').style.display = provider === 'deepseek' ? '' : 'none';
 }
 function updateVoiceAvailability() {
   var allowed = getCompatibleVoices();
@@ -966,6 +1090,15 @@ async function loadSettings() {
     updateVoiceAvailability();
     if (s.voice) selectVoice(s.voice);
     syncElVoiceSelection();
+    // Sync DeepSeek voice section from shared ElevenLabs fields
+    if (s.elevenlabsVoiceId) {
+      document.getElementById('dsElevenlabsVoiceId').value = s.elevenlabsVoiceId;
+      syncDsVoiceSelection();
+    }
+    if (s.elevenlabsModelId) document.getElementById('dsElevenlabsModelId').value = s.elevenlabsModelId;
+    if (s.elevenlabsStability != null) { document.getElementById('dsStability').value = s.elevenlabsStability; var dsv = document.getElementById('dsStabilityVal'); if (dsv) dsv.textContent = parseFloat(s.elevenlabsStability).toFixed(2); }
+    if (s.elevenlabsSimilarityBoost != null) { document.getElementById('dsSimilarityBoost').value = s.elevenlabsSimilarityBoost; var dss = document.getElementById('dsSimilarityBoostVal'); if (dss) dss.textContent = parseFloat(s.elevenlabsSimilarityBoost).toFixed(2); }
+    if (s.deepseekModel) document.getElementById('deepseekModel').value = s.deepseekModel;
     if (s.defaultToNumber) document.getElementById('callTo').value = s.defaultToNumber;
     if (s.defaultFromNumber) document.getElementById('callFrom').value = s.defaultFromNumber;
     document.getElementById('inboundEnabled').checked = s.inboundEnabled !== false;
@@ -985,6 +1118,17 @@ async function saveSettings() {
     var hid = document.getElementById('elevenlabsVoiceId').value.trim();
     if (cid) document.getElementById('elevenlabsVoiceId').value = cid;
     if (!cid && !hid) { toast('Select an ElevenLabs voice', 'error'); return; }
+  }
+  if (provider === 'deepseek') {
+    // Sync DeepSeek voice settings to the shared ElevenLabs fields
+    var dsCid = document.getElementById('dsCustomVoiceId').value.trim();
+    var dsHid = document.getElementById('dsElevenlabsVoiceId').value.trim();
+    var dsVoice = dsCid || dsHid;
+    if (!dsVoice) { toast('Select a voice for DeepSeek', 'error'); return; }
+    document.getElementById('elevenlabsVoiceId').value = dsVoice;
+    document.getElementById('elevenlabsModelId').value = document.getElementById('dsElevenlabsModelId').value;
+    document.getElementById('elevenlabsStability').value = document.getElementById('dsStability').value;
+    document.getElementById('elevenlabsSimilarityBoost').value = document.getElementById('dsSimilarityBoost').value;
   }
   var btn = document.getElementById('saveBtn');
   btn.disabled = true; btn.textContent = 'Saving...';
@@ -1099,7 +1243,7 @@ async function previewVoice(voice, btn) {
   } catch (e) { btn.classList.remove('loading'); btn.innerHTML = '&#9654;'; }
 }
 
-var EL_VOICES = {'21m00Tcm4TlvDq8ikWAM':'Rachel','EXAVITQu4vr4xnSDxMaL':'Sarah','AZnzlk1XvdvUeBnXmlld':'Domi','MF3mGyEYCl7XYWbV9V6O':'Elli','XrExE9yKIg1WjnnlVkGX':'Matilda','pMsXgVXv3BLzUgSXRplE':'Serena','LcfcDJNUP1GQjkzn1xUU':'Emily','jsCqWAovK2LkecY7zXl4':'Freya','oWAxZDx7w5VEj9dCyTzz':'Grace','piTKgcLEGmPE4e6mEKli':'Nicole','ErXwobaYiN019PkySvjV':'Antoni','iP95p4xoKVk53GoZ742B':'Chris','nPczCjzI2devNBz1zQrb':'Brian','TxGEqnHWrfWFTfGW9XjX':'Josh','29vD33N1CtxCmqQRPOHJ':'Drew','pqHfZKP75CvOlQylNhV4':'Bill','TX3LPaxmHKxFdv7VOQHJ':'Liam','VR6AewLTigWG4xSOukaG':'Arnold','pNInz6obpgDQGcFmaJgB':'Adam','yoZ06aMxZJJ28mfd3POQ':'Sam','g5CIjZEefAph4nQFvHAz':'Ethan','GBv7mTt0atIp3Br8iCZE':'Thomas','5Q0t7uMcjvnagumLfvZi':'Paul','flq6f7yk4E4fJM5XTYuZ':'Michael'};
+var EL_VOICES = {'21m00Tcm4TlvDq8ikWAM':'Rachel','EXAVITQu4vr4xnSDxMaL':'Sarah','AZnzlk1XvdvUeBnXmlld':'Domi','MF3mGyEYCl7XYWbV9V6O':'Elli','XrExE9yKIg1WjnnlVkGX':'Matilda','pMsXgVXv3BLzUgSXRplE':'Serena','LcfcDJNUP1GQjkzn1xUU':'Emily','jsCqWAovK2LkecY7zXl4':'Freya','oWAxZDx7w5VEj9dCyTzz':'Grace','piTKgcLEGmPE4e6mEKli':'Nicole','ErXwobaYiN019PkySvjV':'Antoni','iP95p4xoKVk53GoZ742B':'Chris','nPczCjzI2devNBz1zQrb':'Brian','TxGEqnHWrfWFTfGW9XjX':'Josh','29vD33N1CtxCmqQRPOHJ':'Drew','pqHfZKP75CvOlQylNhV4':'Bill','TX3LPaxmHKxFdv7VOQHJ':'Liam','VR6AewLTigWG4xSOukaG':'Arnold','pNInz6obpgDQGcFmaJgB':'Adam','yoZ06aMxZJJ28mfd3POQ':'Sam','g5CIjZEefAph4nQFvHAz':'Ethan','GBv7mTt0atIp3Br8iCZE':'Thomas','5Q0t7uMcjvnagumLfvZi':'Paul','flq6f7yk4E4fJM5XTYuZ':'Michael','XB0fDUnXU5powFXDhCwa':'Charlotte'};
 
 function selectElVoice(voiceId) {
   document.getElementById('elevenlabsVoiceId').value = voiceId;
@@ -1120,6 +1264,28 @@ function syncElVoiceSelection() {
 document.getElementById('elCustomVoiceId').addEventListener('input', function() {
   var val = this.value.trim();
   if (val) { document.getElementById('elevenlabsVoiceId').value = val; document.querySelectorAll('.el-vc').forEach(function(c) { c.classList.remove('selected'); }); }
+});
+
+// ── DeepSeek Voice Selection ──
+function selectDsVoice(voiceId) {
+  document.getElementById('dsElevenlabsVoiceId').value = voiceId;
+  document.getElementById('dsCustomVoiceId').value = '';
+  document.querySelectorAll('.ds-vc').forEach(function(c) { c.classList.toggle('selected', c.dataset.dsvoice === voiceId); });
+}
+function syncDsVoiceSelection() {
+  var voiceId = document.getElementById('dsElevenlabsVoiceId').value;
+  var customEl = document.getElementById('dsCustomVoiceId');
+  if (EL_VOICES[voiceId]) {
+    document.querySelectorAll('.ds-vc').forEach(function(c) { c.classList.toggle('selected', c.dataset.dsvoice === voiceId); });
+    customEl.value = '';
+  } else if (voiceId) {
+    document.querySelectorAll('.ds-vc').forEach(function(c) { c.classList.remove('selected'); });
+    customEl.value = voiceId;
+  }
+}
+document.getElementById('dsCustomVoiceId').addEventListener('input', function() {
+  var val = this.value.trim();
+  if (val) { document.getElementById('dsElevenlabsVoiceId').value = val; document.querySelectorAll('.ds-vc').forEach(function(c) { c.classList.remove('selected'); }); }
 });
 
 async function previewElVoice(voiceId, btn) {

@@ -41,6 +41,8 @@ export function startServer(): void {
     logger.info('server', `Base URL: ${config.baseUrl}`);
     logger.info('server', `Realtime model: ${config.openai.realtimeModel}`);
     logger.info('server', `Voice: ${config.openai.voice}`);
+    logger.info('server', `TTS Provider: ${config.ttsProvider}`);
+    logger.info('server', `DeepSeek: ${config.deepseek.apiKey ? 'configured' : 'not configured'}`);
     logger.info('server', `Debug mode: ${config.debug}`);
     logger.info('server', 'Endpoints:');
     logger.info('server', `  Dashboard:  ${config.baseUrl}/dashboard`);

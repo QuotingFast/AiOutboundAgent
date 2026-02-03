@@ -293,11 +293,80 @@ router.get('/api/default-prompt', (_req: Request, res: Response) => {
 
 // ── Voice Preview Endpoints ─────────────────────────────────────────
 
+const elPreviewCache = new Map<string, Buffer>();
+const EL_PREVIEW_TEXT = "Hey there! This is a quick preview of how I sound. Pretty natural, right?";
+
 router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
-  const voice = req.params.voice;
+  const voice = req.params.voice.toLowerCase();
   const validVoices = ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'];
+
+  // ElevenLabs voice name → ID mapping
+  const elVoiceMap: Record<string, string> = {
+    rachel: '21m00Tcm4TlvDq8ikWAM',
+    bella: 'EXAVITQu4vr4xnSDxMaL',
+    domi: 'AZnzlk1XvdvUeBnXmlld',
+    elli: 'MF3mGyEYCl7XYWbV9V6O',
+    antoni: 'ErXwobaYiN019PkySvjV',
+    josh: 'TxGEqnHWrfWFTfGW9XjX',
+    arnold: 'VR6AewLTigWG4xSOukaG',
+    adam: 'pNInz6obpgDQGcFmaJgB',
+    sam: 'yoZ06aMxZJJ28mfd3POQ',
+    charlotte: 'XB0fDUnXU5powFXDhCwa',
+  };
+
+  // Route ElevenLabs voices to the ElevenLabs preview endpoint
+  if (elVoiceMap[voice]) {
+    const voiceId = elVoiceMap[voice];
+    const apiKey = config.elevenlabs?.apiKey;
+    if (!apiKey) {
+      res.status(500).json({ error: 'ELEVENLABS_API_KEY not configured' });
+      return;
+    }
+    try {
+      if (elPreviewCache.has(voiceId)) {
+        res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'public, max-age=86400' });
+        res.send(elPreviewCache.get(voiceId));
+        return;
+      }
+
+      const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        method: 'POST',
+        headers: {
+          'xi-api-key': apiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'audio/mpeg',
+        },
+        body: JSON.stringify({
+          text: EL_PREVIEW_TEXT,
+          model_id: 'eleven_turbo_v2_5',
+          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        }),
+      });
+
+      if (!ttsRes.ok) {
+        const errText = await ttsRes.text();
+        logger.error('routes', 'ElevenLabs preview failed', { voice, voiceId, status: ttsRes.status, error: errText });
+        res.status(502).json({ error: 'ElevenLabs TTS failed: ' + ttsRes.status });
+        return;
+      }
+
+      const arrayBuf = await ttsRes.arrayBuffer();
+      const buffer = Buffer.from(arrayBuf);
+      elPreviewCache.set(voiceId, buffer);
+      logger.info('routes', 'ElevenLabs preview generated via name', { voice, voiceId, bytes: buffer.length });
+
+      res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'public, max-age=86400' });
+      res.send(buffer);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error('routes', 'ElevenLabs preview error', { voice, error: msg });
+      res.status(500).json({ error: msg });
+    }
+    return;
+  }
+
   if (!validVoices.includes(voice)) {
-    res.status(400).json({ error: 'Invalid voice. Valid: ' + validVoices.join(', ') });
+    res.status(400).json({ error: 'Invalid voice. Valid: ' + validVoices.join(', ') + ', ' + Object.keys(elVoiceMap).join(', ') });
     return;
   }
 
@@ -342,9 +411,6 @@ router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
     res.status(500).json({ error: msg });
   }
 });
-
-const elPreviewCache = new Map<string, Buffer>();
-const EL_PREVIEW_TEXT = "Hey there! This is a quick preview of how I sound. Pretty natural, right?";
 
 router.get('/api/elevenlabs-voice-preview/:voiceId', async (req: Request, res: Response) => {
   const voiceId = req.params.voiceId;

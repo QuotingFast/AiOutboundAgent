@@ -35,7 +35,12 @@ export const config = {
     voiceId: optional('ELEVENLABS_VOICE_ID', ''),
   },
 
-  ttsProvider: optional('TTS_PROVIDER', 'elevenlabs') as 'openai' | 'elevenlabs',
+  deepseek: {
+    apiKey: optional('DEEPSEEK_API_KEY', ''),
+    model: optional('DEEPSEEK_MODEL', 'deepseek-chat'),
+  },
+
+  ttsProvider: optional('TTS_PROVIDER', 'elevenlabs') as 'openai' | 'elevenlabs' | 'deepseek',
   sttProvider: optional('STT_PROVIDER', 'openai') as 'openai' | 'deepgram',
 
   recording: {

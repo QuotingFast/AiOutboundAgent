@@ -300,18 +300,24 @@ router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
   const voice = req.params.voice.toLowerCase();
   const validVoices = ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'];
 
-  // ElevenLabs voice name → ID mapping
+  // ElevenLabs voice name → ID mapping (all American premade voices)
   const elVoiceMap: Record<string, string> = {
-    rachel: '21m00Tcm4TlvDq8ikWAM',
-    bella: 'EXAVITQu4vr4xnSDxMaL',
-    domi: 'AZnzlk1XvdvUeBnXmlld',
-    elli: 'MF3mGyEYCl7XYWbV9V6O',
-    antoni: 'ErXwobaYiN019PkySvjV',
-    josh: 'TxGEqnHWrfWFTfGW9XjX',
-    arnold: 'VR6AewLTigWG4xSOukaG',
+    sarah: 'EXAVITQu4vr4xnSDxMaL',
+    jessica: 'cgSgspJ2msm6clMCkdW9',
+    bella: 'hpp4J3VqNfWAUOO0d1Us',
+    laura: 'FGY2WhTYpPnrIDTdsKH5',
+    matilda: 'XrExE9yKIg1WjnnlVkGX',
+    eric: 'cjVigY5qzO86Huf0OWal',
+    chris: 'iP95p4xoKVk53GoZ742B',
+    roger: 'CwhRBWXzGAHq8TQ4Fs17',
+    will: 'bIHbv24MWmeRgasZH58o',
+    brian: 'nPczCjzI2devNBz1zQrb',
+    liam: 'TX3LPaxmHKxFdv7VOQHJ',
     adam: 'pNInz6obpgDQGcFmaJgB',
-    sam: 'yoZ06aMxZJJ28mfd3POQ',
-    charlotte: 'XB0fDUnXU5powFXDhCwa',
+    bill: 'pqHfZKP75CvOlQylNhV4',
+    callum: 'N2lVS1w4EtoT3dr4eOWO',
+    harry: 'SOYHLrjzK2X1ezoPC6cr',
+    river: 'SAz9YHcvj6GT2YYXdXww',
   };
 
   // Route ElevenLabs voices to the ElevenLabs preview endpoint

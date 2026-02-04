@@ -964,15 +964,17 @@ router.put('/api/routing/strategy', (req: Request, res: Response) => {
 });
 
 // -- Weblead Webhook Endpoint --
-router.post('/webhook/weblead', async (req: Request, res: Response) => {
+router.post('/968
+            ', async (req: Request, res: Response) => {
   try {
     const body = req.body;
-    logger.info('routes', 'Weblead webhook received', { keys: Object.keys(body) });
-    const phone = body.phone || body.phone_number || body.primary_phone || '';
+    const contact = body.contact || {};
+const phone = (contact.phone || body.phone || body.phone_number || body.primary_phone || '').toString().trim();    
+    logger.info('routes', 'Weblead webhook received', { keys: Object.keys(body), phone, contactPhone: contact.phone });
     if (!phone) { res.status(400).json({ error: 'Missing phone' }); return; }
-    const firstName = body.first_name || body.firstName || 'Unknown';
-    const lastName = body.last_name || body.lastName || '';
-    const state = body.state || '';
+    const firstName = contact.first_name || body.first_name || body.firstName || 'Unknown';
+    const lastName = contact.last_name || body.last_name || body.lastName || '';
+    const state = contact.state || body.state || '';
     const currentInsurer = body.current_insurer || body.current_carrier || '';
     const fullName = (firstName + ' ' + lastName).trim() || 'Unknown';
     const lead = createOrUpdateLead(phone, { name: fullName, state, currentInsurer, tags: ['weblead'] });

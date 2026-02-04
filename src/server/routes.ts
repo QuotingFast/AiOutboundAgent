@@ -997,8 +997,7 @@ router.put('/api/routing/strategy', (req: Request, res: Response) => {
 });
 
 // -- Weblead Webhook Endpoint --
-router.post('/968
-            ', async (req: Request, res: Response) => {
+router.post('/webhook/weblead', async (req: Request, res: Response) => {
   try {
     const body = req.body;
     const contact = body.contact || {};

@@ -1003,7 +1003,6 @@ router.post('/968
     const body = req.body;
     const contact = body.contact || {};
 const phone = (contact.phone || body.phone || body.phone_number || body.primary_phone || '').toString().trim();    
-    logger.info('routes', 'Weblead webhook received', { keys: Object.keys(body), phone, contactPhone: contact.phone });
     if (!phone) { res.status(400).json({ error: 'Missing phone' }); return; }
     const firstName = contact.first_name || body.first_name || body.firstName || 'Unknown';
     const lastName = contact.last_name || body.last_name || body.lastName || '';

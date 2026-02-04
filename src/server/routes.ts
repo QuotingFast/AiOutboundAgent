@@ -963,4 +963,36 @@ router.put('/api/routing/strategy', (req: Request, res: Response) => {
   res.json({ strategy: getRoutingStrategy() });
 });
 
+// -- Weblead Webhook Endpoint --
+router.post('/webhook/weblead', async (req: Request, res: Response) => {
+  try {
+    const body = req.body;
+    logger.info('routes', 'Weblead webhook received', { keys: Object.keys(body) });
+    const phone = body.phone || body.phone_number || body.primary_phone || '';
+    if (!phone) { res.status(400).json({ error: 'Missing phone' }); return; }
+    const firstName = body.first_name || body.firstName || 'Unknown';
+    const lastName = body.last_name || body.lastName || '';
+    const state = body.state || '';
+    const currentInsurer = body.current_insurer || body.current_carrier || '';
+    const fullName = (firstName + ' ' + lastName).trim() || 'Unknown';
+    const lead = createOrUpdateLead(phone, { name: fullName, state, currentInsurer, tags: ['weblead'] });
+    const settings = getSettings();
+    const fromNumber = settings.fromNumber || config.twilio?.fromNumber || '';
+    if (fromNumber) {
+      const compliance = runPreCallComplianceCheck(phone, state);
+      if (compliance.allowed) {
+        const cr = await startOutboundCall({ to: phone, from: fromNumber, lead: { first_name: firstName, state, current_insurer: currentInsurer } });
+        registerPendingSession(cr.callSid, { first_name: firstName, state, current_insurer: currentInsurer });
+        recordCall(cr.callSid, phone, firstName);
+        res.json({ success: true, phone, callSid: cr.callSid }); return;
+      }
+      res.json({ success: true, phone, call: null, reason: 'compliance' }); return;
+    }
+    res.json({ success: true, phone, call: null });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg });
+  }
+});
+
 export { router };

@@ -1672,7 +1672,7 @@ async function loadRecordings() {
       var cost = (r.durationSec / 60) * 0.014;
       totalCost += cost;
       var costStr = '$' + cost.toFixed(3);
-      var playUrl = r.recordingUrl ? r.recordingUrl + '.mp3' : '';
+      var playUrl = r.callSid ? '/api/recordings/' + r.callSid + '/audio' : '';
       html += '<tr>'
         + '<td style="font-size:11px">' + t + '</td>'
         + '<td style="font-size:11px;word-break:break-all">' + r.callSid + '</td>'

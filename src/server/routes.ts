@@ -555,6 +555,39 @@ router.get('/api/recordings/:callSid', (req: Request, res: Response) => {
   res.json(recording);
 });
 
+// Proxy endpoint to serve recording audio (Twilio requires auth)
+router.get('/api/recordings/:callSid/audio', async (req: Request, res: Response) => {
+  const recording = getRecordingByCallSid(req.params.callSid);
+  if (!recording) {
+    res.status(404).json({ error: 'No recording found for this call' });
+    return;
+  }
+
+  try {
+    const audioUrl = `https://api.twilio.com/2010-04-01/Accounts/${config.twilio.accountSid}/Recordings/${recording.recordingSid}.mp3`;
+    const authHeader = 'Basic ' + Buffer.from(`${config.twilio.accountSid}:${config.twilio.authToken}`).toString('base64');
+
+    const response = await fetch(audioUrl, {
+      headers: { 'Authorization': authHeader },
+    });
+
+    if (!response.ok) {
+      logger.error('routes', `Failed to fetch recording from Twilio: ${response.status}`);
+      res.status(response.status).json({ error: 'Failed to fetch recording from Twilio' });
+      return;
+    }
+
+    const audioBuffer = Buffer.from(await response.arrayBuffer());
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Length', audioBuffer.length.toString());
+    res.setHeader('Content-Disposition', `inline; filename="recording-${recording.callSid}.mp3"`);
+    res.send(audioBuffer);
+  } catch (err: unknown) {
+    logger.error('routes', 'Error proxying recording', { error: String(err) });
+    res.status(500).json({ error: 'Failed to stream recording' });
+  }
+});
+
 // ── Compliance Endpoints ────────────────────────────────────────────
 
 router.get('/api/compliance/dnc', (_req: Request, res: Response) => {

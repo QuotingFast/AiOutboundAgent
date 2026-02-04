@@ -977,7 +977,7 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
     const fullName = (firstName + ' ' + lastName).trim() || 'Unknown';
     const lead = createOrUpdateLead(phone, { name: fullName, state, currentInsurer, tags: ['weblead'] });
     const settings = getSettings();
-    const fromNumber = settings.fromNumber || config.twilio?.fromNumber || '';
+    const fromNumber = settings.defaultFromNumber || config.twilio?.fromNumber || '';
     if (fromNumber) {
       const compliance = runPreCallComplianceCheck(phone, state);
       if (compliance.allowed) {

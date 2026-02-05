@@ -996,36 +996,201 @@ router.put('/api/routing/strategy', (req: Request, res: Response) => {
   res.json({ strategy: getRoutingStrategy() });
 });
 
-// -- Weblead Webhook Endpoint --
+.973
+971
+// ── Helper: Normalize phone number ────────────────────────────────────
+function normalizePhone(phone: string): string {
+    return phone.replace(/[^0-9+]/g, '');
+}
+
+// ── Weblead Webhook Endpoint (Jangl/QuotingFast format) ────────────────
 router.post('/webhook/weblead', async (req: Request, res: Response) => {
-  try {
-    const body = req.body;
-    const contact = body.contact || {};
-const phone = (contact.phone || body.phone || body.phone_number || body.primary_phone || '').toString().trim();    
-    if (!phone) { res.status(400).json({ error: 'Missing phone' }); return; }
-    const firstName = contact.first_name || body.first_name || body.firstName || 'Unknown';
-    const lastName = contact.last_name || body.last_name || body.lastName || '';
-    const state = contact.state || body.state || '';
-    const currentInsurer = body.current_insurer || body.current_carrier || '';
-    const fullName = (firstName + ' ' + lastName).trim() || 'Unknown';
-    const lead = createOrUpdateLead(phone, { name: fullName, state, currentInsurer, tags: ['weblead'] });
-    const settings = getSettings();
-    const fromNumber = settings.defaultFromNumber || config.twilio?.fromNumber || '';
-    if (fromNumber) {
-      const compliance = runPreCallComplianceCheck(phone, state);
-      if (compliance.allowed) {
-        const cr = await startOutboundCall({ to: phone, from: fromNumber, lead: { first_name: firstName, state, current_insurer: currentInsurer } });
-        registerPendingSession(cr.callSid, { first_name: firstName, state, current_insurer: currentInsurer });
-        recordCall(cr.callSid, phone, firstName);
-        res.json({ success: true, phone, callSid: cr.callSid }); return;
-      }
-      res.json({ success: true, phone, call: null, reason: 'compliance' }); return;
+    try {
+          const body = req.body;
+          const contact = body.contact || {};
+          const data = body.data || {};
+          const meta = body.meta || {};
+
+          // Extract and normalize phone number from various possible fields
+          const rawPhone = (
+                  contact.phone || 
+                  body.phone || 
+                  body.phone_number || 
+                  body.primary_phone || 
+                  ''
+                ).toString().trim();
+
+          const phone = normalizePhone(rawPhone);
+
+          if (!phone) {
+                  res.status(400).json({ error: 'Missing phone' });
+                  return;
+          }
+
+          // Extract contact info
+          const firstName = contact.first_name || body.first_name || body.firstName || 'Unknown';
+          const lastName = contact.last_name || body.last_name || body.lastName || '';
+          const state = contact.state || body.state || '';
+          const city = contact.city || body.city || '';
+          const email = contact.email || body.email || '';
+          const zipCode = contact.zip_code || body.zip_code || body.zip || '';
+          const address = contact.address || body.address || '';
+
+          // Extract policy/insurance data
+          const currentPolicy = data.current_policy || {};
+          const requestedPolicy = data.requested_policy || {};
+          const currentInsurer = currentPolicy.insurance_company || body.current_insurer || body.current_carrier || '';
+
+          // Extract drivers info (for display/notes)
+          const drivers = data.drivers || [];
+          const vehicles = data.vehicles || [];
+
+          // Build form data summary for notes
+          const formDataSummary: Record<string, any> = {
+                  contact: { firstName, lastName, state, city, email, zipCode, address },
+                  leadId: body.id,
+                  timestamp: body.timestamp,
+                  sellPrice: body.sell_price,
+                  campaignId: body.campaign_id,
+                  tcpaCompliant: meta.tcpa_compliant,
+                  trustedFormUrl: meta.trusted_form_cert_url,
+                  driversCount: drivers.length,
+                  vehiclesCount: vehicles.length,
+          };
+
+          // Store detailed driver info
+          if (drivers.length > 0) {
+                  formDataSummary.primaryDriver = {
+                            name: `${drivers[0].first_name || ''} ${drivers[0].last_name || ''}`.trim(),
+                            dob: drivers[0].birth_date,
+                            maritalStatus: drivers[0].marital_status,
+                            occupation: drivers[0].occupation,
+                            education: drivers[0].education,
+                  };
+          }
+
+          // Store vehicle info
+          if (vehicles.length > 0) {
+                  formDataSummary.primaryVehicle = {
+                            year: vehicles[0].year,
+                            make: vehicles[0].make,
+                            model: vehicles[0].model,
+                            vin: vehicles[0].vin,
+                            annualMiles: vehicles[0].annual_miles,
+                            primaryUse: vehicles[0].primary_use,
+                  };
+          }
+
+          // Store current & requested policy info
+          if (currentPolicy.insurance_company) {
+                  formDataSummary.currentPolicy = {
+                            insurer: currentPolicy.insurance_company,
+                            coverageType: currentPolicy.coverage_type,
+                            insuredSince: currentPolicy.insured_since,
+                            expirationDate: currentPolicy.expiration_date,
+                  };
+          }
+
+          if (requestedPolicy.coverage_type) {
+                  formDataSummary.requestedPolicy = {
+                            coverageType: requestedPolicy.coverage_type,
+                            bodilyInjury: requestedPolicy.bodily_injury,
+                            propertyDamage: requestedPolicy.property_damage,
+                  };
+          }
+
+          const fullName = `${firstName} ${lastName}`.trim() || 'Unknown';
+
+          // Create/update lead with all the form data
+          const lead = createOrUpdateLead(phone, {
+                  name: fullName,
+                  state,
+                  currentInsurer,
+                  tags: ['weblead', 'jangl'],
+                  customFields: formDataSummary,
+          });
+
+          // Add auto-generated note with form submission details
+          addLeadNote(phone, `Weblead received: ${drivers.length} driver(s), ${vehicles.length} vehicle(s). Current insurer: ${currentInsurer || 'N/A'}. Lead ID: ${body.id || 'N/A'}`);
+
+          // Check settings for auto-dial
+          const settings = getSettings();
+          const autoDialEnabled = settings.webleadAutoDialEnabled !== false; // default true
+          const fromNumber = settings.defaultFromNumber || config.twilio?.fromNumber || '';
+
+          if (autoDialEnabled && fromNumber) {
+                  const compliance = runPreCallComplianceCheck(phone, state);
+
+                  if (compliance.allowed) {
+                            const cr = await startOutboundCall({
+                                        to: phone,
+                                        from: fromNumber,
+                                        lead: {
+                                                      first_name: firstName,
+                                                      state,
+                                                      current_insurer: currentInsurer,
+                                        },
+                            });
+
+                            registerPendingSession(cr.callSid, {
+                                        first_name: firstName,
+                                        state,
+                                        current_insurer: currentInsurer,
+                            });
+
+                            recordCall(cr.callSid, phone, firstName);
+
+                            logger.info('routes', 'Weblead call started', { 
+                                        phone, 
+                                        callSid: cr.callSid,
+                                        leadId: body.id,
+                            });
+
+                            res.json({
+                                        success: true,
+                                        phone,
+                                        name: fullName,
+                                        state,
+                                        callSid: cr.callSid,
+                                        autoDialed: true,
+                                        formData: formDataSummary,
+                            });
+                            return;
+                  }
+
+                  logger.info('routes', 'Weblead compliance failed', { phone, state });
+                  res.json({
+                            success: true,
+                            phone,
+                            name: fullName,
+                            state,
+                            call: null,
+                            reason: 'compliance',
+                            autoDialed: false,
+                            formData: formDataSummary,
+                  });
+                  return;
+          }
+
+          // Auto-dial disabled or no from number configured
+          logger.info('routes', 'Weblead stored (no auto-dial)', { phone, leadId: body.id });
+          res.json({
+                  success: true,
+                  phone,
+                  name: fullName,
+                  state,
+                  call: null,
+                  autoDialed: false,
+                  reason: autoDialEnabled ? 'no_from_number' : 'auto_dial_disabled',
+                  formData: formDataSummary,
+          });
+
+    } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error('routes', 'Weblead webhook error', { error: msg });
+          res.status(500).json({ error: msg });
     }
-    res.json({ success: true, phone, call: null });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: msg });
-  }
 });
+
 
 export { router };

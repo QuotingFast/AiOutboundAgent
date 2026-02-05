@@ -1197,25 +1197,25 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
 router.post('/webhook/weblead', async (req: Request, res: Response) => {
     try {
           const body = req.body;
-          logger.info('Weblead webhook received:', { body });
-
+          logger.info('Weblead webhook received');
+      
           // Normalize phone number - remove non-digits
           const normalizePhone = (phone: string | undefined): string => {
                   if (!phone) return '';
                   return phone.replace(/\D/g, '');
           };
-
+      
           // Extract phone from various possible locations (Jangl format)
           let phone = normalizePhone(body.phone) || 
                             normalizePhone(body.contact?.phone) || 
                             normalizePhone(body.lead?.phone) ||
                             normalizePhone(body.data?.phone);
-
+      
           if (!phone) {
                   logger.warn('Weblead webhook: Missing phone number');
                   return res.status(400).json({ error: 'Missing phone' });
           }
-
+      
           // Ensure phone has country code
           if (phone.length === 10) {
                   phone = '1' + phone;
@@ -1223,107 +1223,80 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
           if (!phone.startsWith('+')) {
                   phone = '+' + phone;
           }
-
+      
           // Extract name from various possible locations
           const firstName = body.contact?.first_name || body.first_name || body.firstName || body.lead?.firstName || '';
           const lastName = body.contact?.last_name || body.last_name || body.lastName || body.lead?.lastName || '';
-          const name = `${firstName} ${lastName}`.trim() || 'Web Lead';
-
-          // Build customFields from all available data
-          const customFields: Record<string, any> = {};
-
-          // Contact info
-          if (body.contact) {
-                  customFields.email = body.contact.email;
-                  customFields.address = body.contact.address;
-                  customFields.city = body.contact.city;
-                  customFields.state = body.contact.state;
-                  customFields.zip = body.contact.zip;
-          }
-
-          // Driver info (if present in data.drivers)
+          const leadName = `${firstName} ${lastName}`.trim() || 'Web Lead';
+      
+          // Build customFields from all available data for call context
+          const customFields: Record<string, unknown> = {
+                  leadSource: 'weblead',
+                  receivedAt: new Date().toISOString(),
+                  email: body.contact?.email,
+                  address: body.contact?.address,
+                  city: body.contact?.city,
+                  state: body.contact?.state,
+                  zip: body.contact?.zip,
+          };
+      
+          // Store driver info if present
           if (body.data?.drivers && Array.isArray(body.data.drivers)) {
-                  customFields.drivers = body.data.drivers.map((d: any) => ({
-                            name: `${d.first_name || ''} ${d.last_name || ''}`.trim(),
-                            dob: d.dob,
-                            gender: d.gender,
-                            marital_status: d.marital_status,
-                            license_status: d.license_status
-                  }));
+                  customFields.drivers = body.data.drivers;
           }
-
-          // Vehicle info (if present in data.vehicles)
+      
+          // Store vehicle info if present
           if (body.data?.vehicles && Array.isArray(body.data.vehicles)) {
-                  customFields.vehicles = body.data.vehicles.map((v: any) => ({
-                            year: v.year,
-                            make: v.make,
-                            model: v.model,
-                            vin: v.vin
-                  }));
+                  customFields.vehicles = body.data.vehicles;
           }
-
-          // Policy info
-          if (body.data?.policy) {
-                  customFields.currentInsurer = body.data.policy.current_insurer;
-                  customFields.coverageType = body.data.policy.coverage_type;
-          }
-
-          // Store lead source info
-          customFields.leadSource = 'weblead';
-          customFields.receivedAt = new Date().toISOString();
-          customFields.rawPayload = body;
-
-          // Auto-generated notes
-          const notes = `Web lead received at ${new Date().toLocaleString()}. ` +
-                  (firstName ? `Contact: ${name}. ` : '') +
-                  (customFields.email ? `Email: ${customFields.email}. ` : '') +
-                  (customFields.drivers?.length ? `${customFields.drivers.length} driver(s). ` : '') +
-                  (customFields.vehicles?.length ? `${customFields.vehicles.length} vehicle(s). ` : '');
-
+      
           // Check if auto-dial is enabled
-          const settings = getSettings();
-          const autoDialEnabled = settings.webleadAutoDialEnabled !== false;
-
+          const runtimeSettings = getSettings();
+          const autoDialEnabled = runtimeSettings.webleadAutoDialEnabled !== false;
+      
           if (autoDialEnabled) {
-                  // Add lead to memory and initiate call
-                  addLead({
-                            phone,
-                            name,
-                            customFields,
-                            notes,
-                            status: 'pending',
-                            attempts: 0,
-                            lastAttempt: null,
-                            scheduledCallback: null,
-                            disposition: null
-                  });
-
-                  logger.info('Weblead added to queue:', { phone, name, autoDialEnabled });
-
-                  return res.json({ 
-                            success: true, 
-                            message: 'Lead received and queued for dialing',
-                            phone,
-                            name
-                  });
+                  // Initiate call using the existing call infrastructure
+                  const settings = getSettings();
+                  const fromNumber = settings.defaultFromNumber || config.twilio.fromNumber;
+                  
+                  try {
+                            const callResult = await initiateCall(phone, fromNumber, leadName, customFields);
+                            logger.info('Weblead call initiated', { phone, leadName, callSid: callResult?.callSid });
+                            
+                            return res.json({ 
+                                        success: true, 
+                                        message: 'Lead received and call initiated',
+                                        phone,
+                                        leadName,
+                                        callSid: callResult?.callSid
+                            });
+                  } catch (callError) {
+                            logger.error('Weblead call initiation failed', { error: callError });
+                            return res.json({ 
+                                        success: true, 
+                                        message: 'Lead received but call failed to initiate',
+                                        phone,
+                                        leadName,
+                                        error: String(callError)
+                            });
+                  }
           } else {
-                  // Just store the lead without auto-dialing
-                  addLead({
-                            phone,
-                            name,
-                            customFields,
-                            notes,
-                            status: 'pending',
-                            attempts: 0,
-                            lastAttempt: null,
-                            scheduledCallback: null,
-                            disposition: null
-                  });
-
-                  logger.info('Weblead stored (auto-dial disabled):', { phone, name });
-
+                  logger.info('Weblead received (auto-dial disabled)', { phone, leadName });
+                  
                   return res.json({ 
                             success: true, 
+                            message: 'Lead received (auto-dial disabled)',
+                            phone,
+                            leadName
+                  });
+          }
+    } catch (error) {
+          logger.error('Weblead webhook error', { error: String(error) });
+          return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+success: true, 
                             message: 'Lead received and stored (auto-dial disabled)',
                             phone,
                             name

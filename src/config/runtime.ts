@@ -90,7 +90,10 @@ const settings: RuntimeSettings = {
   companyName: 'QuotingFast',
   systemPromptOverride: '',
   inboundPromptOverride: '',
-  inboundEnabled: true,
+  18
+    : true,
+    webleadAutoDialEnabled?: boolean; // Toggle auto-dial for weblead webhooks
+  webleadAutoDialEnabled: true, // Auto-dial leads from weblead webhook
   allstateNumber: '',
   nonAllstateNumber: '',
   defaultFromNumber: config.twilio.fromNumber,

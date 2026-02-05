@@ -1001,6 +1001,47 @@ function normalizePhone(phone: string): string {
     return phone.replace(/[^0-9+]/g, '');
 }
 
+// ── Helper: Title-case a name (CONNOR → Connor, GERALD → Gerald) ─────
+function toTitleCase(name: string): string {
+    if (!name) return name;
+    return name
+        .toLowerCase()
+        .split(/\s+/)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+}
+
+// ── Helper: Build weblead context string for agent prompt ─────────────
+function buildWebleadContext(formData: Record<string, any>): string {
+    const parts: string[] = [];
+    if (formData.contact) {
+        const c = formData.contact;
+        if (c.city && c.state) parts.push(`Location: ${c.city}, ${c.state} ${c.zipCode || ''}`);
+        if (c.email) parts.push(`Email: ${c.email}`);
+    }
+    if (formData.primaryDriver) {
+        const d = formData.primaryDriver;
+        const dParts: string[] = [];
+        if (d.name) dParts.push(d.name);
+        if (d.maritalStatus) dParts.push(d.maritalStatus);
+        if (d.occupation) dParts.push(`works as ${d.occupation}`);
+        if (dParts.length) parts.push(`Primary driver: ${dParts.join(', ')}`);
+    }
+    if (formData.driversCount > 1) parts.push(`Additional drivers: ${formData.driversCount - 1}`);
+    if (formData.primaryVehicle) {
+        const v = formData.primaryVehicle;
+        if (v.year && v.make && v.model) parts.push(`Vehicle: ${v.year} ${v.make} ${v.model}`);
+        if (v.primaryUse) parts.push(`Primary use: ${v.primaryUse}`);
+    }
+    if (formData.vehiclesCount > 1) parts.push(`Additional vehicles: ${formData.vehiclesCount - 1}`);
+    if (formData.currentPolicy) {
+        const p = formData.currentPolicy;
+        if (p.insurer) parts.push(`Current insurer: ${p.insurer}`);
+        if (p.insuredSince) parts.push(`Insured since: ${p.insuredSince}`);
+    }
+    return parts.join('\n');
+}
+
 // ── Weblead Webhook Endpoint (Jangl/QuotingFast format) ────────────────
 router.post('/webhook/weblead', async (req: Request, res: Response) => {
     try {
@@ -1025,9 +1066,9 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                   return;
           }
 
-          // Extract contact info
-          const firstName = contact.first_name || body.first_name || body.firstName || 'Unknown';
-          const lastName = contact.last_name || body.last_name || body.lastName || '';
+          // Extract contact info (title-case to avoid ALL CAPS names like "CONNOR")
+          const firstName = toTitleCase(contact.first_name || body.first_name || body.firstName || 'Unknown');
+          const lastName = toTitleCase(contact.last_name || body.last_name || body.lastName || '');
           const state = contact.state || body.state || '';
           const city = contact.city || body.city || '';
           const email = contact.email || body.email || '';
@@ -1116,6 +1157,9 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
           const autoDialEnabled = settings.webleadAutoDialEnabled !== false; // default true
           const fromNumber = settings.defaultFromNumber || config.twilio?.fromNumber || '';
 
+          // Build weblead context for agent prompt
+          const webleadContext = buildWebleadContext(formDataSummary);
+
           if (autoDialEnabled && fromNumber) {
                   const compliance = runPreCallComplianceCheck(phone, state);
 
@@ -1134,6 +1178,7 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                                         first_name: firstName,
                                         state,
                                         current_insurer: currentInsurer,
+                                        weblead_context: webleadContext,
                             });
 
                             recordCall(cr.callSid, phone, firstName);

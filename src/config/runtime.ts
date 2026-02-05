@@ -74,11 +74,11 @@ export interface CallRecord {
 }
 
 const settings: RuntimeSettings = {
-    voiceProvider: config.ttsProvider as 'openai' | 'elevenlabs' | 'deepseek',
+    voiceProvider: (config.ttsProvider || 'deepseek') as 'openai' | 'elevenlabs' | 'deepseek',
     voice: config.openai.voice,
     realtimeModel: config.openai.realtimeModel,
     temperature: 0.6,
-    elevenlabsVoiceId: config.elevenlabs.voiceId,
+    elevenlabsVoiceId: config.elevenlabs.voiceId || 'Z9hrfEHGU3dykHntWvIY', // David Ashby
     elevenlabsModelId: 'eleven_turbo_v2_5',
     elevenlabsStability: 0.5,
     elevenlabsSimilarityBoost: 0.75,

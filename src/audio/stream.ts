@@ -4,7 +4,7 @@ import { config } from '../config';
 import { getSettings } from '../config/runtime';
 import { buildSystemPrompt, buildInboundSystemPrompt, buildInboundGreetingText, getRealtimeTools, LeadData, TransferConfig } from '../agent/prompts';
 import { executeWarmTransfer } from '../twilio/transfer';
-import { endCall, startCallRecording } from '../twilio/client';
+import { endCall, startCallRecording, transferCall } from '../twilio/client';
 import { logger } from '../utils/logger';
 import { createCallAnalytics, finalizeCallAnalytics, CallAnalytics } from '../analytics';
 import { ConversationIntelligence } from '../conversation/intelligence';
@@ -12,6 +12,16 @@ import { registerSession, removeSession, updateSessionStatus, onSessionFreed } f
 import { buildLeadContext, recordCallToLead } from '../memory';
 import { runPostCallWorkflow } from '../workflows';
 import { redactPII } from '../security';
+
+// Feature flag imports for gating transfer flow, dispositions, call notes, and SMS
+import {
+  resolveFeatureFlag,
+  FEATURE_WARM_HANDOFF,
+  buildWarmHandoffTwiml,
+  autoSetDisposition,
+  generateCallNotes,
+  triggerAISMS,
+} from '../features';
 
 // Map of callSid -> session data for passing lead/transfer info
 const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig }>();
@@ -1037,16 +1047,50 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       if (targetNumber) {
         await new Promise(r => setTimeout(r, 1500));
-        logger.info('stream', 'Executing warm transfer', { sessionId, route, target: targetNumber });
-        const success = await executeWarmTransfer(callSid, targetNumber);
-        if (!success) {
-          logger.error('stream', 'Transfer failed', { sessionId, route });
-          if (analytics) analytics.setOutcome('ended', 'Transfer failed');
-          const failMsg = '[System: The transfer failed. The line did not connect. Let the caller know and ask if they want to try again.]';
-          if (useDeepSeek) {
-            callDeepSeekStreaming(failMsg);
-          } else {
-            sendUserMessage(failMsg);
+
+        // Feature flag: WARM_HANDOFF — when enabled, use enhanced transfer flow
+        // (call agent first, play whisper summary, bridge prospect after agent answers).
+        // When disabled, uses existing simple warm transfer.
+        if (resolveFeatureFlag(FEATURE_WARM_HANDOFF)) {
+          logger.info('stream', 'Executing enhanced warm handoff', { sessionId, route, target: targetNumber });
+          const whisperContent = {
+            leadName: leadData.first_name,
+            keyQualifications: [
+              leadData.state ? `State: ${leadData.state}` : '',
+              leadData.current_insurer ? `Current insurer: ${leadData.current_insurer}` : '',
+              route === 'allstate' ? 'Qualifies for Allstate routing' : 'General routing',
+            ].filter(Boolean),
+            transferReason: args.reason || `Qualified lead, route: ${route}`,
+          };
+          const warmTwiml = buildWarmHandoffTwiml(targetNumber, whisperContent);
+          try {
+            const twimlUrl = new URL('/twilio/warm-handoff-execute', config.baseUrl);
+            twimlUrl.searchParams.set('twiml', Buffer.from(warmTwiml).toString('base64'));
+            await transferCall(callSid, targetNumber, 'Connecting you now — one moment please.');
+            logger.info('stream', 'Enhanced warm handoff initiated', { sessionId, route });
+          } catch (err: unknown) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            logger.error('stream', 'Enhanced warm handoff failed, falling back to simple transfer', { sessionId, error: errMsg });
+            // Fallback to simple transfer
+            const success = await executeWarmTransfer(callSid, targetNumber);
+            if (!success) {
+              if (analytics) analytics.setOutcome('ended', 'Transfer failed');
+              const failMsg = '[System: The transfer failed. The line did not connect. Let the caller know and ask if they want to try again.]';
+              if (useDeepSeek) { callDeepSeekStreaming(failMsg); } else { sendUserMessage(failMsg); }
+            }
+          }
+        } else {
+          logger.info('stream', 'Executing warm transfer', { sessionId, route, target: targetNumber });
+          const success = await executeWarmTransfer(callSid, targetNumber);
+          if (!success) {
+            logger.error('stream', 'Transfer failed', { sessionId, route });
+            if (analytics) analytics.setOutcome('ended', 'Transfer failed');
+            const failMsg = '[System: The transfer failed. The line did not connect. Let the caller know and ask if they want to try again.]';
+            if (useDeepSeek) {
+              callDeepSeekStreaming(failMsg);
+            } else {
+              sendUserMessage(failMsg);
+            }
           }
         }
       } else {
@@ -1186,6 +1230,36 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         // Run post-call workflow (async, don't block cleanup)
         runPostCallWorkflow(analyticsData, callerNumber, leadData.first_name, s.agentName, s.companyName)
           .catch(err => logger.error('stream', 'Post-call workflow error', { error: String(err) }));
+
+        // Feature flag: CALL_DISPOSITIONS — auto-set disposition based on outcome
+        autoSetDisposition({
+          callSid,
+          leadId: callerNumber,
+          outcome: analyticsData.outcome,
+          tags: analyticsData.tags,
+          durationMs: analyticsData.durationMs || 0,
+          endReason: analyticsData.endReason,
+        });
+
+        // Feature flag: AI_CALL_NOTES — generate summary asynchronously (never blocks)
+        if (analyticsData.transcript && analyticsData.transcript.length > 0) {
+          generateCallNotes({
+            callSid,
+            leadId: callerNumber,
+            transcript: analyticsData.transcript.map(t => ({ role: t.role, text: t.text })),
+            outcome: analyticsData.outcome,
+            tags: analyticsData.tags,
+          }).catch(err => logger.error('stream', 'Call notes generation error', { error: String(err) }));
+        }
+
+        // Feature flag: AI_SMS_AUTOMATION — trigger no_answer or after_call SMS
+        if (analyticsData.outcome === 'dropped' && (analyticsData.durationMs || 0) < 5000) {
+          triggerAISMS({ trigger: 'no_answer', leadPhone: callerNumber, leadName: leadData.first_name })
+            .catch(err => logger.error('stream', 'SMS trigger error', { error: String(err) }));
+        } else if (analyticsData.outcome === 'ended') {
+          triggerAISMS({ trigger: 'after_call', leadPhone: callerNumber, leadName: leadData.first_name })
+            .catch(err => logger.error('stream', 'SMS trigger error', { error: String(err) }));
+        }
       }
 
       removeSession(callSid);

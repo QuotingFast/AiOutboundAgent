@@ -51,6 +51,53 @@ import {
   getProviderHealth, getRoutingStrategy, setRoutingStrategy,
 } from '../routing';
 
+// Feature flag imports
+import {
+  // Flag constants & resolution
+  ALL_FEATURE_FLAGS,
+  resolveFeatureFlag,
+  getAllResolvedFlags,
+  setWorkspaceFlag,
+  getWorkspaceFlags,
+  setCampaignOverride,
+  removeCampaignOverride,
+  getCampaignOverrides,
+  // Kill switch
+  isOutboundDialingAllowed,
+  FEATURE_GLOBAL_KILL_SWITCH,
+  // Auto-call
+  shouldAutoCallLead,
+  // Scheduled callbacks
+  createScheduledCallback,
+  cancelScheduledCallback,
+  getScheduledCallbacks,
+  getScheduledCallback,
+  setCallbackDialer,
+  startCallbackProcessor,
+  // SMS automation
+  triggerAISMS,
+  processStopRequest,
+  isSMSSuppressed,
+  setCampaignSMSConfig,
+  getCampaignSMSConfig,
+  removeCampaignSMSConfig,
+  getSMSLog,
+  // Warm handoff
+  buildWarmHandoffTwiml,
+  buildWhisperTwiml,
+  buildAcceptTwiml,
+  // Dispositions
+  setCallDisposition as setCallDispositionFn,
+  getCallDisposition,
+  getAllDispositions,
+  ALL_DISPOSITIONS,
+  // Call notes
+  getCallNotes,
+  getAllCallNotes,
+  editCallNotes,
+} from '../features';
+import type { CampaignSMSConfig, CallDisposition } from '../features';
+
 const router = Router();
 
 // ── Recording store ─────────────────────────────────────────────────
@@ -100,6 +147,15 @@ router.post('/call/start', async (req: Request, res: Response) => {
     }
     if (!lead?.first_name) {
       res.status(400).json({ error: 'Missing required field: lead.first_name' });
+      return;
+    }
+
+    // Feature flag: GLOBAL KILL SWITCH — block all outbound dialing when active
+    if (!isOutboundDialingAllowed()) {
+      res.status(503).json({
+        error: 'Outbound dialing is currently disabled (kill switch active)',
+        kill_switch: true,
+      });
       return;
     }
 
@@ -1116,7 +1172,12 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
           const autoDialEnabled = settings.webleadAutoDialEnabled !== false; // default true
           const fromNumber = settings.defaultFromNumber || config.twilio?.fromNumber || '';
 
-          if (autoDialEnabled && fromNumber) {
+          // Feature flag: AUTO_CALL_NEW_LEADS — when enabled, leads enter dialing flow.
+          // When disabled (default), leads are ingested but NOT dialed.
+          // Also checks GLOBAL_KILL_SWITCH internally.
+          const autoCallCheck = shouldAutoCallLead(undefined, body.campaign_id);
+
+          if (autoDialEnabled && fromNumber && autoCallCheck.allowed) {
                   const compliance = runPreCallComplianceCheck(phone, state);
 
                   if (compliance.allowed) {
@@ -1170,8 +1231,10 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                   return;
           }
 
-          // Auto-dial disabled or no from number configured
-          logger.info('routes', 'Weblead stored (no auto-dial)', { phone, leadId: body.id });
+          // Auto-dial disabled, no from number, or feature flag blocked
+          const reason = !autoCallCheck.allowed ? autoCallCheck.reason
+            : autoDialEnabled ? 'no_from_number' : 'auto_dial_disabled';
+          logger.info('routes', 'Weblead stored (no auto-dial)', { phone, leadId: body.id, reason });
           res.json({
                   success: true,
                   phone,
@@ -1179,7 +1242,7 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                   state,
                   call: null,
                   autoDialed: false,
-                  reason: autoDialEnabled ? 'no_from_number' : 'auto_dial_disabled',
+                  reason,
                   formData: formDataSummary,
           });
 
@@ -1189,5 +1252,291 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
           res.status(500).json({ error: msg });
     }
 });
+
+// ── Feature Flag Endpoints ──────────────────────────────────────────
+
+// Get all resolved flags for a workspace (+ optional campaign)
+router.get('/api/features/flags', (req: Request, res: Response) => {
+  const workspaceId = req.query.workspaceId as string;
+  const campaignId = req.query.campaignId as string;
+  res.json({
+    flags: getAllResolvedFlags(workspaceId, campaignId),
+    available: ALL_FEATURE_FLAGS,
+  });
+});
+
+// Set a workspace-level feature flag
+router.post('/api/features/flags', (req: Request, res: Response) => {
+  const { flagId, enabled, workspaceId } = req.body;
+  if (!flagId || typeof enabled !== 'boolean') {
+    res.status(400).json({ error: 'Missing flagId (string) and enabled (boolean)' });
+    return;
+  }
+  if (!ALL_FEATURE_FLAGS.includes(flagId)) {
+    res.status(400).json({ error: `Invalid flagId. Valid flags: ${ALL_FEATURE_FLAGS.join(', ')}` });
+    return;
+  }
+  setWorkspaceFlag(flagId, enabled, workspaceId);
+
+  // Feature flag: warn when enabling kill switch
+  if (flagId === FEATURE_GLOBAL_KILL_SWITCH && enabled) {
+    logger.warn('routes', 'KILL SWITCH ACTIVATED — all outbound dialing is now blocked', { workspaceId });
+  }
+
+  res.json({ flagId, enabled, workspaceId: workspaceId || 'default' });
+});
+
+// Get workspace-level flags
+router.get('/api/features/workspace-flags', (req: Request, res: Response) => {
+  const workspaceId = req.query.workspaceId as string;
+  res.json(getWorkspaceFlags(workspaceId));
+});
+
+// Set a campaign-level override
+router.post('/api/features/campaign-override', (req: Request, res: Response) => {
+  const { flagId, enabled, campaignId, workspaceId } = req.body;
+  if (!flagId || typeof enabled !== 'boolean' || !campaignId) {
+    res.status(400).json({ error: 'Missing flagId, enabled (boolean), and campaignId' });
+    return;
+  }
+  setCampaignOverride(flagId, enabled, campaignId, workspaceId);
+  res.json({ flagId, enabled, campaignId, workspaceId: workspaceId || 'default' });
+});
+
+// Remove a campaign-level override
+router.delete('/api/features/campaign-override', (req: Request, res: Response) => {
+  const { flagId, campaignId, workspaceId } = req.body;
+  if (!flagId || !campaignId) {
+    res.status(400).json({ error: 'Missing flagId and campaignId' });
+    return;
+  }
+  removeCampaignOverride(flagId, campaignId, workspaceId);
+  res.json({ success: true });
+});
+
+// Get campaign overrides
+router.get('/api/features/campaign-overrides/:campaignId', (req: Request, res: Response) => {
+  const workspaceId = req.query.workspaceId as string;
+  res.json(getCampaignOverrides(req.params.campaignId, workspaceId));
+});
+
+// ── Scheduled Callback Endpoints ───────────────────────────────────
+
+router.get('/api/features/callbacks', (req: Request, res: Response) => {
+  const status = req.query.status as string;
+  res.json(getScheduledCallbacks(status as any));
+});
+
+router.get('/api/features/callbacks/:id', (req: Request, res: Response) => {
+  const cb = getScheduledCallback(req.params.id);
+  if (!cb) {
+    res.status(404).json({ error: 'Callback not found' });
+    return;
+  }
+  res.json(cb);
+});
+
+router.post('/api/features/callbacks', (req: Request, res: Response) => {
+  const { leadId, leadName, leadState, scheduledAt, workspaceId, campaignId } = req.body;
+  if (!leadId || !scheduledAt) {
+    res.status(400).json({ error: 'Missing leadId and scheduledAt' });
+    return;
+  }
+  const cb = createScheduledCallback({
+    leadId,
+    leadName: leadName || 'Unknown',
+    leadState,
+    scheduledAt,
+    workspaceId,
+    campaignId,
+  });
+  res.json(cb);
+});
+
+router.post('/api/features/callbacks/:id/cancel', (req: Request, res: Response) => {
+  const success = cancelScheduledCallback(req.params.id);
+  res.json({ success });
+});
+
+// ── SMS Automation Endpoints ───────────────────────────────────────
+
+router.get('/api/features/sms/log', (req: Request, res: Response) => {
+  const leadId = req.query.leadId as string;
+  res.json(getSMSLog(leadId));
+});
+
+router.post('/api/features/sms/trigger', async (req: Request, res: Response) => {
+  const { trigger, leadPhone, leadName, campaignId, workspaceId } = req.body;
+  if (!trigger || !leadPhone) {
+    res.status(400).json({ error: 'Missing trigger and leadPhone' });
+    return;
+  }
+  try {
+    const entry = await triggerAISMS({ trigger, leadPhone, leadName: leadName || 'there', campaignId, workspaceId });
+    res.json({ sent: !!entry, entry });
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post('/api/features/sms/stop', (req: Request, res: Response) => {
+  const { phone } = req.body;
+  if (!phone) {
+    res.status(400).json({ error: 'Missing phone' });
+    return;
+  }
+  processStopRequest(phone);
+  res.json({ success: true, suppressed: true });
+});
+
+router.get('/api/features/sms/suppressed/:phone', (req: Request, res: Response) => {
+  res.json({ suppressed: isSMSSuppressed(req.params.phone) });
+});
+
+router.post('/api/features/sms/campaign-config', (req: Request, res: Response) => {
+  const { campaignId, workspaceId, triggers, customTemplates } = req.body;
+  if (!campaignId || !triggers) {
+    res.status(400).json({ error: 'Missing campaignId and triggers' });
+    return;
+  }
+  setCampaignSMSConfig({ campaignId, workspaceId, triggers, customTemplates } as CampaignSMSConfig);
+  res.json({ success: true });
+});
+
+router.get('/api/features/sms/campaign-config/:campaignId', (req: Request, res: Response) => {
+  const cfg = getCampaignSMSConfig(req.params.campaignId);
+  if (!cfg) {
+    res.status(404).json({ error: 'No SMS config for this campaign' });
+    return;
+  }
+  res.json(cfg);
+});
+
+router.delete('/api/features/sms/campaign-config/:campaignId', (req: Request, res: Response) => {
+  res.json({ success: removeCampaignSMSConfig(req.params.campaignId) });
+});
+
+// ── Warm Handoff Endpoints ─────────────────────────────────────────
+
+// Twilio webhook: whisper played to agent when they pick up
+router.post('/twilio/warm-handoff-whisper', (req: Request, res: Response) => {
+  const whisper = req.query.whisper as string || 'Incoming transfer.';
+  logger.info('routes', 'Warm handoff whisper requested', { whisper: whisper.substring(0, 50) });
+  const twiml = buildWhisperTwiml(whisper);
+  res.type('text/xml');
+  res.send(twiml);
+});
+
+// Twilio webhook: agent accepted the transfer (pressed a key)
+router.post('/twilio/warm-handoff-accept', (req: Request, res: Response) => {
+  logger.info('routes', 'Warm handoff accepted by agent');
+  const twiml = buildAcceptTwiml();
+  res.type('text/xml');
+  res.send(twiml);
+});
+
+// Twilio webhook: status after warm handoff dial completes
+router.post('/twilio/warm-handoff-status', (req: Request, res: Response) => {
+  const dialStatus = req.body?.DialCallStatus || 'unknown';
+  logger.info('routes', 'Warm handoff dial status', { dialStatus });
+  // If the dial failed, Twilio will continue to the next TwiML verb (fallback Say)
+  res.sendStatus(200);
+});
+
+// ── Disposition Endpoints ──────────────────────────────────────────
+
+router.get('/api/features/dispositions', (req: Request, res: Response) => {
+  const disposition = req.query.disposition as string;
+  const leadId = req.query.leadId as string;
+  res.json({
+    dispositions: getAllDispositions({ disposition: disposition as CallDisposition, leadId }),
+    available: ALL_DISPOSITIONS,
+  });
+});
+
+router.get('/api/features/dispositions/:callSid', (req: Request, res: Response) => {
+  const d = getCallDisposition(req.params.callSid);
+  if (!d) {
+    res.status(404).json({ error: 'No disposition for this call' });
+    return;
+  }
+  res.json(d);
+});
+
+router.put('/api/features/dispositions/:callSid', (req: Request, res: Response) => {
+  const { disposition, leadId, notes, workspaceId, campaignId } = req.body;
+  if (!disposition || !leadId) {
+    res.status(400).json({ error: 'Missing disposition and leadId' });
+    return;
+  }
+  if (!ALL_DISPOSITIONS.includes(disposition)) {
+    res.status(400).json({ error: `Invalid disposition. Valid: ${ALL_DISPOSITIONS.join(', ')}` });
+    return;
+  }
+  const record = setCallDispositionFn(req.params.callSid, leadId, disposition, notes, workspaceId, campaignId);
+  res.json(record || { error: 'Feature not enabled' });
+});
+
+// ── Call Notes Endpoints ───────────────────────────────────────────
+
+router.get('/api/features/call-notes', (req: Request, res: Response) => {
+  const leadId = req.query.leadId as string;
+  res.json(getAllCallNotes(leadId));
+});
+
+router.get('/api/features/call-notes/:callSid', (req: Request, res: Response) => {
+  const note = getCallNotes(req.params.callSid);
+  if (!note) {
+    res.status(404).json({ error: 'No notes for this call' });
+    return;
+  }
+  res.json(note);
+});
+
+router.put('/api/features/call-notes/:callSid', (req: Request, res: Response) => {
+  const { summary, objections, intentScore, keyTopics, editedBy } = req.body;
+  const note = editCallNotes(req.params.callSid, { summary, objections, intentScore, keyTopics }, editedBy);
+  if (!note) {
+    res.status(404).json({ error: 'No notes found for this call' });
+    return;
+  }
+  res.json(note);
+});
+
+// ── Register callback dialer on module load ────────────────────────
+// Connects the scheduled callback system to the existing dialer logic.
+
+setCallbackDialer(async (cb) => {
+  // Re-check kill switch right before dialing
+  if (!isOutboundDialingAllowed(cb.workspaceId)) {
+    return null;
+  }
+
+  const fromNumber = getSettings().defaultFromNumber || config.twilio?.fromNumber || '';
+  if (!fromNumber) {
+    logger.warn('routes', 'Callback skipped: no from number configured', { id: cb.id });
+    return null;
+  }
+
+  const result = await startOutboundCall({
+    to: cb.leadId,
+    from: fromNumber,
+    lead: {
+      first_name: cb.leadName,
+      state: cb.leadState,
+    },
+  });
+
+  registerPendingSession(result.callSid, {
+    first_name: cb.leadName,
+    state: cb.leadState,
+  });
+
+  recordCall(result.callSid, cb.leadId, cb.leadName);
+  return result.callSid;
+});
+
+// Start the callback processor (checks every 30s for due callbacks)
+startCallbackProcessor(30000);
 
 export { router };

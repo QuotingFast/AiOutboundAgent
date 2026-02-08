@@ -14,13 +14,13 @@ import { runPostCallWorkflow } from '../workflows';
 import { redactPII } from '../security';
 
 // Map of callSid -> session data for passing lead/transfer info
-const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig }>();
+const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig; toPhone?: string }>();
 
 // Active live transcript listeners (callSid -> callback)
 const liveTranscriptListeners = new Map<string, (entry: { role: string; text: string; timestamp: number }) => void>();
 
-export function registerPendingSession(callSid: string, lead: LeadData, transfer?: TransferConfig): void {
-  pendingSessions.set(callSid, { lead, transfer });
+export function registerPendingSession(callSid: string, lead: LeadData, transfer?: TransferConfig, toPhone?: string): void {
+  pendingSessions.set(callSid, { lead, transfer, toPhone });
 }
 
 export function registerTranscriptListener(callSid: string, callback: (entry: { role: string; text: string; timestamp: number }) => void): void {
@@ -112,8 +112,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             if (session) {
               leadData = session.lead;
               transferConfig = session.transfer;
+              callerNumber = session.toPhone || '';
               pendingSessions.delete(callSid);
-              logger.info('stream', 'Session found', { sessionId, lead: leadData.first_name });
+              logger.info('stream', 'Session found', { sessionId, lead: leadData.first_name, toPhone: callerNumber });
             } else {
               logger.warn('stream', 'No session found, using default', {
                 sessionId,
@@ -127,7 +128,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           analytics = createCallAnalytics(callSid);
           if (analytics) analytics.addTag(callDirection);
           conversation = new ConversationIntelligence(callSid);
-          registerSession(callSid, callerNumber, leadData.first_name);
+          const sessionAccepted = registerSession(callSid, callerNumber, leadData.first_name);
+          if (!sessionAccepted) {
+            logger.warn('stream', 'Max concurrency reached, call may degrade', { sessionId, callSid });
+          }
 
           // Start recording for inbound calls (outbound calls use record=true on calls.create)
           if (callDirection === 'inbound') {

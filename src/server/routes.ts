@@ -19,7 +19,7 @@ import {
 } from '../compliance';
 import {
   getActiveSessions, getActiveSessionCount, getQueue, getQueueSize,
-  getSystemHealth, setMaxConcurrency, getMaxConcurrency,
+  getSystemHealth, setMaxConcurrency, getMaxConcurrency, canAcceptCall,
 } from '../performance';
 import {
   createABTest, getABTest, getAllABTests, deleteABTest,
@@ -103,6 +103,12 @@ router.post('/call/start', async (req: Request, res: Response) => {
       return;
     }
 
+    // Concurrency check
+    if (!canAcceptCall()) {
+      res.status(429).json({ error: 'Max concurrent calls reached. Try again later.' });
+      return;
+    }
+
     // Pre-call compliance check
     const compliance = runPreCallComplianceCheck(to, lead.state);
     if (!compliance.allowed) {
@@ -121,7 +127,7 @@ router.post('/call/start', async (req: Request, res: Response) => {
     const result = await startOutboundCall({ to, from, lead });
 
     // Register session data so the WebSocket handler can pick it up when the call connects
-    registerPendingSession(result.callSid, lead, transfer);
+    registerPendingSession(result.callSid, lead, transfer, to);
 
     // Record this call with current settings for history tracking
     recordCall(result.callSid, to, lead.first_name);
@@ -146,13 +152,14 @@ router.post('/call/start', async (req: Request, res: Response) => {
  */
 router.post('/twilio/voice', (req: Request, res: Response) => {
   const callSid = req.body?.CallSid || 'unknown';
+  const toPhone = req.body?.To || '';
   const lead = req.query.lead ? JSON.parse(req.query.lead as string) : null;
   const transfer = req.query.transfer ? JSON.parse(req.query.transfer as string) : null;
 
-  logger.info('routes', 'Voice webhook hit', { callSid });
+  logger.info('routes', 'Voice webhook hit', { callSid, toPhone });
 
   if (lead && callSid !== 'unknown') {
-    registerPendingSession(callSid, lead, transfer);
+    registerPendingSession(callSid, lead, transfer, toPhone);
   }
 
   const twiml = buildMediaStreamTwiml('outbound');
@@ -1117,6 +1124,22 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
           const fromNumber = settings.defaultFromNumber || config.twilio?.fromNumber || '';
 
           if (autoDialEnabled && fromNumber) {
+                  // Check concurrency before auto-dialing
+                  if (!canAcceptCall()) {
+                        logger.info('routes', 'Weblead auto-dial skipped: max concurrency reached', { phone });
+                        res.json({
+                              success: true,
+                              phone,
+                              name: fullName,
+                              state,
+                              call: null,
+                              autoDialed: false,
+                              reason: 'max_concurrency',
+                              formData: formDataSummary,
+                        });
+                        return;
+                  }
+
                   const compliance = runPreCallComplianceCheck(phone, state);
 
                   if (compliance.allowed) {
@@ -1134,7 +1157,7 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                                         first_name: firstName,
                                         state,
                                         current_insurer: currentInsurer,
-                            });
+                            }, undefined, phone);
 
                             recordCall(cr.callSid, phone, firstName);
 

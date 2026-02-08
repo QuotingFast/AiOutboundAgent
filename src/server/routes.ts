@@ -1124,6 +1124,22 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
           const fromNumber = settings.defaultFromNumber || config.twilio?.fromNumber || '';
 
           if (autoDialEnabled && fromNumber) {
+                  // Check concurrency before auto-dialing
+                  if (!canAcceptCall()) {
+                        logger.info('routes', 'Weblead auto-dial skipped: max concurrency reached', { phone });
+                        res.json({
+                              success: true,
+                              phone,
+                              name: fullName,
+                              state,
+                              call: null,
+                              autoDialed: false,
+                              reason: 'max_concurrency',
+                              formData: formDataSummary,
+                        });
+                        return;
+                  }
+
                   const compliance = runPreCallComplianceCheck(phone, state);
 
                   if (compliance.allowed) {

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "python3",
+      "args": ["/home/user/AiOutboundAgent/scripts/github-tool.py"],
+      "env": {
+        "GITHUB_TOKEN": "YOUR_GITHUB_PAT_HERE"
+      }
+    }
+  }
+}

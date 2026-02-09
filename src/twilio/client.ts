@@ -17,6 +17,7 @@ export interface StartCallParams {
     mode: 'warm' | 'cold';
     target_number: string;
   };
+  amdEnabled?: boolean;
 }
 
 export async function startOutboundCall(params: StartCallParams): Promise<{ callSid: string; status: string }> {
@@ -50,6 +51,15 @@ export async function startOutboundCall(params: StartCallParams): Promise<{ call
     callOptions.recordingStatusCallback = `${config.baseUrl}/twilio/recording-status`;
     callOptions.recordingStatusCallbackMethod = 'POST';
     callOptions.recordingStatusCallbackEvent = ['completed'];
+  }
+
+  // Answering Machine Detection (AMD)
+  if (params.amdEnabled) {
+    callOptions.machineDetection = 'DetectMessageEnd';
+    callOptions.machineDetectionTimeout = 30;
+    callOptions.asyncAmd = 'true';
+    callOptions.asyncAmdStatusCallback = `${config.baseUrl}/twilio/amd-status`;
+    callOptions.asyncAmdStatusCallbackMethod = 'POST';
   }
 
   const call = await twilioClient.calls.create(callOptions);
@@ -95,6 +105,27 @@ export async function startCallRecording(callSid: string): Promise<string | null
 export async function endCall(callSid: string): Promise<void> {
   logger.info('twilio-client', 'Ending call', { callSid });
   await twilioClient.calls(callSid).update({ status: 'completed' });
+}
+
+// ── SMS ──
+
+export async function sendSms(to: string, body: string, from?: string): Promise<{ sid: string; status: string }> {
+  const fromNumber = from || config.twilio.fromNumber;
+  if (!fromNumber) {
+    throw new Error('No "from" number provided and TWILIO_FROM_NUMBER not set');
+  }
+
+  logger.info('twilio-client', 'Sending SMS', { to, from: fromNumber });
+
+  const message = await twilioClient.messages.create({
+    to,
+    from: fromNumber,
+    body,
+    statusCallback: `${config.baseUrl}/twilio/sms-status`,
+  });
+
+  logger.info('twilio-client', 'SMS sent', { sid: message.sid, status: message.status });
+  return { sid: message.sid, status: message.status };
 }
 
 export { twilioClient };

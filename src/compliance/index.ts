@@ -139,7 +139,7 @@ export interface ComplianceCheckResult {
   warnings: string[];
 }
 
-export function runPreCallComplianceCheck(phone: string, state?: string): ComplianceCheckResult {
+export function runPreCallComplianceCheck(phone: string, state?: string, tcpaOverride?: boolean): ComplianceCheckResult {
   const checks = {
     dnc: { passed: true, reason: undefined as string | undefined },
     time: { passed: true, reason: undefined as string | undefined },
@@ -164,7 +164,7 @@ export function runPreCallComplianceCheck(phone: string, state?: string): Compli
     warnings.push('No TCPA consent record on file for this number');
   }
 
-  const allowed = checks.dnc.passed && checks.time.passed;
+  const allowed = checks.dnc.passed && (tcpaOverride || checks.time.passed);
 
   auditLog('compliance_check', {
     phone: normalizePhone(phone),
@@ -226,4 +226,73 @@ export function getAuditLog(limit = 50): AuditEntry[] {
 
 export function getAuditLogCount(): number {
   return auditEntries.length;
+}
+
+// ── Per-Phone Rate Limiting ─────────────────────────────────────────
+
+interface PhoneCallTracker {
+  counts: Map<string, number>; // dateKey -> count
+}
+
+const phoneCallTracker = new Map<string, PhoneCallTracker>();
+
+function todayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function recordPhoneCall(phone: string): void {
+  const normalized = normalizePhone(phone);
+  const key = todayKey();
+  let tracker = phoneCallTracker.get(normalized);
+  if (!tracker) {
+    tracker = { counts: new Map() };
+    phoneCallTracker.set(normalized, tracker);
+  }
+  tracker.counts.set(key, (tracker.counts.get(key) || 0) + 1);
+}
+
+export function getPhoneCallCountToday(phone: string): number {
+  const normalized = normalizePhone(phone);
+  const tracker = phoneCallTracker.get(normalized);
+  if (!tracker) return 0;
+  return tracker.counts.get(todayKey()) || 0;
+}
+
+export function checkPhoneRateLimit(phone: string, maxPerDay: number): { allowed: boolean; callsToday: number } {
+  if (maxPerDay <= 0) return { allowed: true, callsToday: getPhoneCallCountToday(phone) };
+  const callsToday = getPhoneCallCountToday(phone);
+  return { allowed: callsToday < maxPerDay, callsToday };
+}
+
+// ── Auto-DNC Detection ──────────────────────────────────────────────
+
+const DNC_PHRASES = [
+  'don\'t call me',
+  'do not call me',
+  'stop calling',
+  'remove my number',
+  'remove me from your list',
+  'take me off your list',
+  'put me on the do not call',
+  'add me to the do not call',
+  'never call again',
+  'quit calling me',
+  'don\'t ever call',
+  'do not ever call',
+  'i want to be removed',
+];
+
+export function detectDncRequest(transcript: string): boolean {
+  const lower = transcript.toLowerCase();
+  return DNC_PHRASES.some(phrase => lower.includes(phrase));
+}
+
+export function handleAutoDnc(phone: string, transcript: string): boolean {
+  if (detectDncRequest(transcript)) {
+    addToDnc(phone);
+    auditLog('auto_dnc', { phone: normalizePhone(phone), trigger: 'verbal_request', transcript: transcript.substring(0, 200) });
+    logger.info('compliance', 'Auto-DNC triggered by verbal request', { phone: normalizePhone(phone) });
+    return true;
+  }
+  return false;
 }

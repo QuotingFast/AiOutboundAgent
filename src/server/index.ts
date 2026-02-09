@@ -5,6 +5,10 @@ import { router } from './routes';
 import { handleMediaStream } from '../audio/stream';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { startScheduler, setDialFunction } from '../scheduler';
+import { startOutboundCall } from '../twilio/client';
+import { registerPendingSession } from '../audio/stream';
+import { recordCall } from '../config/runtime';
 
 export function createServer(): http.Server {
   const app = express();
@@ -51,5 +55,27 @@ export function startServer(): void {
     logger.info('server', `  Voice:      POST ${config.baseUrl}/twilio/voice`);
     logger.info('server', `  Stream:     WS   ${config.baseUrl.replace(/^http/, 'ws')}/twilio/stream`);
     logger.info('server', `  Health:     GET  ${config.baseUrl}/health`);
+    logger.info('server', `  SMS In:     POST ${config.baseUrl}/twilio/sms-incoming`);
+
+    // Start callback/retry scheduler
+    setDialFunction(async (phone: string, leadName: string, state?: string) => {
+      try {
+        const from = config.twilio.fromNumber;
+        if (!from) return false;
+        const result = await startOutboundCall({
+          to: phone,
+          from,
+          lead: { first_name: leadName, state },
+        });
+        registerPendingSession(result.callSid, { first_name: leadName, state }, undefined, phone);
+        recordCall(result.callSid, phone, leadName);
+        logger.info('scheduler', 'Auto-dialed callback/retry', { callSid: result.callSid, phone });
+        return true;
+      } catch (err) {
+        logger.error('scheduler', 'Auto-dial failed', { phone, error: err instanceof Error ? err.message : String(err) });
+        return false;
+      }
+    });
+    startScheduler();
   });
 }

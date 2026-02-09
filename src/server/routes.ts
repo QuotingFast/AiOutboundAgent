@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { startOutboundCall, StartCallParams } from '../twilio/client';
+import { startOutboundCall, StartCallParams, sendSms } from '../twilio/client';
 import { buildMediaStreamTwiml, buildTransferTwiml } from '../twilio/twiml';
 import { registerPendingSession } from '../audio/stream';
 import { TransferConfig, buildSystemPrompt } from '../agent/prompts';
@@ -16,6 +16,7 @@ import {
   recordConsent, getConsent,
   getAuditLog, getAuditLogCount,
   requiresRecordingDisclosure,
+  checkPhoneRateLimit,
 } from '../compliance';
 import {
   getActiveSessions, getActiveSessionCount, getQueue, getQueueSize,
@@ -29,7 +30,20 @@ import {
   getAllLeads, getLeadMemory, createOrUpdateLead,
   setLeadDisposition, addLeadNote, scheduleCallback,
   getLeadCount, getLeadsByDisposition, getLeadsForCallback,
+  searchLeads, importLeadsFromCSV, exportLeadsToCSV, calculateLeadScore,
 } from '../memory';
+import {
+  logSms, getSmsLog, getSmsLogForLead, getSmsStats,
+  getTemplates, getTemplate, createTemplate, updateTemplate, deleteTemplate,
+  renderTemplate,
+} from '../sms';
+import {
+  scheduleCallback as scheduleCallbackTimer,
+  cancelCallback as cancelCallbackTimer,
+  getUpcomingCallbacks, getPastCallbacks,
+  getCallbacks as getSchedulerCallbacks,
+  getRetries, scheduleRetry,
+} from '../scheduler';
 import {
   savePromptVersion, getActivePrompt, getPromptVersions,
   rollbackPrompt, getAllPromptNames,
@@ -110,7 +124,18 @@ router.post('/call/start', async (req: Request, res: Response) => {
     }
 
     // Pre-call compliance check
-    const compliance = runPreCallComplianceCheck(to, lead.state);
+    const settings = getSettings();
+
+    // Per-phone rate limiting
+    if (settings.maxCallsPerPhonePerDay > 0) {
+      const rateCheck = checkPhoneRateLimit(to, settings.maxCallsPerPhonePerDay);
+      if (!rateCheck.allowed) {
+        res.status(429).json({ error: `Phone called ${rateCheck.callsToday} times today (max: ${settings.maxCallsPerPhonePerDay})` });
+        return;
+      }
+    }
+
+    const compliance = runPreCallComplianceCheck(to, lead.state, settings.tcpaOverride);
     if (!compliance.allowed) {
       const reasons = [
         !compliance.checks.dnc.passed ? compliance.checks.dnc.reason : null,
@@ -124,7 +149,7 @@ router.post('/call/start', async (req: Request, res: Response) => {
       return;
     }
 
-    const result = await startOutboundCall({ to, from, lead });
+    const result = await startOutboundCall({ to, from, lead, amdEnabled: settings.amdEnabled });
 
     // Register session data so the WebSocket handler can pick it up when the call connects
     registerPendingSession(result.callSid, lead, transfer, to);
@@ -1140,7 +1165,7 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                         return;
                   }
 
-                  const compliance = runPreCallComplianceCheck(phone, state);
+                  const compliance = runPreCallComplianceCheck(phone, state, settings.tcpaOverride);
 
                   if (compliance.allowed) {
                             const cr = await startOutboundCall({
@@ -1211,6 +1236,451 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
           logger.error('routes', 'Weblead webhook error', { error: msg });
           res.status(500).json({ error: msg });
     }
+});
+
+// ── AMD Status Webhook ──────────────────────────────────────────────
+
+router.post('/twilio/amd-status', (req: Request, res: Response) => {
+  const callSid = req.body?.CallSid || '';
+  const answeredBy = req.body?.AnsweredBy || ''; // human, machine_start, machine_end_beep, machine_end_silence, fax, unknown
+  const machineDetectionDuration = req.body?.MachineDetectionDuration;
+
+  logger.info('routes', 'AMD result', { callSid, answeredBy, machineDetectionDuration });
+
+  const settings = getSettings();
+
+  if (answeredBy.startsWith('machine')) {
+    if (settings.amdAction === 'hangup') {
+      logger.info('routes', 'AMD detected machine, hanging up', { callSid });
+      // End the call
+      import('../twilio/client').then(({ endCall }) => endCall(callSid)).catch(() => {});
+    } else if (settings.amdAction === 'leave_message') {
+      logger.info('routes', 'AMD detected machine, will leave message via stream', { callSid });
+      // The stream handler will detect AMD and handle the message
+    }
+  }
+
+  res.sendStatus(200);
+});
+
+// ── SMS Status Webhook ──────────────────────────────────────────────
+
+router.post('/twilio/sms-status', (req: Request, res: Response) => {
+  const messageSid = req.body?.MessageSid || '';
+  const messageStatus = req.body?.MessageStatus || '';
+  const to = req.body?.To || '';
+
+  logger.info('routes', 'SMS status update', { messageSid, messageStatus, to });
+  res.sendStatus(200);
+});
+
+// ── SMS Receive Webhook ─────────────────────────────────────────────
+
+router.post('/twilio/sms-incoming', (req: Request, res: Response) => {
+  const from = req.body?.From || '';
+  const body = req.body?.Body || '';
+  const messageSid = req.body?.MessageSid || '';
+
+  logger.info('routes', 'Incoming SMS', { from, body: body.substring(0, 100), messageSid });
+
+  logSms({
+    phone: from,
+    direction: 'inbound',
+    status: 'received',
+    body,
+    twilioSid: messageSid,
+    triggerReason: 'inbound',
+  });
+
+  // Auto-reply if needed
+  const settings = getSettings();
+  if (settings.smsEnabled) {
+    const lead = getLeadMemory(from);
+    if (lead) {
+      addLeadNote(from, `SMS received: "${body.substring(0, 100)}"`);
+    }
+  }
+
+  // Empty TwiML response (no auto-reply text for now)
+  res.type('text/xml');
+  res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+});
+
+// ── SMS API Endpoints ───────────────────────────────────────────────
+
+/**
+ * POST /api/sms/send
+ * Send an SMS to a phone number.
+ */
+router.post('/api/sms/send', async (req: Request, res: Response) => {
+  try {
+    const { phone, body, templateId, leadName } = req.body;
+    if (!phone || !body) {
+      res.status(400).json({ error: 'Missing phone or body' });
+      return;
+    }
+
+    const settings = getSettings();
+    if (!settings.smsEnabled) {
+      res.status(400).json({ error: 'SMS is not enabled in settings' });
+      return;
+    }
+
+    const entry = logSms({
+      phone,
+      direction: 'outbound',
+      status: 'queued',
+      body,
+      templateId,
+      leadName,
+      triggerReason: 'manual',
+    });
+
+    try {
+      const result = await sendSms(phone, body);
+      entry.status = 'sent';
+      entry.twilioSid = result.sid;
+      res.json({ success: true, smsId: entry.id, twilioSid: result.sid });
+    } catch (err) {
+      entry.status = 'failed';
+      entry.error = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: entry.error });
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg });
+  }
+});
+
+/**
+ * GET /api/sms/log
+ * Get SMS log with optional filters.
+ */
+router.get('/api/sms/log', (req: Request, res: Response) => {
+  const phone = req.query.phone as string | undefined;
+  const direction = req.query.direction as 'inbound' | 'outbound' | undefined;
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+  res.json(getSmsLog({ phone, direction, limit }));
+});
+
+/**
+ * GET /api/sms/stats
+ */
+router.get('/api/sms/stats', (_req: Request, res: Response) => {
+  res.json(getSmsStats());
+});
+
+/**
+ * GET /api/sms/templates
+ */
+router.get('/api/sms/templates', (req: Request, res: Response) => {
+  const category = req.query.category as string | undefined;
+  res.json(getTemplates(category));
+});
+
+/**
+ * POST /api/sms/templates
+ */
+router.post('/api/sms/templates', (req: Request, res: Response) => {
+  const { name, body, category, active } = req.body;
+  if (!name || !body) {
+    res.status(400).json({ error: 'Missing name or body' });
+    return;
+  }
+  const tpl = createTemplate({ name, body, category: category || 'custom', active: active !== false });
+  res.json(tpl);
+});
+
+/**
+ * PUT /api/sms/templates/:id
+ */
+router.put('/api/sms/templates/:id', (req: Request, res: Response) => {
+  const tpl = updateTemplate(req.params.id, req.body);
+  if (!tpl) { res.status(404).json({ error: 'Template not found' }); return; }
+  res.json(tpl);
+});
+
+/**
+ * DELETE /api/sms/templates/:id
+ */
+router.delete('/api/sms/templates/:id', (req: Request, res: Response) => {
+  const ok = deleteTemplate(req.params.id);
+  if (!ok) { res.status(404).json({ error: 'Template not found' }); return; }
+  res.json({ success: true });
+});
+
+/**
+ * POST /api/sms/send-template
+ * Send an SMS using a template.
+ */
+router.post('/api/sms/send-template', async (req: Request, res: Response) => {
+  try {
+    const { phone, templateId, variables } = req.body;
+    if (!phone || !templateId) {
+      res.status(400).json({ error: 'Missing phone or templateId' });
+      return;
+    }
+
+    const settings = getSettings();
+    if (!settings.smsEnabled) {
+      res.status(400).json({ error: 'SMS is not enabled' });
+      return;
+    }
+
+    const tpl = getTemplate(templateId);
+    if (!tpl) {
+      res.status(404).json({ error: 'Template not found' });
+      return;
+    }
+
+    const vars = {
+      first_name: variables?.first_name || 'there',
+      company_name: settings.companyName,
+      agent_name: settings.agentName,
+      state: variables?.state || '',
+      callback_time: variables?.callback_time || '',
+      ...variables,
+    };
+
+    const body = renderTemplate(tpl.body, vars);
+
+    const entry = logSms({
+      phone,
+      direction: 'outbound',
+      status: 'queued',
+      body,
+      templateId,
+      triggerReason: tpl.category,
+    });
+
+    const result = await sendSms(phone, body);
+    entry.status = 'sent';
+    entry.twilioSid = result.sid;
+    res.json({ success: true, smsId: entry.id, body });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ── Scheduler / Callback API ────────────────────────────────────────
+
+/**
+ * POST /api/callbacks/schedule
+ * Schedule a callback.
+ */
+router.post('/api/callbacks/schedule', (req: Request, res: Response) => {
+  const { phone, leadName, state, reason, scheduledAt, maxAttempts } = req.body;
+  if (!phone || !scheduledAt) {
+    res.status(400).json({ error: 'Missing phone or scheduledAt' });
+    return;
+  }
+
+  // Also update lead memory
+  scheduleCallback(phone, scheduledAt);
+
+  const cb = scheduleCallbackTimer({
+    phone,
+    leadName: leadName || 'Unknown',
+    state,
+    reason,
+    scheduledAt,
+    maxAttempts,
+  });
+  res.json(cb);
+});
+
+/**
+ * GET /api/callbacks
+ */
+router.get('/api/callbacks', (req: Request, res: Response) => {
+  const status = req.query.status as string | undefined;
+  res.json(getSchedulerCallbacks(status ? { status } : undefined));
+});
+
+/**
+ * GET /api/callbacks/upcoming
+ */
+router.get('/api/callbacks/upcoming', (_req: Request, res: Response) => {
+  res.json(getUpcomingCallbacks());
+});
+
+/**
+ * GET /api/callbacks/past
+ */
+router.get('/api/callbacks/past', (req: Request, res: Response) => {
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+  res.json(getPastCallbacks(limit));
+});
+
+/**
+ * DELETE /api/callbacks/:id
+ */
+router.delete('/api/callbacks/:id', (req: Request, res: Response) => {
+  const ok = cancelCallbackTimer(req.params.id);
+  if (!ok) { res.status(404).json({ error: 'Callback not found or already processed' }); return; }
+  res.json({ success: true });
+});
+
+// ── Retry API ───────────────────────────────────────────────────────
+
+/**
+ * POST /api/retries
+ */
+router.post('/api/retries', (req: Request, res: Response) => {
+  const { phone, leadName, state, lastResult } = req.body;
+  if (!phone) { res.status(400).json({ error: 'Missing phone' }); return; }
+  const entry = scheduleRetry({ phone, leadName, state, lastResult });
+  if (!entry) { res.status(400).json({ error: 'Max retries exhausted' }); return; }
+  res.json(entry);
+});
+
+/**
+ * GET /api/retries
+ */
+router.get('/api/retries', (req: Request, res: Response) => {
+  const status = req.query.status as string | undefined;
+  res.json(getRetries(status ? { status } : undefined));
+});
+
+// ── Lead Import/Export ──────────────────────────────────────────────
+
+/**
+ * POST /api/leads/import
+ * Import leads from CSV text body.
+ */
+router.post('/api/leads/import', (req: Request, res: Response) => {
+  const csv = req.body?.csv;
+  if (!csv || typeof csv !== 'string') {
+    res.status(400).json({ error: 'Missing csv field (string)' });
+    return;
+  }
+  const result = importLeadsFromCSV(csv);
+  res.json(result);
+});
+
+/**
+ * GET /api/leads/export
+ * Export all leads as CSV.
+ */
+router.get('/api/leads/export', (_req: Request, res: Response) => {
+  const csv = exportLeadsToCSV();
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=leads.csv');
+  res.send(csv);
+});
+
+// ── Lead Search ─────────────────────────────────────────────────────
+
+/**
+ * GET /api/leads/search
+ * Search leads with filters.
+ */
+router.get('/api/leads/search', (req: Request, res: Response) => {
+  const result = searchLeads({
+    query: req.query.q as string,
+    disposition: req.query.disposition as string,
+    state: req.query.state as string,
+    tag: req.query.tag as string,
+    dateFrom: req.query.dateFrom as string,
+    dateTo: req.query.dateTo as string,
+    source: req.query.source as string,
+    page: req.query.page ? parseInt(req.query.page as string) : undefined,
+    limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+  });
+  res.json(result);
+});
+
+/**
+ * GET /api/leads/:phone/detail
+ * Get full lead detail including SMS log, call history, score.
+ */
+router.get('/api/leads/:phone/detail', (req: Request, res: Response) => {
+  const phone = req.params.phone;
+  const lead = getLeadMemory(phone);
+  if (!lead) {
+    res.status(404).json({ error: 'Lead not found' });
+    return;
+  }
+
+  const smsHistory = getSmsLogForLead(phone);
+  const score = calculateLeadScore(phone);
+
+  // Find recordings for this lead's calls
+  const callRecordings = lead.callHistory.map(call => {
+    const rec = recordingStore.find(r => r.callSid === call.callSid);
+    return {
+      ...call,
+      recording: rec ? { url: `/api/recordings/${rec.callSid}/audio`, durationSec: rec.durationSec } : null,
+    };
+  });
+
+  res.json({
+    ...lead,
+    smsHistory,
+    score,
+    callHistory: callRecordings,
+  });
+});
+
+/**
+ * POST /api/leads/:phone/sms
+ * Send SMS to a specific lead.
+ */
+router.post('/api/leads/:phone/sms', async (req: Request, res: Response) => {
+  try {
+    const phone = req.params.phone;
+    const { body } = req.body;
+    if (!body) { res.status(400).json({ error: 'Missing body' }); return; }
+
+    const settings = getSettings();
+    if (!settings.smsEnabled) {
+      res.status(400).json({ error: 'SMS not enabled' });
+      return;
+    }
+
+    const lead = getLeadMemory(phone);
+    const entry = logSms({
+      phone,
+      direction: 'outbound',
+      status: 'queued',
+      body,
+      leadName: lead?.name,
+      triggerReason: 'manual',
+    });
+
+    const result = await sendSms(phone, body);
+    entry.status = 'sent';
+    entry.twilioSid = result.sid;
+    addLeadNote(phone, `SMS sent: "${body.substring(0, 80)}"`);
+    res.json({ success: true, smsId: entry.id });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ── Enhanced Recordings ─────────────────────────────────────────────
+
+/**
+ * GET /api/recordings/enriched
+ * Get recordings with lead info.
+ */
+router.get('/api/recordings/enriched', (_req: Request, res: Response) => {
+  const recordings = recordingStore.map(r => {
+    // Find call in history
+    const callHistory = getCallHistory();
+    const call = callHistory.find(c => c.callSid === r.callSid);
+    const lead = call ? getLeadMemory(call.to) : undefined;
+
+    return {
+      ...r,
+      phone: call?.to || '',
+      leadName: call?.leadName || lead?.name || 'Unknown',
+      disposition: lead?.disposition || 'unknown',
+    };
+  });
+  res.json({ recordings });
 });
 
 export { router };

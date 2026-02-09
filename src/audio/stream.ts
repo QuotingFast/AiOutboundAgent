@@ -12,6 +12,9 @@ import { registerSession, removeSession, updateSessionStatus, onSessionFreed } f
 import { buildLeadContext, recordCallToLead } from '../memory';
 import { runPostCallWorkflow } from '../workflows';
 import { redactPII } from '../security';
+import { mixNoiseIntoAudio, resetNoisePosition } from './noise';
+import { handleAutoDnc, recordPhoneCall } from '../compliance';
+import { endCall as endCallTwilio } from '../twilio/client';
 
 // Map of callSid -> session data for passing lead/transfer info
 const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig; toPhone?: string }>();
@@ -78,6 +81,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let currentAgentText = '';
   let currentElevenLabsText = '';
 
+  // Call duration tracking
+  let callStartedAt = 0;
+  let durationWarningFired = false;
+  let durationLimitReached = false;
+
   logger.info('stream', 'Twilio WS opened', { sessionId });
 
   // --- Twilio WebSocket handlers ---
@@ -128,6 +136,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           analytics = createCallAnalytics(callSid);
           if (analytics) analytics.addTag(callDirection);
           conversation = new ConversationIntelligence(callSid);
+          callStartedAt = Date.now();
+          resetNoisePosition();
+          if (callerNumber) recordPhoneCall(callerNumber);
           const sessionAccepted = registerSession(callSid, callerNumber, leadData.first_name);
           if (!sessionAccepted) {
             logger.warn('stream', 'Max concurrency reached, call may degrade', { sessionId, callSid });
@@ -974,6 +985,24 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
         emitTranscript('user', userText);
 
+        // Auto-DNC detection: if user says "stop calling", add to DNC
+        if (userText && callerNumber) {
+          const autoDncSettings = getSettings();
+          if (autoDncSettings.autoDncEnabled && handleAutoDnc(callerNumber, userText)) {
+            logger.info('stream', 'Auto-DNC triggered, ending call gracefully', { sessionId, callSid });
+            if (analytics) {
+              analytics.addTag('auto_dnc');
+              analytics.setOutcome('ended', 'Auto-DNC verbal request');
+            }
+            const dncMsg = '[System: The caller has asked to be removed from the call list. Their number has been added to the Do Not Call list automatically. End the call gracefully — apologize for the inconvenience and say goodbye.]';
+            if (useDeepSeek) {
+              callDeepSeekStreaming(dncMsg);
+            } else {
+              sendUserMessage(dncMsg);
+            }
+          }
+        }
+
         // DeepSeek mode: OpenAI doesn't auto-respond, so we call DeepSeek
         if (useDeepSeek && userText.trim()) {
           responseRequestedAt = Date.now();
@@ -1123,10 +1152,54 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   function sendAudioToTwilio(base64Audio: string): void {
     if (twilioWs.readyState !== WebSocket.OPEN) return;
 
+    let payload = base64Audio;
+
+    // Inject background noise if enabled
+    const s = getSettings();
+    if (s.backgroundNoiseEnabled) {
+      try {
+        const audioBuffer = Buffer.from(base64Audio, 'base64');
+        const mixed = mixNoiseIntoAudio(audioBuffer, s.backgroundNoiseVolume);
+        payload = mixed.toString('base64');
+      } catch {
+        // On any error, send original audio
+      }
+    }
+
+    // Check call duration limits
+    if (s.maxCallDurationSec > 0 && callStartedAt > 0 && !durationLimitReached) {
+      const elapsedSec = (Date.now() - callStartedAt) / 1000;
+      const warnThreshold = s.maxCallDurationSec * (s.callDurationWarnPct / 100);
+
+      if (elapsedSec >= s.maxCallDurationSec) {
+        durationLimitReached = true;
+        logger.warn('stream', 'Call duration limit reached, ending call', { sessionId, callSid, elapsedSec });
+        const limitMsg = '[System: Call has reached the maximum allowed duration. Wrap up and say goodbye now.]';
+        if (useDeepSeek) {
+          callDeepSeekStreaming(limitMsg);
+        } else {
+          sendUserMessage(limitMsg);
+        }
+        // Force end after 10s grace period
+        setTimeout(async () => {
+          try { await endCallTwilio(callSid); } catch {}
+        }, 10_000);
+      } else if (!durationWarningFired && elapsedSec >= warnThreshold) {
+        durationWarningFired = true;
+        logger.info('stream', 'Call duration warning', { sessionId, elapsedSec, maxSec: s.maxCallDurationSec });
+        const warnMsg = `[System: You are at ${Math.round(s.callDurationWarnPct)}% of the maximum call duration. Start wrapping up the conversation.]`;
+        if (useDeepSeek) {
+          callDeepSeekStreaming(warnMsg);
+        } else {
+          sendUserMessage(warnMsg);
+        }
+      }
+    }
+
     twilioWs.send(JSON.stringify({
       event: 'media',
       streamSid,
-      media: { payload: base64Audio },
+      media: { payload },
     }));
   }
 

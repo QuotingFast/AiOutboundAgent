@@ -1,36 +1,36 @@
 import { config } from './index';
 
 export interface RuntimeSettings {
-    // Voice provider: 'openai' = Realtime speech-to-speech, 'elevenlabs' = OpenAI LLM + EL TTS, 'deepseek' = DeepSeek LLM + EL TTS
+      // Voice provider: 'openai' = Realtime speech-to-speech, 'elevenlabs' = OpenAI LLM + EL TTS, 'deepseek' = DeepSeek LLM + EL TTS
   voiceProvider: 'openai' | 'elevenlabs' | 'deepseek';
 
   // Voice & Model (OpenAI)
   voice: string;
-    realtimeModel: string;
-    temperature: number;
+      realtimeModel: string;
+      temperature: number;
 
   // ElevenLabs settings
   elevenlabsVoiceId: string;
-    elevenlabsModelId: string;
-    elevenlabsStability: number;
-    elevenlabsSimilarityBoost: number;
+      elevenlabsModelId: string;
+      elevenlabsStability: number;
+      elevenlabsSimilarityBoost: number;
 
   // DeepSeek settings
   deepseekModel: string;
 
   // VAD & Barge-in
   vadThreshold: number;
-    silenceDurationMs: number;
-    prefixPaddingMs: number;
-    bargeInDebounceMs: number;
-    echoSuppressionMs: number;
+      silenceDurationMs: number;
+      prefixPaddingMs: number;
+      bargeInDebounceMs: number;
+      echoSuppressionMs: number;
 
   // Response
   maxResponseTokens: number;
 
   // Agent persona
   agentName: string;
-    companyName: string;
+      companyName: string;
 
   // Full system prompt (empty = use default template)
   systemPromptOverride: string;
@@ -44,61 +44,65 @@ export interface RuntimeSettings {
   // Whether weblead auto-dial is enabled
   webleadAutoDialEnabled?: boolean;
 
+  // TCPA time-of-day override (bypass 8am-9pm restriction when true)
+  tcpaOverride: boolean;
+
   // Transfer numbers
   allstateNumber: string;
-    nonAllstateNumber: string;
+      nonAllstateNumber: string;
 
   // Test call defaults
   defaultFromNumber: string;
-    defaultToNumber: string;
+      defaultToNumber: string;
 }
 
 export interface CallRecord {
-    callSid: string;
-    to: string;
-    leadName: string;
-    timestamp: string;
-    settings: {
-      voiceProvider: string;
-      voice: string;
-      realtimeModel: string;
-      temperature: number;
-      vadThreshold: number;
-      silenceDurationMs: number;
-      prefixPaddingMs: number;
-      bargeInDebounceMs: number;
-      echoSuppressionMs: number;
-      maxResponseTokens: number;
-      agentName: string;
-    };
+      callSid: string;
+      to: string;
+      leadName: string;
+      timestamp: string;
+      settings: {
+        voiceProvider: string;
+        voice: string;
+        realtimeModel: string;
+        temperature: number;
+        vadThreshold: number;
+        silenceDurationMs: number;
+        prefixPaddingMs: number;
+        bargeInDebounceMs: number;
+        echoSuppressionMs: number;
+        maxResponseTokens: number;
+        agentName: string;
+      };
 }
 
 const settings: RuntimeSettings = {
-    voiceProvider: config.ttsProvider as 'openai' | 'elevenlabs' | 'deepseek',
-    voice: config.openai.voice,
-    realtimeModel: config.openai.realtimeModel,
-    temperature: 0.7,
-    elevenlabsVoiceId: config.elevenlabs.voiceId,
-    elevenlabsModelId: 'eleven_turbo_v2_5',
-    elevenlabsStability: 0.5,
-    elevenlabsSimilarityBoost: 0.75,
-    deepseekModel: config.deepseek.model || 'deepseek-chat',
-    vadThreshold: 0.75,
-    silenceDurationMs: 700,
-    prefixPaddingMs: 300,
-    bargeInDebounceMs: 250,
-    echoSuppressionMs: 200,
-    maxResponseTokens: 275,
-    agentName: 'Alex',
-    companyName: 'QuotingFast',
-    systemPromptOverride: '',
-    inboundPromptOverride: '',
-    inboundEnabled: true,
-    webleadAutoDialEnabled: true,
-    allstateNumber: '',
-    nonAllstateNumber: '',
-    defaultFromNumber: config.twilio.fromNumber,
-    defaultToNumber: '',
+      voiceProvider: config.ttsProvider as 'openai' | 'elevenlabs' | 'deepseek',
+      voice: config.openai.voice,
+      realtimeModel: config.openai.realtimeModel,
+      temperature: 1.2,
+      elevenlabsVoiceId: config.elevenlabs.voiceId,
+      elevenlabsModelId: 'eleven_turbo_v2_5',
+      elevenlabsStability: 0.5,
+      elevenlabsSimilarityBoost: 0.85,
+      deepseekModel: config.deepseek.model || 'deepseek-chat',
+      vadThreshold: 0.75,
+      silenceDurationMs: 700,
+      prefixPaddingMs: 300,
+      bargeInDebounceMs: 250,
+      echoSuppressionMs: 200,
+      maxResponseTokens: 150,
+      agentName: 'Alex',
+      companyName: 'Affordable Auto Rates',
+      systemPromptOverride: '',
+      inboundPromptOverride: '',
+      inboundEnabled: true,
+      webleadAutoDialEnabled: true,
+      tcpaOverride: false,
+      allstateNumber: '',
+      nonAllstateNumber: '',
+      defaultFromNumber: config.twilio.fromNumber,
+      defaultToNumber: '',
 };
 
 // Keep last 20 calls
@@ -106,44 +110,44 @@ const callHistory: CallRecord[] = [];
 const MAX_HISTORY = 20;
 
 export function getSettings(): RuntimeSettings {
-    return { ...settings };
+      return { ...settings };
 }
 
 export function updateSettings(updates: Partial<RuntimeSettings>): RuntimeSettings {
-    for (const [key, value] of Object.entries(updates)) {
-          if (key in settings) {
-                  (settings as any)[key] = value;
-          }
-    }
-    return { ...settings };
+      for (const [key, value] of Object.entries(updates)) {
+              if (key in settings) {
+                        (settings as any)[key] = value;
+              }
+      }
+      return { ...settings };
 }
 
 export function recordCall(callSid: string, to: string, leadName: string): void {
-    const s = getSettings();
-    callHistory.unshift({
-          callSid,
-          to,
-          leadName,
-          timestamp: new Date().toISOString(),
-          settings: {
-                  voiceProvider: s.voiceProvider,
-                  voice: s.voiceProvider === 'openai' ? s.voice : s.voiceProvider === 'deepseek' ? `deepseek+el:${s.elevenlabsVoiceId}` : `elevenlabs:${s.elevenlabsVoiceId}`,
-                  realtimeModel: s.realtimeModel,
-                  temperature: s.temperature,
-                  vadThreshold: s.vadThreshold,
-                  silenceDurationMs: s.silenceDurationMs,
-                  prefixPaddingMs: s.prefixPaddingMs,
-                  bargeInDebounceMs: s.bargeInDebounceMs,
-                  echoSuppressionMs: s.echoSuppressionMs,
-                  maxResponseTokens: s.maxResponseTokens,
-                  agentName: s.agentName,
-          },
-    });
-    if (callHistory.length > MAX_HISTORY) {
-          callHistory.length = MAX_HISTORY;
-    }
+      const s = getSettings();
+      callHistory.unshift({
+              callSid,
+              to,
+              leadName,
+              timestamp: new Date().toISOString(),
+              settings: {
+                        voiceProvider: s.voiceProvider,
+                        voice: s.voiceProvider === 'openai' ? s.voice : s.voiceProvider === 'deepseek' ? `deepseek+el:${s.elevenlabsVoiceId}` : `elevenlabs:${s.elevenlabsVoiceId}`,
+                        realtimeModel: s.realtimeModel,
+                        temperature: s.temperature,
+                        vadThreshold: s.vadThreshold,
+                        silenceDurationMs: s.silenceDurationMs,
+                        prefixPaddingMs: s.prefixPaddingMs,
+                        bargeInDebounceMs: s.bargeInDebounceMs,
+                        echoSuppressionMs: s.echoSuppressionMs,
+                        maxResponseTokens: s.maxResponseTokens,
+                        agentName: s.agentName,
+              },
+      });
+      if (callHistory.length > MAX_HISTORY) {
+              callHistory.length = MAX_HISTORY;
+      }
 }
 
 export function getCallHistory(): CallRecord[] {
-    return [...callHistory];
+      return [...callHistory];
 }

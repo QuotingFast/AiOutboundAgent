@@ -361,6 +361,7 @@ export function getDashboardHtml(): string {
   <button onclick="switchTab('monitoring')">Monitoring</button>
   <button onclick="switchTab('compliance')">Compliance</button>
   <button onclick="switchTab('leads')">Leads</button>
+  <button onclick="switchTab('sms')">SMS</button>
   <button onclick="switchTab('settings')">Settings</button>
 </div>
 
@@ -506,7 +507,9 @@ export function getDashboardHtml(): string {
 <div class="tab-content" id="tab-leads">
   <div class="card">
     <h2><span class="icon">&#128101;</span> Lead Memory <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadLeads()">Refresh</button></h2>
-    <div style="display:flex;gap:12px;margin-bottom:16px">
+    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+      <input type="text" id="leadSearch" placeholder="Search name, phone, state..." style="flex:1;min-width:200px" onkeyup="if(event.key==='Enter')searchLeadsUI()">
+      <button class="btn btn-secondary btn-sm" onclick="searchLeadsUI()">Search</button>
       <select id="leadFilter" onchange="loadLeads()" style="width:auto">
         <option value="">All Dispositions</option>
         <option value="new">New</option>
@@ -517,13 +520,61 @@ export function getDashboardHtml(): string {
         <option value="callback">Callback</option>
         <option value="dnc">DNC</option>
       </select>
+      <button class="btn btn-secondary btn-sm" onclick="exportLeads()">Export CSV</button>
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('csvImportFile').click()">Import CSV</button>
+      <input type="file" id="csvImportFile" accept=".csv" style="display:none" onchange="importLeadsCSV(this)">
     </div>
     <div id="leadsTable"><div class="empty-state">Loading...</div></div>
+    <div id="leadsPagination" style="display:flex;gap:8px;margin-top:12px;justify-content:center"></div>
   </div>
 
   <div class="card">
-    <h2><span class="icon">&#128222;</span> Scheduled Callbacks <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadCallbacks()">Refresh</button></h2>
+    <h2><span class="icon">&#128222;</span> Scheduled Callbacks
+      <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadCallbacks()">Refresh</button>
+      <button class="btn btn-primary btn-sm" style="margin-left:8px" onclick="showScheduleCallbackForm()">Schedule New</button>
+    </h2>
+    <div id="callbackScheduleForm" style="display:none;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:var(--radius)">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end">
+        <div><label style="font-size:11px">Phone</label><input type="text" id="cbPhone" placeholder="+1..."></div>
+        <div><label style="font-size:11px">Name</label><input type="text" id="cbName" placeholder="Lead name"></div>
+        <div><label style="font-size:11px">Date/Time</label><input type="datetime-local" id="cbDateTime"></div>
+        <button class="btn btn-primary btn-sm" onclick="scheduleNewCallback()">Schedule</button>
+      </div>
+      <div style="margin-top:8px"><label style="font-size:11px">Reason</label><input type="text" id="cbReason" placeholder="Optional reason"></div>
+    </div>
     <div id="callbacksList"><div class="empty-state">Loading...</div></div>
+  </div>
+</div>
+
+<!-- SMS TAB -->
+<div class="tab-content" id="tab-sms">
+  <div class="card">
+    <h2><span class="icon">&#128172;</span> Send SMS</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div><label>Phone</label><input type="text" id="smsPhone" placeholder="+1..."></div>
+      <div><label>Template</label>
+        <select id="smsTemplate" onchange="loadSmsTemplate()">
+          <option value="">-- Custom Message --</option>
+        </select>
+      </div>
+    </div>
+    <div><label>Message</label><textarea id="smsBody" placeholder="Type your message..." style="min-height:80px"></textarea></div>
+    <div style="margin-top:8px"><button class="btn btn-primary" onclick="sendSmsUI()">Send SMS</button></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="icon">&#128196;</span> SMS Templates <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadSmsTemplates()">Refresh</button></h2>
+    <div id="smsTemplatesList"><div class="empty-state">Loading...</div></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="icon">&#128203;</span> SMS Log <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadSmsLog()">Refresh</button></h2>
+    <div id="smsLogTable"><div class="empty-state">Loading...</div></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="icon">&#128200;</span> SMS Stats</h2>
+    <div id="smsStats" class="stat-grid"></div>
   </div>
 </div>
 
@@ -1397,6 +1448,110 @@ export function getDashboardHtml(): string {
     </div>
   </div>
 
+  <!-- Audio & Call Settings -->
+  <div class="card">
+    <h2><span class="icon">&#127925;</span> Audio &amp; Call Settings</h2>
+    <div class="grid">
+      <div>
+        <label>Background Noise</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="backgroundNoiseEnabled" style="width:auto">
+          <span style="font-size:13px;color:var(--text2)">Mix office ambiance into calls</span>
+        </div>
+      </div>
+      <div>
+        <label>Noise Volume</label>
+        <div class="range-wrap">
+          <input type="range" id="backgroundNoiseVolume" min="0.01" max="0.30" step="0.01" value="0.12">
+          <span class="range-val" id="backgroundNoiseVolumeVal">0.12</span>
+        </div>
+      </div>
+      <div>
+        <label>Voicemail Detection (AMD)</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="amdEnabled" style="width:auto">
+          <span style="font-size:13px;color:var(--text2)">Detect answering machines</span>
+        </div>
+      </div>
+      <div>
+        <label>AMD Action</label>
+        <select id="amdAction" style="width:auto">
+          <option value="hangup">Hang Up (save cost)</option>
+          <option value="leave_message">Leave Voicemail</option>
+        </select>
+      </div>
+      <div>
+        <label>Max Call Duration (sec)</label>
+        <input type="number" id="maxCallDurationSec" value="0" min="0" max="3600" step="30">
+        <span style="font-size:11px;color:var(--text2)">0 = unlimited</span>
+      </div>
+      <div>
+        <label>Duration Warn %</label>
+        <input type="number" id="callDurationWarnPct" value="80" min="50" max="95" step="5">
+      </div>
+    </div>
+  </div>
+
+  <!-- SMS Settings -->
+  <div class="card">
+    <h2><span class="icon">&#128172;</span> SMS Settings</h2>
+    <div class="grid">
+      <div>
+        <label>SMS Enabled</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="smsEnabled" style="width:auto">
+          <span style="font-size:13px;color:var(--text2)">Enable SMS features</span>
+        </div>
+      </div>
+      <div>
+        <label>Auto-SMS Triggers</label>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" id="autoSmsOnMissedCall" style="width:auto"> On missed call</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" id="autoSmsOnCallback" style="width:auto"> On callback scheduled</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" id="autoSmsOnTransfer" style="width:auto"> After transfer</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" id="autoSmsOnTextRequest" style="width:auto"> On "text me instead"</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Compliance & Retry Settings -->
+  <div class="card">
+    <h2><span class="icon">&#128737;</span> Compliance &amp; Retry</h2>
+    <div class="grid">
+      <div>
+        <label>TCPA Override</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="tcpaOverride" style="width:auto">
+          <span style="font-size:13px;color:var(--text2)">Bypass time-of-day restrictions</span>
+        </div>
+      </div>
+      <div>
+        <label>Auto-DNC on Verbal Request</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="autoDncEnabled" style="width:auto" checked>
+          <span style="font-size:13px;color:var(--text2)">Auto-add to DNC when caller says "stop calling"</span>
+        </div>
+      </div>
+      <div>
+        <label>Max Calls/Phone/Day</label>
+        <input type="number" id="maxCallsPerPhonePerDay" value="3" min="0" max="20">
+        <span style="font-size:11px;color:var(--text2)">0 = unlimited</span>
+      </div>
+      <div>
+        <label>Auto-Retry Failed Calls</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="autoRetryEnabled" style="width:auto">
+          <span style="font-size:13px;color:var(--text2)">Retry no-answer calls</span>
+        </div>
+      </div>
+      <div>
+        <label>Max Retry Attempts</label>
+        <input type="number" id="autoRetryMaxAttempts" value="3" min="1" max="10">
+      </div>
+    </div>
+  </div>
+
   <!-- Transfer Numbers -->
   <div class="card">
     <h2><span class="icon">&#128260;</span> Transfer Numbers</h2>
@@ -1437,6 +1592,7 @@ function switchTab(name) {
   if (name === 'monitoring') loadMonitoring();
   if (name === 'compliance') { loadDnc(); loadAuditLog(); }
   if (name === 'leads') { loadLeads(); loadCallbacks(); }
+  if (name === 'sms') { loadSmsLog(); loadSmsTemplates(); loadSmsStats(); }
 }
 
 // ── Settings ──
@@ -1445,12 +1601,19 @@ var SETTINGS_FIELDS = [
   'prefixPaddingMs','bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
   'agentName','companyName','systemPromptOverride','inboundPromptOverride','allstateNumber','nonAllstateNumber',
   'elevenlabsVoiceId','elevenlabsModelId','elevenlabsStability','elevenlabsSimilarityBoost',
-  'deepseekModel'
+  'deepseekModel','backgroundNoiseVolume','amdAction','maxCallDurationSec','callDurationWarnPct',
+  'maxCallsPerPhonePerDay','autoRetryMaxAttempts'
+];
+var CHECKBOX_FIELDS = [
+  'backgroundNoiseEnabled','amdEnabled','smsEnabled','autoSmsOnMissedCall',
+  'autoSmsOnCallback','autoSmsOnTransfer','autoSmsOnTextRequest','tcpaOverride',
+  'autoDncEnabled','autoRetryEnabled'
 ];
 var NUMBER_FIELDS = [
   'temperature','vadThreshold','silenceDurationMs','prefixPaddingMs',
   'bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
-  'elevenlabsStability','elevenlabsSimilarityBoost'
+  'elevenlabsStability','elevenlabsSimilarityBoost','backgroundNoiseVolume',
+  'maxCallDurationSec','callDurationWarnPct','maxCallsPerPhonePerDay','autoRetryMaxAttempts'
 ];
 var MODEL_VOICES = {
   'gpt-4o-realtime-preview': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'],
@@ -1521,6 +1684,11 @@ async function loadSettings() {
     if (s.defaultFromNumber) document.getElementById('callFrom').value = s.defaultFromNumber;
     document.getElementById('inboundEnabled').checked = s.inboundEnabled !== false;
     document.getElementById('inboundWebhookUrl').value = location.origin + '/twilio/incoming';
+    // Load checkbox fields
+    for (var ci = 0; ci < CHECKBOX_FIELDS.length; ci++) {
+      var cbEl = document.getElementById(CHECKBOX_FIELDS[ci]);
+      if (cbEl) cbEl.checked = !!s[CHECKBOX_FIELDS[ci]];
+    }
     toast('Settings loaded', 'success');
   } catch (e) { toast('Failed to load settings', 'error'); }
 }
@@ -1561,6 +1729,17 @@ async function saveSettings() {
       body[key] = val;
     }
     body.inboundEnabled = document.getElementById('inboundEnabled').checked;
+    // Save checkbox fields
+    for (var ci2 = 0; ci2 < CHECKBOX_FIELDS.length; ci2++) {
+      var cbEl2 = document.getElementById(CHECKBOX_FIELDS[ci2]);
+      if (cbEl2) body[CHECKBOX_FIELDS[ci2]] = cbEl2.checked;
+    }
+    // Validation
+    var vad = parseFloat(body.vadThreshold);
+    if (vad < 0 || vad > 1) { toast('VAD threshold must be 0-1', 'error'); return; }
+    if (body.backgroundNoiseVolume < 0 || body.backgroundNoiseVolume > 0.5) { toast('Noise volume must be 0-0.5', 'error'); return; }
+    if (body.maxCallDurationSec < 0) { toast('Max duration cannot be negative', 'error'); return; }
+    if (body.maxCallsPerPhonePerDay < 0) { toast('Rate limit cannot be negative', 'error'); return; }
     var ct = document.getElementById('callTo').value.trim();
     var cf = document.getElementById('callFrom').value.trim();
     if (ct) body.defaultToNumber = ct;
@@ -1658,13 +1837,13 @@ async function loadCallHistory() {
 // ── Recordings ──
 async function loadRecordings() {
   try {
-    var res = await fetch('/api/recordings');
+    var res = await fetch('/api/recordings/enriched');
     var data = await res.json();
     var el = document.getElementById('recordingsTable');
     var recordings = data.recordings || [];
     if (!recordings.length) { el.innerHTML = '<div class="empty-state">No recordings yet. Recordings appear after calls complete.</div>'; return; }
     var totalCost = 0;
-    var html = '<table class="data-table"><tr><th>Time</th><th>Call SID</th><th>Duration</th><th>Channels</th><th>Source</th><th>Est. Cost</th><th>Play</th></tr>';
+    var html = '<table class="data-table"><tr><th>Time</th><th>Phone</th><th>Lead</th><th>Disposition</th><th>Duration</th><th>Source</th><th>Est. Cost</th><th>Play</th></tr>';
     for (var i = 0; i < recordings.length; i++) {
       var r = recordings[i];
       var t = new Date(r.timestamp).toLocaleString();
@@ -1673,11 +1852,13 @@ async function loadRecordings() {
       totalCost += cost;
       var costStr = '$' + cost.toFixed(3);
       var playUrl = r.callSid ? '/api/recordings/' + r.callSid + '/audio' : '';
+      var db = r.disposition === 'transferred' ? 'badge-green' : r.disposition === 'not_interested' ? 'badge-red' : 'badge-gray';
       html += '<tr>'
         + '<td style="font-size:11px">' + t + '</td>'
-        + '<td style="font-size:11px;word-break:break-all">' + r.callSid + '</td>'
+        + '<td style="font-family:monospace;font-size:11px">' + (r.phone || '--') + '</td>'
+        + '<td>' + (r.leadName || '--') + '</td>'
+        + '<td><span class="badge ' + db + '">' + (r.disposition || '--') + '</span></td>'
         + '<td>' + dur + '</td>'
-        + '<td>' + r.channels + 'ch</td>'
         + '<td>' + r.source + '</td>'
         + '<td style="color:#4ade80">' + costStr + '</td>'
         + '<td>' + (playUrl ? '<audio controls preload="none" style="height:30px;max-width:200px"><source src="' + playUrl + '" type="audio/mpeg"></audio>' : '--') + '</td>'
@@ -1906,41 +2087,237 @@ async function loadAuditLog() {
 }
 
 // ── Leads ──
-async function loadLeads() {
+var leadsCurrentPage = 1;
+async function loadLeads(page) {
+  leadsCurrentPage = page || 1;
   try {
     var disp = document.getElementById('leadFilter').value;
-    var url = disp ? '/api/leads?disposition=' + disp : '/api/leads';
+    var query = document.getElementById('leadSearch').value.trim();
+    var url = '/api/leads/search?limit=20&page=' + leadsCurrentPage;
+    if (disp) url += '&disposition=' + disp;
+    if (query) url += '&q=' + encodeURIComponent(query);
     var res = await fetch(url);
     var data = await res.json();
-    var leads = disp ? data : data.leads;
+    var leads = data.leads || [];
     var el = document.getElementById('leadsTable');
-    if (!leads || !leads.length) { el.innerHTML = '<div class="empty-state">No leads' + (data.count ? ' (' + data.count + ' total)' : '') + '</div>'; return; }
-    var html = '<table class="data-table"><tr><th>Phone</th><th>Name</th><th>State</th><th>Disposition</th><th>Calls</th><th>Last Contact</th><th>Tags</th></tr>';
+    if (!leads.length) { el.innerHTML = '<div class="empty-state">No leads found' + (data.total ? ' (' + data.total + ' total)' : '') + '</div>'; document.getElementById('leadsPagination').innerHTML=''; return; }
+    var html = '<table class="data-table"><tr><th>Phone</th><th>Name</th><th>State</th><th>Disposition</th><th>Score</th><th>Calls</th><th>Last Contact</th><th>Tags</th></tr>';
     for (var i = 0; i < leads.length; i++) {
       var l = leads[i];
       var db = l.disposition === 'transferred' ? 'badge-green' : (l.disposition === 'not_interested' || l.disposition === 'dnc') ? 'badge-red' : l.disposition === 'callback' ? 'badge-orange' : 'badge-gray';
       var tags = (l.tags||[]).slice(0,3).map(function(t){return '<span class="badge badge-blue">' + t + '</span>';}).join(' ');
-      html += '<tr><td style="font-family:monospace">' + l.phone + '</td><td>' + l.name + '</td><td>' + (l.state||'--') + '</td>'
-        + '<td><span class="badge ' + db + '">' + l.disposition + '</span></td><td>' + l.totalCalls + '</td>'
+      html += '<tr style="cursor:pointer" onclick="showLeadDetail(\\'' + l.phone + '\\')">'
+        + '<td style="font-family:monospace">' + l.phone + '</td><td>' + l.name + '</td><td>' + (l.state||'--') + '</td>'
+        + '<td><span class="badge ' + db + '">' + l.disposition + '</span></td>'
+        + '<td style="color:var(--accent)">' + (l.score || '--') + '</td>'
+        + '<td>' + l.totalCalls + '</td>'
         + '<td style="font-size:11px">' + (l.lastContactedAt ? new Date(l.lastContactedAt).toLocaleString() : '--') + '</td><td>' + (tags||'--') + '</td></tr>';
     }
-    el.innerHTML = html + '</table>' + (!disp && data.count ? '<div style="margin-top:8px;font-size:12px;color:var(--text2)">' + data.count + ' total</div>' : '');
+    el.innerHTML = html + '</table><div style="margin-top:4px;font-size:12px;color:var(--text2)">' + data.total + ' total leads</div>';
+    // Pagination
+    var pagEl = document.getElementById('leadsPagination');
+    if (data.pages > 1) {
+      var ph = '';
+      for (var p = 1; p <= data.pages; p++) {
+        ph += '<button class="btn btn-sm ' + (p === data.page ? 'btn-primary' : 'btn-secondary') + '" onclick="loadLeads(' + p + ')">' + p + '</button>';
+      }
+      pagEl.innerHTML = ph;
+    } else { pagEl.innerHTML = ''; }
   } catch (e) { document.getElementById('leadsTable').innerHTML = '<div class="empty-state">Failed</div>'; }
+}
+function searchLeadsUI() { loadLeads(1); }
+async function showLeadDetail(phone) {
+  try {
+    var res = await fetch('/api/leads/' + encodeURIComponent(phone) + '/detail');
+    if (!res.ok) { toast('Lead not found', 'error'); return; }
+    var d = await res.json();
+    var html = '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">';
+    html += '<div style="background:var(--surface);border-radius:12px;padding:24px;max-width:700px;width:90%;max-height:85vh;overflow-y:auto">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2>' + d.name + '</h2><button class="btn btn-secondary btn-sm" onclick="this.closest(\\'div[style*=fixed]\\').remove()">Close</button></div>';
+    html += '<div class="stat-grid" style="margin-bottom:16px">';
+    html += '<div class="stat-card"><div class="stat-value">' + d.phone + '</div><div class="stat-label">Phone</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + (d.state||'--') + '</div><div class="stat-label">State</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + d.score + '</div><div class="stat-label">Score</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + d.disposition + '</div><div class="stat-label">Disposition</div></div>';
+    html += '</div>';
+    // Call History
+    if (d.callHistory && d.callHistory.length) {
+      html += '<h3 style="margin-bottom:8px">Call History (' + d.callHistory.length + ')</h3>';
+      html += '<table class="data-table" style="margin-bottom:16px"><tr><th>Time</th><th>Duration</th><th>Outcome</th><th>Score</th><th>Recording</th></tr>';
+      for (var i = 0; i < d.callHistory.length; i++) {
+        var c = d.callHistory[i];
+        var dur = c.durationMs ? Math.round(c.durationMs/1000) + 's' : '--';
+        html += '<tr><td style="font-size:11px">' + new Date(c.timestamp).toLocaleString() + '</td><td>' + dur + '</td><td>' + c.outcome + '</td><td>' + (c.score||'--') + '</td>';
+        html += '<td>' + (c.recording ? '<audio controls preload="none" style="height:28px;max-width:160px"><source src="' + c.recording.url + '" type="audio/mpeg"></audio>' : '--') + '</td></tr>';
+      }
+      html += '</table>';
+    }
+    // SMS History
+    if (d.smsHistory && d.smsHistory.length) {
+      html += '<h3 style="margin-bottom:8px">SMS History (' + d.smsHistory.length + ')</h3>';
+      html += '<table class="data-table" style="margin-bottom:16px"><tr><th>Time</th><th>Dir</th><th>Message</th><th>Status</th></tr>';
+      for (var j = 0; j < Math.min(d.smsHistory.length, 20); j++) {
+        var s = d.smsHistory[j];
+        var dirBadge = s.direction === 'inbound' ? 'badge-blue' : 'badge-green';
+        html += '<tr><td style="font-size:11px">' + new Date(s.timestamp).toLocaleString() + '</td>';
+        html += '<td><span class="badge ' + dirBadge + '">' + s.direction + '</span></td>';
+        html += '<td style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + s.body + '</td>';
+        html += '<td>' + s.status + '</td></tr>';
+      }
+      html += '</table>';
+    }
+    // Notes
+    if (d.notes && d.notes.length) {
+      html += '<h3 style="margin-bottom:8px">Notes</h3><div style="font-size:12px;color:var(--text2);margin-bottom:16px">';
+      for (var k = 0; k < d.notes.length; k++) { html += '<div style="padding:4px 0;border-bottom:1px solid var(--border)">' + d.notes[k] + '</div>'; }
+      html += '</div>';
+    }
+    // Tags
+    if (d.tags && d.tags.length) {
+      html += '<div style="margin-bottom:12px">';
+      for (var ti = 0; ti < d.tags.length; ti++) { html += '<span class="badge badge-blue" style="margin-right:4px">' + d.tags[ti] + '</span>'; }
+      html += '</div>';
+    }
+    html += '</div></div>';
+    document.body.insertAdjacentHTML('beforeend', html);
+  } catch (e) { toast('Failed to load lead detail', 'error'); }
+}
+function exportLeads() {
+  window.open('/api/leads/export', '_blank');
+  toast('Downloading CSV...', 'success');
+}
+function importLeadsCSV(input) {
+  var file = input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      var res = await fetch('/api/leads/import', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ csv: e.target.result }) });
+      var data = await res.json();
+      toast('Imported ' + data.imported + ' leads (' + data.skipped + ' skipped)', data.errors.length ? 'error' : 'success');
+      loadLeads();
+    } catch (err) { toast('Import failed', 'error'); }
+  };
+  reader.readAsText(file);
+  input.value = '';
 }
 async function loadCallbacks() {
   try {
-    var res = await fetch('/api/leads/callbacks');
+    var res = await fetch('/api/callbacks');
     var cbs = await res.json();
     var el = document.getElementById('callbacksList');
     if (!cbs.length) { el.innerHTML = '<div class="empty-state">No callbacks scheduled</div>'; return; }
-    var html = '<table class="data-table"><tr><th>Phone</th><th>Name</th><th>Scheduled</th><th>Calls</th></tr>';
+    var html = '<table class="data-table"><tr><th>Phone</th><th>Name</th><th>Scheduled</th><th>Status</th><th>Attempts</th><th>Action</th></tr>';
     for (var i = 0; i < cbs.length; i++) {
-      var l = cbs[i];
-      html += '<tr><td style="font-family:monospace">' + l.phone + '</td><td>' + l.name + '</td>'
-        + '<td>' + (l.callbackScheduled ? new Date(l.callbackScheduled).toLocaleString() : '--') + '</td><td>' + l.totalCalls + '</td></tr>';
+      var cb = cbs[i];
+      var sb = cb.status === 'completed' ? 'badge-green' : cb.status === 'failed' ? 'badge-red' : cb.status === 'dialing' ? 'badge-orange' : 'badge-blue';
+      html += '<tr><td style="font-family:monospace">' + cb.phone + '</td><td>' + cb.leadName + '</td>'
+        + '<td>' + new Date(cb.scheduledAt).toLocaleString() + '</td>'
+        + '<td><span class="badge ' + sb + '">' + cb.status + '</span></td>'
+        + '<td>' + cb.attempts + '/' + cb.maxAttempts + '</td>'
+        + '<td>' + (cb.status === 'pending' ? '<button class="btn btn-secondary btn-sm" onclick="cancelCb(\\'' + cb.id + '\\')">Cancel</button>' : (cb.result || '--')) + '</td></tr>';
     }
     el.innerHTML = html + '</table>';
   } catch (e) { document.getElementById('callbacksList').innerHTML = '<div class="empty-state">Failed</div>'; }
+}
+function showScheduleCallbackForm() {
+  var form = document.getElementById('callbackScheduleForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+async function scheduleNewCallback() {
+  var phone = document.getElementById('cbPhone').value.trim();
+  var name = document.getElementById('cbName').value.trim() || 'Unknown';
+  var dateTime = document.getElementById('cbDateTime').value;
+  var reason = document.getElementById('cbReason').value.trim();
+  if (!phone || !dateTime) { toast('Phone and date/time required', 'error'); return; }
+  try {
+    var res = await fetch('/api/callbacks/schedule', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone: phone, leadName: name, scheduledAt: new Date(dateTime).toISOString(), reason: reason }) });
+    if (res.ok) { toast('Callback scheduled', 'success'); loadCallbacks(); document.getElementById('callbackScheduleForm').style.display = 'none'; }
+    else toast('Failed', 'error');
+  } catch (e) { toast('Failed', 'error'); }
+}
+async function cancelCb(id) {
+  try {
+    await fetch('/api/callbacks/' + id, { method: 'DELETE' });
+    toast('Cancelled', 'success');
+    loadCallbacks();
+  } catch (e) { toast('Failed', 'error'); }
+}
+
+// ── SMS ──
+async function loadSmsLog() {
+  try {
+    var res = await fetch('/api/sms/log?limit=50');
+    var logs = await res.json();
+    var el = document.getElementById('smsLogTable');
+    if (!logs.length) { el.innerHTML = '<div class="empty-state">No SMS messages yet</div>'; return; }
+    var html = '<table class="data-table"><tr><th>Time</th><th>Phone</th><th>Dir</th><th>Message</th><th>Status</th><th>Trigger</th></tr>';
+    for (var i = 0; i < logs.length; i++) {
+      var s = logs[i];
+      var dirBadge = s.direction === 'inbound' ? 'badge-blue' : 'badge-green';
+      var stBadge = s.status === 'failed' ? 'badge-red' : s.status === 'sent' || s.status === 'delivered' ? 'badge-green' : 'badge-gray';
+      html += '<tr><td style="font-size:11px">' + new Date(s.timestamp).toLocaleString() + '</td>';
+      html += '<td style="font-family:monospace;font-size:11px">' + s.phone + '</td>';
+      html += '<td><span class="badge ' + dirBadge + '">' + s.direction + '</span></td>';
+      html += '<td style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + s.body + '</td>';
+      html += '<td><span class="badge ' + stBadge + '">' + s.status + '</span></td>';
+      html += '<td style="font-size:11px;color:var(--text2)">' + (s.triggerReason || '--') + '</td></tr>';
+    }
+    el.innerHTML = html + '</table>';
+  } catch (e) { document.getElementById('smsLogTable').innerHTML = '<div class="empty-state">Failed</div>'; }
+}
+var smsTemplatesData = [];
+async function loadSmsTemplates() {
+  try {
+    var res = await fetch('/api/sms/templates');
+    smsTemplatesData = await res.json();
+    var el = document.getElementById('smsTemplatesList');
+    var selEl = document.getElementById('smsTemplate');
+    // Update select dropdown
+    selEl.innerHTML = '<option value="">-- Custom Message --</option>';
+    for (var i = 0; i < smsTemplatesData.length; i++) {
+      var t = smsTemplatesData[i];
+      selEl.innerHTML += '<option value="' + t.id + '">' + t.name + ' (' + t.category + ')</option>';
+    }
+    // Show templates list
+    if (!smsTemplatesData.length) { el.innerHTML = '<div class="empty-state">No templates</div>'; return; }
+    var html = '<table class="data-table"><tr><th>Name</th><th>Category</th><th>Body</th><th>Active</th></tr>';
+    for (var j = 0; j < smsTemplatesData.length; j++) {
+      var tp = smsTemplatesData[j];
+      html += '<tr><td>' + tp.name + '</td><td><span class="badge badge-blue">' + tp.category + '</span></td>';
+      html += '<td style="font-size:12px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + tp.body + '</td>';
+      html += '<td><span class="badge ' + (tp.active ? 'badge-green' : 'badge-gray') + '">' + (tp.active ? 'Yes' : 'No') + '</span></td></tr>';
+    }
+    el.innerHTML = html + '</table>';
+  } catch (e) { document.getElementById('smsTemplatesList').innerHTML = '<div class="empty-state">Failed</div>'; }
+}
+function loadSmsTemplate() {
+  var id = document.getElementById('smsTemplate').value;
+  if (!id) { document.getElementById('smsBody').value = ''; return; }
+  var tpl = smsTemplatesData.find(function(t) { return t.id === id; });
+  if (tpl) document.getElementById('smsBody').value = tpl.body;
+}
+async function sendSmsUI() {
+  var phone = document.getElementById('smsPhone').value.trim();
+  var body = document.getElementById('smsBody').value.trim();
+  if (!phone || !body) { toast('Phone and message required', 'error'); return; }
+  try {
+    var res = await fetch('/api/sms/send', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone: phone, body: body }) });
+    var data = await res.json();
+    if (res.ok) { toast('SMS sent!', 'success'); document.getElementById('smsBody').value = ''; loadSmsLog(); }
+    else toast(data.error || 'Failed', 'error');
+  } catch (e) { toast('Failed to send SMS', 'error'); }
+}
+async function loadSmsStats() {
+  try {
+    var res = await fetch('/api/sms/stats');
+    var data = await res.json();
+    document.getElementById('smsStats').innerHTML =
+      '<div class="stat-card"><div class="stat-value">' + data.total + '</div><div class="stat-label">Total</div></div>'
+      + '<div class="stat-card green"><div class="stat-value">' + data.sent + '</div><div class="stat-label">Sent</div></div>'
+      + '<div class="stat-card cyan"><div class="stat-value">' + data.received + '</div><div class="stat-label">Received</div></div>'
+      + '<div class="stat-card red"><div class="stat-value">' + data.failed + '</div><div class="stat-label">Failed</div></div>';
+  } catch (e) { document.getElementById('smsStats').innerHTML = '<div class="empty-state">Failed</div>'; }
 }
 
 // ── Sliders ──

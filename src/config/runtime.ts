@@ -54,6 +54,36 @@ export interface RuntimeSettings {
   // Test call defaults
   defaultFromNumber: string;
       defaultToNumber: string;
+
+  // Background noise injection
+  backgroundNoiseEnabled: boolean;
+  backgroundNoiseVolume: number; // 0.0 - 1.0 (default 0.12 = 12%)
+
+  // Voicemail / AMD detection
+  amdEnabled: boolean;
+  amdAction: 'hangup' | 'leave_message';
+  amdMessage: string; // Pre-recorded message to leave on voicemail
+
+  // Call duration limits
+  maxCallDurationSec: number;     // 0 = unlimited
+  callDurationWarnPct: number;    // Warn agent at this % of limit (default 80)
+
+  // Call retry
+  autoRetryEnabled: boolean;
+  autoRetryMaxAttempts: number;
+
+  // SMS
+  smsEnabled: boolean;
+  autoSmsOnMissedCall: boolean;
+  autoSmsOnCallback: boolean;
+  autoSmsOnTransfer: boolean;
+  autoSmsOnTextRequest: boolean;
+
+  // Per-phone rate limiting
+  maxCallsPerPhonePerDay: number;  // 0 = unlimited
+
+  // Auto-DNC on verbal request
+  autoDncEnabled: boolean;
 }
 
 export interface CallRecord {
@@ -103,6 +133,36 @@ const settings: RuntimeSettings = {
       nonAllstateNumber: '',
       defaultFromNumber: config.twilio.fromNumber,
       defaultToNumber: '',
+
+      // Background noise
+      backgroundNoiseEnabled: false,
+      backgroundNoiseVolume: 0.12,
+
+      // AMD / Voicemail detection
+      amdEnabled: false,
+      amdAction: 'hangup',
+      amdMessage: 'Hi, this is {{agent_name}} from {{company_name}}. We were calling about your auto insurance quote. Please call us back at your convenience. Thank you!',
+
+      // Call duration limits
+      maxCallDurationSec: 0,
+      callDurationWarnPct: 80,
+
+      // Call retry
+      autoRetryEnabled: false,
+      autoRetryMaxAttempts: 3,
+
+      // SMS
+      smsEnabled: false,
+      autoSmsOnMissedCall: true,
+      autoSmsOnCallback: true,
+      autoSmsOnTransfer: true,
+      autoSmsOnTextRequest: true,
+
+      // Per-phone rate limiting
+      maxCallsPerPhonePerDay: 3,
+
+      // Auto-DNC
+      autoDncEnabled: true,
 };
 
 // Keep last 20 calls

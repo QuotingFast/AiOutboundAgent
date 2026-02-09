@@ -110,7 +110,8 @@ router.post('/call/start', async (req: Request, res: Response) => {
     }
 
     // Pre-call compliance check
-    const compliance = runPreCallComplianceCheck(to, lead.state);
+    const settings = getSettings();
+    const compliance = runPreCallComplianceCheck(to, lead.state, settings.tcpaOverride);
     if (!compliance.allowed) {
       const reasons = [
         !compliance.checks.dnc.passed ? compliance.checks.dnc.reason : null,
@@ -1140,7 +1141,7 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                         return;
                   }
 
-                  const compliance = runPreCallComplianceCheck(phone, state);
+                  const compliance = runPreCallComplianceCheck(phone, state, settings.tcpaOverride);
 
                   if (compliance.allowed) {
                             const cr = await startOutboundCall({

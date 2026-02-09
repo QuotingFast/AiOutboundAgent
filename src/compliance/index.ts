@@ -139,7 +139,7 @@ export interface ComplianceCheckResult {
   warnings: string[];
 }
 
-export function runPreCallComplianceCheck(phone: string, state?: string): ComplianceCheckResult {
+export function runPreCallComplianceCheck(phone: string, state?: string, tcpaOverride?: boolean): ComplianceCheckResult {
   const checks = {
     dnc: { passed: true, reason: undefined as string | undefined },
     time: { passed: true, reason: undefined as string | undefined },
@@ -164,7 +164,7 @@ export function runPreCallComplianceCheck(phone: string, state?: string): Compli
     warnings.push('No TCPA consent record on file for this number');
   }
 
-  const allowed = checks.dnc.passed && checks.time.passed;
+  const allowed = checks.dnc.passed && (tcpaOverride || checks.time.passed);
 
   auditLog('compliance_check', {
     phone: normalizePhone(phone),

@@ -1482,12 +1482,17 @@ export function getDashboardHtml(): string {
       </div>
       <div>
         <label>Max Call Duration (sec)</label>
-        <input type="number" id="maxCallDurationSec" value="0" min="0" max="3600" step="30">
-        <span style="font-size:11px;color:var(--text2)">0 = unlimited</span>
+        <input type="number" id="maxCallDurationSec" value="180" min="0" max="3600" step="30">
+        <span style="font-size:11px;color:var(--text2)">0 = unlimited (default: 180 = 3 min)</span>
       </div>
       <div>
         <label>Duration Warn %</label>
         <input type="number" id="callDurationWarnPct" value="80" min="50" max="95" step="5">
+      </div>
+      <div>
+        <label>Silence Timeout (sec)</label>
+        <input type="number" id="silenceTimeoutSec" value="30" min="0" max="120" step="5">
+        <span style="font-size:11px;color:var(--text2)">0 = disabled. Disconnect after dead air (default: 30)</span>
       </div>
     </div>
   </div>
@@ -1601,7 +1606,7 @@ var SETTINGS_FIELDS = [
   'prefixPaddingMs','bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
   'agentName','companyName','systemPromptOverride','inboundPromptOverride','allstateNumber','nonAllstateNumber',
   'elevenlabsVoiceId','elevenlabsModelId','elevenlabsStability','elevenlabsSimilarityBoost',
-  'deepseekModel','backgroundNoiseVolume','amdAction','maxCallDurationSec','callDurationWarnPct',
+  'deepseekModel','backgroundNoiseVolume','amdAction','maxCallDurationSec','callDurationWarnPct','silenceTimeoutSec',
   'maxCallsPerPhonePerDay','autoRetryMaxAttempts'
 ];
 var CHECKBOX_FIELDS = [
@@ -1613,7 +1618,7 @@ var NUMBER_FIELDS = [
   'temperature','vadThreshold','silenceDurationMs','prefixPaddingMs',
   'bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
   'elevenlabsStability','elevenlabsSimilarityBoost','backgroundNoiseVolume',
-  'maxCallDurationSec','callDurationWarnPct','maxCallsPerPhonePerDay','autoRetryMaxAttempts'
+  'maxCallDurationSec','callDurationWarnPct','silenceTimeoutSec','maxCallsPerPhonePerDay','autoRetryMaxAttempts'
 ];
 var MODEL_VOICES = {
   'gpt-4o-realtime-preview': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'],
@@ -2165,6 +2170,70 @@ async function showLeadDetail(phone) {
         html += '<td>' + s.status + '</td></tr>';
       }
       html += '</table>';
+    }
+    // Web Form Data (customFields from webhook)
+    if (d.customFields && Object.keys(d.customFields).length > 0) {
+      var cf = d.customFields;
+      html += '<h3 style="margin-bottom:8px">Web Form Data</h3>';
+      html += '<div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px">';
+      // Contact info
+      if (cf.contact) {
+        html += '<div style="margin-bottom:10px"><strong style="color:var(--accent)">Contact</strong><div class="stat-grid" style="margin-top:6px;grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">';
+        var contactFields = [['Name', (cf.contact.firstName||'') + ' ' + (cf.contact.lastName||'')], ['Email', cf.contact.email], ['State', cf.contact.state], ['City', cf.contact.city], ['Zip', cf.contact.zipCode], ['Address', cf.contact.address]];
+        for (var ci = 0; ci < contactFields.length; ci++) { if (contactFields[ci][1]) html += '<div><span style="color:var(--text2)">' + contactFields[ci][0] + ':</span> ' + contactFields[ci][1] + '</div>'; }
+        html += '</div></div>';
+      }
+      // Drivers
+      if (cf.drivers && cf.drivers.length) {
+        html += '<div style="margin-bottom:10px"><strong style="color:var(--accent)">Drivers (' + cf.drivers.length + ')</strong>';
+        for (var di = 0; di < cf.drivers.length; di++) {
+          var dr = cf.drivers[di];
+          html += '<div style="margin-top:6px;padding:6px;background:var(--surface);border-radius:6px">';
+          html += '<div style="font-weight:600;margin-bottom:4px">Driver ' + dr.driverNumber + ': ' + (dr.name || 'N/A') + '</div>';
+          var driverFields = [['DOB', dr.birthDate], ['Marital', dr.maritalStatus], ['Occupation', dr.occupation], ['Education', dr.education], ['Gender', dr.gender], ['Relationship', dr.relationship], ['License', dr.licenseStatus], ['SR-22', dr.sr22 ? 'Yes' : '']];
+          html += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+          for (var df = 0; df < driverFields.length; df++) { if (driverFields[df][1]) html += '<span><span style="color:var(--text2)">' + driverFields[df][0] + ':</span> ' + driverFields[df][1] + '</span>'; }
+          html += '</div></div>';
+        }
+        html += '</div>';
+      }
+      // Vehicles
+      if (cf.vehicles && cf.vehicles.length) {
+        html += '<div style="margin-bottom:10px"><strong style="color:var(--accent)">Vehicles (' + cf.vehicles.length + ')</strong>';
+        for (var vi = 0; vi < cf.vehicles.length; vi++) {
+          var veh = cf.vehicles[vi];
+          html += '<div style="margin-top:6px;padding:6px;background:var(--surface);border-radius:6px">';
+          html += '<div style="font-weight:600;margin-bottom:4px">Vehicle ' + veh.vehicleNumber + ': ' + [veh.year, veh.make, veh.model].filter(Boolean).join(' ') + '</div>';
+          var vehFields = [['VIN', veh.vin], ['Annual Miles', veh.annualMiles], ['Primary Use', veh.primaryUse], ['Ownership', veh.ownership], ['Trim', veh.trim], ['Body', veh.bodyStyle]];
+          html += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+          for (var vf = 0; vf < vehFields.length; vf++) { if (vehFields[vf][1]) html += '<span><span style="color:var(--text2)">' + vehFields[vf][0] + ':</span> ' + vehFields[vf][1] + '</span>'; }
+          html += '</div></div>';
+        }
+        html += '</div>';
+      }
+      // Current Policy
+      if (cf.currentPolicy) {
+        html += '<div style="margin-bottom:10px"><strong style="color:var(--accent)">Current Policy</strong><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">';
+        var cpFields = [['Insurer', cf.currentPolicy.insurer], ['Coverage', cf.currentPolicy.coverageType], ['Since', cf.currentPolicy.insuredSince], ['Expires', cf.currentPolicy.expirationDate], ['BI', cf.currentPolicy.bodilyInjury], ['PD', cf.currentPolicy.propertyDamage]];
+        for (var cpi = 0; cpi < cpFields.length; cpi++) { if (cpFields[cpi][1]) html += '<span><span style="color:var(--text2)">' + cpFields[cpi][0] + ':</span> ' + cpFields[cpi][1] + '</span>'; }
+        html += '</div></div>';
+      }
+      // Requested Policy
+      if (cf.requestedPolicy) {
+        html += '<div style="margin-bottom:10px"><strong style="color:var(--accent)">Requested Policy</strong><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">';
+        var rpFields = [['Coverage', cf.requestedPolicy.coverageType], ['BI', cf.requestedPolicy.bodilyInjury], ['PD', cf.requestedPolicy.propertyDamage], ['Deductible', cf.requestedPolicy.deductible], ['Comp Ded', cf.requestedPolicy.comprehensiveDeductible], ['Coll Ded', cf.requestedPolicy.collisionDeductible]];
+        for (var rpi = 0; rpi < rpFields.length; rpi++) { if (rpFields[rpi][1]) html += '<span><span style="color:var(--text2)">' + rpFields[rpi][0] + ':</span> ' + rpFields[rpi][1] + '</span>'; }
+        html += '</div></div>';
+      }
+      // Lead meta
+      var metaFields = [['Lead ID', cf.leadId], ['Campaign', cf.campaignId], ['Sell Price', cf.sellPrice ? '$' + cf.sellPrice : ''], ['TCPA', cf.tcpaCompliant ? 'Yes' : ''], ['Timestamp', cf.timestamp]];
+      var hasMeta = metaFields.some(function(m) { return !!m[1]; });
+      if (hasMeta) {
+        html += '<div style="margin-bottom:6px"><strong style="color:var(--accent)">Lead Meta</strong><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">';
+        for (var mi = 0; mi < metaFields.length; mi++) { if (metaFields[mi][1]) html += '<span><span style="color:var(--text2)">' + metaFields[mi][0] + ':</span> ' + metaFields[mi][1] + '</span>'; }
+        html += '</div></div>';
+      }
+      html += '</div>';
     }
     // Notes
     if (d.notes && d.notes.length) {

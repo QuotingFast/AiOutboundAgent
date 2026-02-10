@@ -86,6 +86,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let durationWarningFired = false;
   let durationLimitReached = false;
 
+  // Silence (dead air) tracking
+  let lastSpeechActivityAt = 0;
+  let silenceDisconnectFired = false;
+  let silenceCheckInterval: ReturnType<typeof setInterval> | null = null;
+
   logger.info('stream', 'Twilio WS opened', { sessionId });
 
   // --- Twilio WebSocket handlers ---
@@ -137,7 +142,25 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           if (analytics) analytics.addTag(callDirection);
           conversation = new ConversationIntelligence(callSid);
           callStartedAt = Date.now();
+          lastSpeechActivityAt = Date.now();
           resetNoisePosition();
+
+          // Start silence (dead air) monitoring
+          const silenceSettings = getSettings();
+          if (silenceSettings.silenceTimeoutSec > 0) {
+            silenceCheckInterval = setInterval(() => {
+              if (silenceDisconnectFired || !callSid) return;
+              const s2 = getSettings();
+              if (s2.silenceTimeoutSec <= 0) return;
+              const silentSec = (Date.now() - lastSpeechActivityAt) / 1000;
+              if (silentSec >= s2.silenceTimeoutSec) {
+                silenceDisconnectFired = true;
+                logger.warn('stream', 'Silence timeout reached, ending call', { sessionId, callSid, silentSec: Math.round(silentSec), timeoutSec: s2.silenceTimeoutSec });
+                if (analytics) analytics.setOutcome('dropped', `Silence timeout: no speech for ${Math.round(silentSec)}s`);
+                endCallTwilio(callSid).catch(() => {});
+              }
+            }, 5000); // Check every 5 seconds
+          }
           if (callerNumber) recordPhoneCall(callerNumber);
           const sessionAccepted = registerSession(callSid, callerNumber, leadData.first_name);
           if (!sessionAccepted) {
@@ -811,6 +834,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
         responseIsPlaying = true;
         lastAudioSentAt = Date.now();
+        lastSpeechActivityAt = Date.now();
         if (event.delta) {
           sendAudioToTwilio(event.delta);
 
@@ -840,6 +864,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       case 'response.text.delta':
         if (useElevenLabs && !useDeepSeek && event.delta) {
           responseIsPlaying = true;
+          lastSpeechActivityAt = Date.now();
           sendTextToElevenLabs(event.delta);
 
           // Track LLM latency (time to first text token)
@@ -866,6 +891,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       // --- Barge-in handling ---
       case 'input_audio_buffer.speech_started':
+        lastSpeechActivityAt = Date.now();
         if (analytics) analytics.userStartedSpeaking();
 
         if (!responseIsPlaying) break;
@@ -1221,6 +1247,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   }
 
   function cleanup(): void {
+    if (silenceCheckInterval) {
+      clearInterval(silenceCheckInterval);
+      silenceCheckInterval = null;
+    }
     if (openaiWs) {
       openaiWs.close();
       openaiWs = null;

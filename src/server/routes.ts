@@ -157,6 +157,13 @@ router.post('/call/start', async (req: Request, res: Response) => {
     // Record this call with current settings for history tracking
     recordCall(result.callSid, to, lead.first_name);
 
+    // Create/update lead in memory so it appears in the Leads tab
+    createOrUpdateLead(to, {
+      name: lead.first_name,
+      state: lead.state,
+      currentInsurer: lead.current_insurer,
+    });
+
     logger.info('routes', 'Call started', { callSid: result.callSid, to });
 
     res.json({
@@ -1075,7 +1082,7 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
           const drivers = data.drivers || [];
           const vehicles = data.vehicles || [];
 
-          // Build form data summary for notes
+          // Build comprehensive form data — store ALL webhook fields for easy reference
           const formDataSummary: Record<string, any> = {
                   contact: { firstName, lastName, state, city, email, zipCode, address },
                   leadId: body.id,
@@ -1088,46 +1095,67 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                   vehiclesCount: vehicles.length,
           };
 
-          // Store detailed driver info
+          // Store ALL drivers (not just the first)
           if (drivers.length > 0) {
-                  formDataSummary.primaryDriver = {
-                            name: `${drivers[0].first_name || ''} ${drivers[0].last_name || ''}`.trim(),
-                            dob: drivers[0].birth_date,
-                            maritalStatus: drivers[0].marital_status,
-                            occupation: drivers[0].occupation,
-                            education: drivers[0].education,
-                  };
+                  formDataSummary.drivers = drivers.map((d: any, idx: number) => ({
+                            driverNumber: idx + 1,
+                            firstName: d.first_name || '',
+                            lastName: d.last_name || '',
+                            name: `${d.first_name || ''} ${d.last_name || ''}`.trim(),
+                            birthDate: d.birth_date || '',
+                            maritalStatus: d.marital_status || '',
+                            occupation: d.occupation || '',
+                            education: d.education || '',
+                            gender: d.gender || '',
+                            relationship: d.relationship || '',
+                            licenseStatus: d.license_status || '',
+                            ageFirstLicensed: d.age_first_licensed || '',
+                            sr22: d.sr22 || false,
+                  }));
           }
 
-          // Store vehicle info
+          // Store ALL vehicles (not just the first)
           if (vehicles.length > 0) {
-                  formDataSummary.primaryVehicle = {
-                            year: vehicles[0].year,
-                            make: vehicles[0].make,
-                            model: vehicles[0].model,
-                            vin: vehicles[0].vin,
-                            annualMiles: vehicles[0].annual_miles,
-                            primaryUse: vehicles[0].primary_use,
-                  };
+                  formDataSummary.vehicles = vehicles.map((v: any, idx: number) => ({
+                            vehicleNumber: idx + 1,
+                            year: v.year || '',
+                            make: v.make || '',
+                            model: v.model || '',
+                            vin: v.vin || '',
+                            annualMiles: v.annual_miles || '',
+                            primaryUse: v.primary_use || '',
+                            ownership: v.ownership || '',
+                            trim: v.trim || '',
+                            bodyStyle: v.body_style || '',
+                  }));
           }
 
           // Store current & requested policy info
-          if (currentPolicy.insurance_company) {
+          if (currentPolicy.insurance_company || currentPolicy.coverage_type) {
                   formDataSummary.currentPolicy = {
-                            insurer: currentPolicy.insurance_company,
-                            coverageType: currentPolicy.coverage_type,
-                            insuredSince: currentPolicy.insured_since,
-                            expirationDate: currentPolicy.expiration_date,
+                            insurer: currentPolicy.insurance_company || '',
+                            coverageType: currentPolicy.coverage_type || '',
+                            insuredSince: currentPolicy.insured_since || '',
+                            expirationDate: currentPolicy.expiration_date || '',
+                            bodilyInjury: currentPolicy.bodily_injury || '',
+                            propertyDamage: currentPolicy.property_damage || '',
+                            deductible: currentPolicy.deductible || '',
                   };
           }
 
-          if (requestedPolicy.coverage_type) {
+          if (requestedPolicy.coverage_type || requestedPolicy.bodily_injury) {
                   formDataSummary.requestedPolicy = {
-                            coverageType: requestedPolicy.coverage_type,
-                            bodilyInjury: requestedPolicy.bodily_injury,
-                            propertyDamage: requestedPolicy.property_damage,
+                            coverageType: requestedPolicy.coverage_type || '',
+                            bodilyInjury: requestedPolicy.bodily_injury || '',
+                            propertyDamage: requestedPolicy.property_damage || '',
+                            deductible: requestedPolicy.deductible || '',
+                            comprehensiveDeductible: requestedPolicy.comprehensive_deductible || '',
+                            collisionDeductible: requestedPolicy.collision_deductible || '',
                   };
           }
+
+          // Store the complete raw webhook payload for full reference
+          formDataSummary.rawWebhookData = body;
 
           const fullName = `${firstName} ${lastName}`.trim() || 'Unknown';
 

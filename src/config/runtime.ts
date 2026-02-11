@@ -68,6 +68,9 @@ export interface RuntimeSettings {
   maxCallDurationSec: number;     // 0 = unlimited
   callDurationWarnPct: number;    // Warn agent at this % of limit (default 80)
 
+  // Silence (dead air) timeout — disconnect if no speech from either party for this many seconds
+  silenceTimeoutSec: number;      // 0 = disabled, default 30
+
   // Call retry
   autoRetryEnabled: boolean;
   autoRetryMaxAttempts: number;
@@ -144,8 +147,11 @@ const settings: RuntimeSettings = {
       amdMessage: 'Hi, this is {{agent_name}} from {{company_name}}. We were calling about your auto insurance quote. Please call us back at your convenience. Thank you!',
 
       // Call duration limits
-      maxCallDurationSec: 0,
+      maxCallDurationSec: 180,
       callDurationWarnPct: 80,
+
+      // Silence (dead air) timeout
+      silenceTimeoutSec: 30,
 
       // Call retry
       autoRetryEnabled: false,

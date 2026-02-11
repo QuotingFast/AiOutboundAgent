@@ -65,6 +65,23 @@ import {
   getProviderHealth, getRoutingStrategy, setRoutingStrategy,
 } from '../routing';
 
+// Campaign imports
+import {
+  enforceOutboundDial,
+  enforceInboundCall,
+  enforceSmsSend,
+} from '../campaign/middleware';
+import {
+  resolveCallbackCampaign,
+  buildFallbackIvrTwiml,
+} from '../campaign/callback-router';
+import {
+  recordOutboundCall,
+  isFeatureFlagEnabled as isCampaignFlagEnabled,
+  getCampaign,
+  logEnforcement,
+} from '../campaign/store';
+
 const router = Router();
 
 // ── Recording store ─────────────────────────────────────────────────
@@ -106,7 +123,7 @@ const PREVIEW_TEXT = "Hey there! This is a quick preview of how I sound. Pretty 
  */
 router.post('/call/start', async (req: Request, res: Response) => {
   try {
-    const { to, from, lead, transfer } = req.body as StartCallParams & { transfer?: TransferConfig };
+    const { to, from, lead, transfer, campaign_id } = req.body as StartCallParams & { transfer?: TransferConfig; campaign_id?: string };
 
     if (!to) {
       res.status(400).json({ error: 'Missing required field: to' });
@@ -114,6 +131,20 @@ router.post('/call/start', async (req: Request, res: Response) => {
     }
     if (!lead?.first_name) {
       res.status(400).json({ error: 'Missing required field: lead.first_name' });
+      return;
+    }
+
+    // Campaign enforcement (if hardened isolation is enabled)
+    const campaignEnforcement = enforceOutboundDial({
+      phone: to,
+      campaignId: campaign_id,
+      leadId: to,
+    });
+    if (isCampaignFlagEnabled('hardened_campaign_isolation') && !campaignEnforcement.allowed) {
+      res.status(403).json({
+        error: 'Campaign context required for outbound dial',
+        reason: campaignEnforcement.reason,
+      });
       return;
     }
 
@@ -157,18 +188,41 @@ router.post('/call/start', async (req: Request, res: Response) => {
     // Record this call with current settings for history tracking
     recordCall(result.callSid, to, lead.first_name);
 
+    // Record outbound call for campaign tracking
+    const ctx = campaignEnforcement.context || req.campaignContext;
+    if (ctx) {
+      recordOutboundCall({
+        callId: result.callSid,
+        leadId: null,
+        toPhone: to,
+        fromDid: from || settings.defaultFromNumber || config.twilio.fromNumber,
+        campaignId: ctx.campaignId,
+        aiProfileId: ctx.aiProfileId,
+        voiceId: ctx.voiceId,
+        messageProfileId: ctx.smsTemplateSetId,
+        timestamp: new Date().toISOString(),
+        status: 'initiated',
+      });
+    }
+
     // Create/update lead in memory so it appears in the Leads tab
     createOrUpdateLead(to, {
       name: lead.first_name,
       state: lead.state,
       currentInsurer: lead.current_insurer,
+      customFields: ctx ? { campaignId: ctx.campaignId } : undefined,
     });
 
-    logger.info('routes', 'Call started', { callSid: result.callSid, to });
+    logger.info('routes', 'Call started', {
+      callSid: result.callSid,
+      to,
+      campaignId: ctx?.campaignId || 'none',
+    });
 
     res.json({
       call_sid: result.callSid,
       status: result.status,
+      campaign_id: ctx?.campaignId || null,
       compliance_warnings: compliance.warnings,
     });
   } catch (err: unknown) {
@@ -224,7 +278,79 @@ router.post('/twilio/incoming', (req: Request, res: Response) => {
     return;
   }
 
-  // Record in call history
+  // Campaign callback routing (if hardened isolation is enabled)
+  if (isCampaignFlagEnabled('hardened_campaign_isolation')) {
+    const callbackResult = resolveCallbackCampaign({
+      callerPhone: callerNumber,
+      calledDid: calledNumber,
+    });
+
+    if (callbackResult.useFallbackIvr) {
+      // Ambiguous or unresolved -> safe fallback IVR
+      logger.info('routes', 'Using fallback IVR for ambiguous callback', {
+        callSid,
+        callerNumber,
+        reason: callbackResult.fallbackReason,
+      });
+      res.type('text/xml');
+      res.send(buildFallbackIvrTwiml(callerNumber));
+      return;
+    }
+
+    if (callbackResult.resolved && callbackResult.context) {
+      // Resolved to a specific campaign
+      const ctx = callbackResult.context;
+      const campaign = getCampaign(ctx.campaignId);
+
+      // Check if this campaign has inbound enabled
+      if (campaign && !campaign.features.inboundEnabled) {
+        logger.info('routes', 'Campaign inbound disabled', {
+          callSid,
+          campaignId: ctx.campaignId,
+        });
+        res.type('text/xml');
+        res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Matthew">We're sorry, we are not accepting calls at this time. Please try again later.</Say>
+  <Hangup/>
+</Response>`);
+        return;
+      }
+
+      // Record in call history with campaign context
+      recordCall(callSid, callerNumber, `Inbound: ${callerNumber} [${ctx.campaignName}]`);
+
+      logEnforcement({
+        timestamp: new Date().toISOString(),
+        eventType: 'inbound_call_routed',
+        phone: callerNumber,
+        leadId: null,
+        campaignId: ctx.campaignId,
+        aiProfileId: ctx.aiProfileId,
+        voiceId: ctx.voiceId,
+        action: 'inbound_call',
+        allowed: true,
+        reason: `routed_via_${ctx.resolvedVia}`,
+      });
+
+      // Build TwiML with campaign context parameter
+      const wsUrl = config.baseUrl.replace(/^http/, 'ws') + '/twilio/stream';
+      res.type('text/xml');
+      res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="${wsUrl}">
+      <Parameter name="direction" value="inbound" />
+      <Parameter name="callerNumber" value="${callerNumber}" />
+      <Parameter name="campaignId" value="${ctx.campaignId}" />
+    </Stream>
+  </Connect>
+</Response>`);
+      return;
+    }
+  }
+
+  // Legacy behavior (no campaign isolation or resolution succeeded without context)
   recordCall(callSid, callerNumber, `Inbound: ${callerNumber}`);
 
   const twiml = buildMediaStreamTwiml('inbound', callerNumber);
@@ -1342,10 +1468,22 @@ router.post('/twilio/sms-incoming', (req: Request, res: Response) => {
  */
 router.post('/api/sms/send', async (req: Request, res: Response) => {
   try {
-    const { phone, body, templateId, leadName } = req.body;
+    const { phone, body, templateId, leadName, campaign_id } = req.body;
     if (!phone || !body) {
       res.status(400).json({ error: 'Missing phone or body' });
       return;
+    }
+
+    // Campaign enforcement for SMS
+    if (isCampaignFlagEnabled('hardened_campaign_isolation')) {
+      const smsEnforcement = enforceSmsSend({ phone, campaignId: campaign_id });
+      if (!smsEnforcement.allowed) {
+        res.status(403).json({
+          error: 'Campaign context required for SMS',
+          reason: smsEnforcement.reason,
+        });
+        return;
+      }
     }
 
     const settings = getSettings();

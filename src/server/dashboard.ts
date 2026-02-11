@@ -386,7 +386,8 @@ export function getDashboardHtml(): string {
 </header>
 
 <div class="tab-bar">
-  <button class="active" onclick="switchTab('calls')">Calls</button>
+  <button class="active" onclick="switchTab('campaigns')">Campaigns</button>
+  <button onclick="switchTab('calls')">Calls</button>
   <button onclick="switchTab('recordings')">Recordings</button>
   <button onclick="switchTab('analytics')">Analytics</button>
   <button onclick="switchTab('monitoring')">Monitoring</button>
@@ -398,8 +399,130 @@ export function getDashboardHtml(): string {
 
 <main>
 
+<!-- CAMPAIGNS TAB -->
+<div class="tab-content active" id="tab-campaigns">
+  <div style="display:flex;gap:16px;margin-bottom:20px;align-items:center">
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary campaign-toggle active" id="toggleConsumer" onclick="selectCampaignView('campaign-consumer-auto')" style="background:linear-gradient(135deg,#3B82F6,#2563EB);box-shadow:0 4px 14px rgba(59,130,246,0.35)">Consumer Auto</button>
+      <button class="btn btn-secondary campaign-toggle" id="toggleAgency" onclick="selectCampaignView('campaign-agency-dev')" style="border-color:#8B5CF6;color:#8B5CF6">Agency Dev</button>
+    </div>
+    <div style="flex:1"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-sm btn-secondary" onclick="loadCampaignFlags()">Feature Flags</button>
+      <button class="btn btn-sm btn-secondary" onclick="loadEnforcementLog()">Enforcement Log</button>
+    </div>
+  </div>
+
+  <!-- Campaign Overview Cards -->
+  <div class="grid" id="campaignOverview">
+    <div class="card" style="background:linear-gradient(145deg,#ffffff 0%,#f0f7ff 100%);border-left:4px solid #3B82F6;box-shadow:0 8px 32px rgba(59,130,246,0.08)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h2 style="margin:0"><span style="background:#3B82F6;color:white;padding:3px 10px;border-radius:6px;font-size:11px;margin-right:8px">CONSUMER</span> Auto Insurance Leads</h2>
+        <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer"><input type="checkbox" id="consumerActive" onchange="toggleCampaignActive('campaign-consumer-auto',this.checked)" checked> <span style="font-size:12px;font-weight:600">Active</span></label>
+      </div>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:16px">Calls consumers who requested a quote. Qualifies and transfers to licensed insurance agents.</p>
+      <div class="grid-4" style="gap:8px">
+        <div style="text-align:center;padding:12px;background:rgba(59,130,246,0.05);border-radius:10px"><div style="font-size:20px;font-weight:700;color:#3B82F6" id="consumerCalls">0</div><div style="font-size:11px;color:var(--text2)">Calls Today</div></div>
+        <div style="text-align:center;padding:12px;background:rgba(46,204,113,0.05);border-radius:10px"><div style="font-size:20px;font-weight:700;color:#2ecc71" id="consumerTransfers">0</div><div style="font-size:11px;color:var(--text2)">Transfers</div></div>
+        <div style="text-align:center;padding:12px;background:rgba(245,166,35,0.05);border-radius:10px"><div style="font-size:20px;font-weight:700;color:#f5a623" id="consumerCallbacks">0</div><div style="font-size:11px;color:var(--text2)">Callbacks</div></div>
+        <div style="text-align:center;padding:12px;background:rgba(43,188,179,0.05);border-radius:10px"><div style="font-size:20px;font-weight:700;color:#2bbcb3" id="consumerSms">0</div><div style="font-size:11px;color:var(--text2)">SMS Sent</div></div>
+      </div>
+    </div>
+    <div class="card" style="background:linear-gradient(145deg,#ffffff 0%,#f5f0ff 100%);border-left:4px solid #8B5CF6;box-shadow:0 8px 32px rgba(139,92,246,0.08)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h2 style="margin:0"><span style="background:#8B5CF6;color:white;padding:3px 10px;border-radius:6px;font-size:11px;margin-right:8px">AGENCY</span> Agency Development</h2>
+        <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer"><input type="checkbox" id="agencyActive" onchange="toggleCampaignActive('campaign-agency-dev',this.checked)" checked> <span style="font-size:12px;font-weight:600">Active</span></label>
+      </div>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:16px">Calls insurance agencies. Promotes Quoting Fast lead generation services. Books meetings or transfers decision makers.</p>
+      <div class="grid-4" style="gap:8px">
+        <div style="text-align:center;padding:12px;background:rgba(139,92,246,0.05);border-radius:10px"><div style="font-size:20px;font-weight:700;color:#8B5CF6" id="agencyCalls">0</div><div style="font-size:11px;color:var(--text2)">Calls Today</div></div>
+        <div style="text-align:center;padding:12px;background:rgba(46,204,113,0.05);border-radius:10px"><div style="font-size:20px;font-weight:700;color:#2ecc71" id="agencyMeetings">0</div><div style="font-size:11px;color:var(--text2)">Meetings</div></div>
+        <div style="text-align:center;padding:12px;background:rgba(245,166,35,0.05);border-radius:10px"><div style="font-size:20px;font-weight:700;color:#f5a623" id="agencyCallbacks">0</div><div style="font-size:11px;color:var(--text2)">Callbacks</div></div>
+        <div style="text-align:center;padding:12px;background:rgba(43,188,179,0.05);border-radius:10px"><div style="font-size:20px;font-weight:700;color:#2bbcb3" id="agencySms">0</div><div style="font-size:11px;color:var(--text2)">SMS Sent</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Campaign Config Panel -->
+  <div class="card" id="campaignConfigPanel" style="box-shadow:0 8px 32px rgba(0,0,0,0.06);border-radius:16px">
+    <h2 id="campaignConfigTitle">Campaign Configuration</h2>
+
+    <!-- AI Profile Section -->
+    <div style="margin-bottom:20px">
+      <h3 style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:8px">AI Agent Profile</h3>
+      <div class="grid">
+        <div><label>Agent Name</label><input type="text" id="campAgentName" placeholder="Alex"></div>
+        <div><label>Company Name</label><input type="text" id="campCompanyName" placeholder="Affordable Auto Rates"></div>
+      </div>
+      <div style="margin-top:12px"><label>System Prompt</label><textarea id="campSystemPrompt" style="min-height:120px"></textarea></div>
+    </div>
+
+    <!-- Voice Section (Card-style selector) -->
+    <div style="margin-bottom:20px">
+      <h3 style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px">Voice Selection</h3>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="btn btn-sm" id="campProvOpenai" onclick="setCampProvider('openai')">OpenAI</button>
+        <button class="btn btn-sm" id="campProvElevenlabs" onclick="setCampProvider('elevenlabs')">ElevenLabs</button>
+        <button class="btn btn-sm" id="campProvDeepseek" onclick="setCampProvider('deepseek')">DeepSeek</button>
+      </div>
+      <div id="campVoiceCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;max-height:300px;overflow-y:auto;padding:4px"></div>
+    </div>
+
+    <!-- Features Section -->
+    <div style="margin-bottom:20px">
+      <h3 style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px">Feature Toggles</h3>
+      <div class="grid-3" style="gap:10px">
+        <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface2);border-radius:10px;cursor:pointer"><input type="checkbox" id="campScheduledCallbacks"> <span style="font-size:13px">Scheduled Callbacks</span></label>
+        <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface2);border-radius:10px;cursor:pointer"><input type="checkbox" id="campAutoDialNewLeads"> <span style="font-size:13px">Auto-Dial New Leads</span></label>
+        <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface2);border-radius:10px;cursor:pointer"><input type="checkbox" id="campVoicemailDrop"> <span style="font-size:13px">Voicemail Drop</span></label>
+        <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface2);border-radius:10px;cursor:pointer"><input type="checkbox" id="campSmsFollowUps"> <span style="font-size:13px">SMS Follow-ups</span></label>
+        <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface2);border-radius:10px;cursor:pointer"><input type="checkbox" id="campEmailFollowUps"> <span style="font-size:13px">Email Follow-ups</span></label>
+        <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface2);border-radius:10px;cursor:pointer"><input type="checkbox" id="campInboundEnabled"> <span style="font-size:13px">Inbound Calls</span></label>
+      </div>
+    </div>
+
+    <!-- Transfer Routing -->
+    <div style="margin-bottom:20px">
+      <h3 style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px">Transfer Routing</h3>
+      <div id="campTransferRoutes"></div>
+    </div>
+
+    <!-- DID Mapping -->
+    <div style="margin-bottom:20px">
+      <h3 style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px">Assigned Phone Numbers (DIDs)</h3>
+      <div id="campDidList" style="margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="campNewDid" placeholder="+18005551234" style="max-width:200px">
+        <button class="btn btn-sm btn-primary" onclick="addCampaignDid()">Add DID</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-primary" onclick="saveCampaignConfig()">Save Campaign Config</button>
+    </div>
+  </div>
+
+  <!-- Feature Flags Panel (hidden by default) -->
+  <div class="card" id="featureFlagsPanel" style="display:none;box-shadow:0 8px 32px rgba(0,0,0,0.06)">
+    <h2>Feature Flags</h2>
+    <div class="grid" id="featureFlagsGrid" style="gap:10px"></div>
+  </div>
+
+  <!-- Enforcement Log Panel (hidden by default) -->
+  <div class="card" id="enforcementLogPanel" style="display:none;box-shadow:0 8px 32px rgba(0,0,0,0.06)">
+    <h2>Enforcement Log (Last 50)</h2>
+    <div id="enforcementLogContent" style="max-height:400px;overflow-y:auto;font-family:monospace;font-size:12px"></div>
+  </div>
+
+  <!-- Campaign SMS Templates -->
+  <div class="card" style="box-shadow:0 8px 32px rgba(0,0,0,0.06)">
+    <h2>Campaign SMS Templates</h2>
+    <div id="campSmsTemplates"></div>
+  </div>
+</div>
+
 <!-- CALLS TAB -->
-<div class="tab-content active" id="tab-calls">
+<div class="tab-content" id="tab-calls">
   <div class="card">
     <h2><span class="icon">&#128222;</span> Quick Call</h2>
     <div class="call-row">
@@ -1623,6 +1746,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-bar button').forEach(function(btn) {
     if (btn.getAttribute('onclick') && btn.getAttribute('onclick').indexOf("'" + name + "'") > -1) btn.classList.add('active');
   });
+  if (name === 'campaigns') loadCampaignConfig(currentCampaignId);
   if (name === 'recordings') loadRecordings();
   if (name === 'analytics') loadAnalytics();
   if (name === 'monitoring') loadMonitoring();
@@ -2428,9 +2552,273 @@ document.querySelectorAll('input[type=range]').forEach(function(el) {
   });
 });
 
+// ── Campaigns ──
+var currentCampaignId = 'campaign-consumer-auto';
+var campaignData = {};
+
+function selectCampaignView(id) {
+  currentCampaignId = id;
+  document.getElementById('toggleConsumer').className = 'btn campaign-toggle ' + (id === 'campaign-consumer-auto' ? 'btn-primary active' : 'btn-secondary');
+  document.getElementById('toggleAgency').className = 'btn campaign-toggle ' + (id === 'campaign-agency-dev' ? 'btn-primary active' : 'btn-secondary');
+  if (id === 'campaign-consumer-auto') {
+    document.getElementById('toggleConsumer').style.cssText = 'background:linear-gradient(135deg,#3B82F6,#2563EB);color:white;box-shadow:0 4px 14px rgba(59,130,246,0.35)';
+    document.getElementById('toggleAgency').style.cssText = 'border-color:#8B5CF6;color:#8B5CF6';
+  } else {
+    document.getElementById('toggleAgency').style.cssText = 'background:linear-gradient(135deg,#8B5CF6,#7C3AED);color:white;box-shadow:0 4px 14px rgba(139,92,246,0.35)';
+    document.getElementById('toggleConsumer').style.cssText = 'border-color:#3B82F6;color:#3B82F6';
+  }
+  loadCampaignConfig(id);
+}
+
+async function loadCampaignConfig(id) {
+  try {
+    var res = await fetch('/api/campaigns/' + id);
+    if (!res.ok) return;
+    var c = await res.json();
+    campaignData[id] = c;
+    document.getElementById('campaignConfigTitle').textContent = c.name + ' Configuration';
+    document.getElementById('campAgentName').value = c.aiProfile?.agentName || '';
+    document.getElementById('campCompanyName').value = c.aiProfile?.companyName || '';
+    document.getElementById('campSystemPrompt').value = c.aiProfile?.systemPrompt || '';
+    // Features
+    document.getElementById('campScheduledCallbacks').checked = c.features?.scheduledCallbacks || false;
+    document.getElementById('campAutoDialNewLeads').checked = c.features?.autoDialNewLeads || false;
+    document.getElementById('campVoicemailDrop').checked = c.features?.voicemailDrop || false;
+    document.getElementById('campSmsFollowUps').checked = c.features?.smsFollowUps || false;
+    document.getElementById('campEmailFollowUps').checked = c.features?.emailFollowUps || false;
+    document.getElementById('campInboundEnabled').checked = c.features?.inboundEnabled || false;
+    // Voice
+    setCampProvider(c.voiceConfig?.voiceProvider || 'elevenlabs');
+    // Transfer routes
+    renderTransferRoutes(c.transferRouting?.routes || []);
+    // DIDs
+    renderCampaignDids(c.assignedDids || []);
+    // SMS Templates
+    loadCampaignSmsTemplates(id);
+    // Voices
+    loadCampaignVoices(id, c.voiceConfig);
+  } catch (e) { console.error('loadCampaignConfig', e); }
+}
+
+function setCampProvider(provider) {
+  ['openai','elevenlabs','deepseek'].forEach(function(p) {
+    var btn = document.getElementById('campProv' + p.charAt(0).toUpperCase() + p.slice(1));
+    if (btn) { btn.className = 'btn btn-sm ' + (p === provider ? 'btn-primary' : 'btn-secondary'); }
+  });
+}
+
+async function loadCampaignVoices(campaignId, voiceConfig) {
+  try {
+    var res = await fetch('/api/voices/elevenlabs/campaign/' + campaignId);
+    var data = await res.json();
+    var container = document.getElementById('campVoiceCards');
+    var selectedVoiceId = voiceConfig?.elevenlabsVoiceId || '';
+    var html = '';
+    (data.voices || []).forEach(function(v) {
+      var selected = v.voice_id === selectedVoiceId;
+      html += '<div class="voice-card-el' + (selected ? ' selected' : '') + '" data-voice-id="' + v.voice_id + '" onclick="selectCampVoice(this,\\'' + v.voice_id + '\\')" style="padding:12px;background:' + (selected ? 'linear-gradient(135deg,#e8505b10,#e8505b05)' : 'var(--surface2)') + ';border:2px solid ' + (selected ? 'var(--accent)' : 'var(--border)') + ';border-radius:12px;cursor:pointer;transition:all 0.2s;position:relative">'
+        + '<div style="font-weight:600;font-size:13px;margin-bottom:4px">' + v.name + '</div>'
+        + '<div style="font-size:11px;color:var(--text2)">' + (v.category || '') + '</div>'
+        + (v.preview_url ? '<button class="btn btn-sm btn-secondary" style="position:absolute;top:8px;right:8px;padding:4px 8px" onclick="event.stopPropagation();playVoicePreview(\\'' + v.voice_id + '\\')">&#9654;</button>' : '')
+        + '</div>';
+    });
+    container.innerHTML = html || '<div class="empty-state">No voices available</div>';
+  } catch (e) { console.error('loadCampaignVoices', e); }
+}
+
+function selectCampVoice(el, voiceId) {
+  document.querySelectorAll('#campVoiceCards .voice-card-el').forEach(function(c) {
+    c.classList.remove('selected');
+    c.style.border = '2px solid var(--border)';
+    c.style.background = 'var(--surface2)';
+  });
+  el.classList.add('selected');
+  el.style.border = '2px solid var(--accent)';
+  el.style.background = 'linear-gradient(135deg,#e8505b10,#e8505b05)';
+}
+
+async function playVoicePreview(voiceId) {
+  try {
+    var audio = new Audio('/api/elevenlabs-voice-preview/' + voiceId);
+    audio.play();
+  } catch (e) { toast('Preview failed', 'error'); }
+}
+
+function renderTransferRoutes(routes) {
+  var el = document.getElementById('campTransferRoutes');
+  if (!routes.length) { el.innerHTML = '<div class="empty-state">No transfer routes configured</div>'; return; }
+  var html = '';
+  routes.forEach(function(r) {
+    html += '<div style="display:flex;gap:10px;align-items:center;padding:10px;background:var(--surface2);border-radius:10px;margin-bottom:8px">'
+      + '<div style="font-weight:600;font-size:13px;flex:1">' + r.name + '</div>'
+      + '<input type="text" value="' + (r.destinationNumber || '') + '" placeholder="Transfer number" style="max-width:180px;font-size:12px" data-route-id="' + r.id + '" class="camp-route-number">'
+      + '<span style="font-size:11px;color:var(--text2)">' + r.businessHoursStart + '-' + r.businessHoursEnd + '</span>'
+      + '<span class="badge ' + (r.active ? 'badge-green' : 'badge-gray') + '">' + (r.active ? 'Active' : 'Off') + '</span>'
+      + '</div>';
+  });
+  el.innerHTML = html;
+}
+
+function renderCampaignDids(dids) {
+  var el = document.getElementById('campDidList');
+  if (!dids.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text2)">No DIDs assigned</div>'; return; }
+  var html = '';
+  dids.forEach(function(did) {
+    html += '<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--surface2);border-radius:8px;margin:4px;font-size:13px;font-family:monospace">' + did + ' <button class="btn btn-sm btn-secondary" onclick="removeCampaignDid(\\'' + did + '\\')" style="padding:2px 6px;font-size:10px">x</button></span>';
+  });
+  el.innerHTML = html;
+}
+
+async function addCampaignDid() {
+  var did = document.getElementById('campNewDid').value.trim();
+  if (!did) return;
+  try {
+    await fetch('/api/did-mappings', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ did: did, campaignId: currentCampaignId }) });
+    document.getElementById('campNewDid').value = '';
+    toast('DID added', 'success');
+    loadCampaignConfig(currentCampaignId);
+  } catch (e) { toast('Failed', 'error'); }
+}
+
+async function removeCampaignDid(did) {
+  try {
+    await fetch('/api/did-mappings/' + encodeURIComponent(did), { method: 'DELETE' });
+    toast('DID removed', 'success');
+    loadCampaignConfig(currentCampaignId);
+  } catch (e) { toast('Failed', 'error'); }
+}
+
+async function saveCampaignConfig() {
+  var c = campaignData[currentCampaignId];
+  if (!c) { toast('Load campaign first', 'error'); return; }
+  var selectedVoice = document.querySelector('#campVoiceCards .voice-card-el.selected');
+  var voiceId = selectedVoice ? selectedVoice.dataset.voiceId : c.voiceConfig.elevenlabsVoiceId;
+  var routes = c.transferRouting.routes.map(function(r) {
+    var input = document.querySelector('.camp-route-number[data-route-id="' + r.id + '"]');
+    return Object.assign({}, r, { destinationNumber: input ? input.value : r.destinationNumber });
+  });
+  try {
+    // Update AI profile
+    await fetch('/api/campaigns/' + currentCampaignId + '/ai-profile', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        agentName: document.getElementById('campAgentName').value,
+        companyName: document.getElementById('campCompanyName').value,
+        systemPrompt: document.getElementById('campSystemPrompt').value,
+      })
+    });
+    // Update features
+    await fetch('/api/campaigns/' + currentCampaignId + '/features', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        scheduledCallbacks: document.getElementById('campScheduledCallbacks').checked,
+        autoDialNewLeads: document.getElementById('campAutoDialNewLeads').checked,
+        voicemailDrop: document.getElementById('campVoicemailDrop').checked,
+        smsFollowUps: document.getElementById('campSmsFollowUps').checked,
+        emailFollowUps: document.getElementById('campEmailFollowUps').checked,
+        inboundEnabled: document.getElementById('campInboundEnabled').checked,
+      })
+    });
+    // Update voice
+    await fetch('/api/campaigns/' + currentCampaignId + '/voice', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ elevenlabsVoiceId: voiceId })
+    });
+    // Update transfer routing
+    await fetch('/api/campaigns/' + currentCampaignId + '/transfer-routing', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ routes: routes })
+    });
+    toast('Campaign saved', 'success');
+    loadCampaignConfig(currentCampaignId);
+  } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+}
+
+async function toggleCampaignActive(id, active) {
+  try {
+    await fetch('/api/campaigns/' + id + '/toggle', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ active: active })
+    });
+    toast(id + (active ? ' activated' : ' deactivated'), 'success');
+  } catch (e) { toast('Failed', 'error'); }
+}
+
+async function loadCampaignFlags() {
+  var panel = document.getElementById('featureFlagsPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'none') return;
+  try {
+    var res = await fetch('/api/campaign-flags');
+    var flags = await res.json();
+    var grid = document.getElementById('featureFlagsGrid');
+    var html = '';
+    for (var key in flags) {
+      html += '<label style="display:flex;align-items:center;gap:8px;padding:12px;background:var(--surface2);border-radius:10px;cursor:pointer">'
+        + '<input type="checkbox" ' + (flags[key] ? 'checked' : '') + ' onchange="setCampaignFlag(\\'' + key + '\\',this.checked)">'
+        + '<span style="font-size:13px;font-weight:600">' + key.replace(/_/g, ' ') + '</span></label>';
+    }
+    grid.innerHTML = html;
+  } catch (e) { toast('Failed', 'error'); }
+}
+
+async function setCampaignFlag(key, value) {
+  try {
+    var body = {};
+    body[key] = value;
+    await fetch('/api/campaign-flags', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    toast(key + ' = ' + value, 'success');
+  } catch (e) { toast('Failed', 'error'); }
+}
+
+async function loadEnforcementLog() {
+  var panel = document.getElementById('enforcementLogPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'none') return;
+  try {
+    var res = await fetch('/api/enforcement-log?limit=50');
+    var logs = await res.json();
+    var el = document.getElementById('enforcementLogContent');
+    if (!logs.length) { el.innerHTML = '<div class="empty-state">No enforcement events</div>'; return; }
+    var html = '<table class="data-table"><tr><th>Time</th><th>Event</th><th>Campaign</th><th>Phone</th><th>Action</th><th>Result</th><th>Reason</th></tr>';
+    logs.forEach(function(log) {
+      var badge = log.allowed ? 'badge-green' : 'badge-red';
+      html += '<tr><td style="font-size:10px">' + new Date(log.timestamp).toLocaleTimeString() + '</td>'
+        + '<td style="font-size:11px">' + log.eventType + '</td>'
+        + '<td style="font-size:11px">' + (log.campaignId || '--') + '</td>'
+        + '<td style="font-size:11px;font-family:monospace">' + (log.phone || '--') + '</td>'
+        + '<td style="font-size:11px">' + log.action + '</td>'
+        + '<td><span class="badge ' + badge + '">' + (log.allowed ? 'ALLOW' : 'DENY') + '</span></td>'
+        + '<td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis">' + log.reason + '</td></tr>';
+    });
+    el.innerHTML = html + '</table>';
+  } catch (e) { toast('Failed', 'error'); }
+}
+
+async function loadCampaignSmsTemplates(id) {
+  try {
+    var res = await fetch('/api/campaigns/' + id + '/sms-templates');
+    var templates = await res.json();
+    var el = document.getElementById('campSmsTemplates');
+    if (!templates.length) { el.innerHTML = '<div class="empty-state">No SMS templates for this campaign</div>'; return; }
+    var html = '';
+    templates.forEach(function(t) {
+      html += '<div style="padding:12px;background:var(--surface2);border-radius:10px;margin-bottom:8px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+        + '<span style="font-weight:600;font-size:13px">' + t.name + '</span>'
+        + '<span class="badge ' + (t.active ? 'badge-green' : 'badge-gray') + '">' + t.category + '</span>'
+        + '</div>'
+        + '<div style="font-size:12px;color:var(--text2);white-space:pre-wrap">' + t.body + '</div>'
+        + '</div>';
+    });
+    el.innerHTML = html;
+  } catch (e) { console.error('loadCampaignSmsTemplates', e); }
+}
+
 // ── Init ──
 loadSettings();
 loadCallHistory();
+loadCampaignConfig('campaign-consumer-auto');
 </script>
 </body>
 </html>`;

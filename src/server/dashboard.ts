@@ -1923,7 +1923,7 @@ async function makeCall() {
   try {
     var res = await fetch('/call/start', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ to: to, from: from || undefined, lead: { first_name: name, state: state } }),
+      body: JSON.stringify({ to: to, from: from || undefined, lead: { first_name: name, state: state }, campaign_id: currentCampaignId }),
     });
     var data = await res.json();
     if (res.ok) {

@@ -180,7 +180,19 @@ router.post('/call/start', async (req: Request, res: Response) => {
       return;
     }
 
-    const result = await startOutboundCall({ to, from, lead, amdEnabled: settings.amdEnabled });
+    // Use campaign's assigned DID as fallback for 'from' number
+    let dialFrom = from;
+    if (!dialFrom) {
+      const ctx = campaignEnforcement.context || req.campaignContext;
+      if (ctx) {
+        const campaign = getCampaign(ctx.campaignId);
+        if (campaign && campaign.assignedDids.length > 0) {
+          dialFrom = campaign.assignedDids[0];
+        }
+      }
+    }
+
+    const result = await startOutboundCall({ to, from: dialFrom, lead, amdEnabled: settings.amdEnabled });
 
     // Register session data so the WebSocket handler can pick it up when the call connects
     registerPendingSession(result.callSid, lead, transfer, to);

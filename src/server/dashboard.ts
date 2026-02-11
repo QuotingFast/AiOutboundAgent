@@ -4,71 +4,78 @@ export function getDashboardHtml(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <title>Quoting Fast AI</title>
 <style>
   :root {
-    --bg: #0f1117;
-    --surface: #1a1d27;
-    --surface2: #232733;
-    --border: #2e3345;
-    --text: #e4e6ed;
-    --text2: #9499ad;
-    --accent: #6366f1;
-    --accent-hover: #818cf8;
-    --green: #22c55e;
-    --red: #ef4444;
-    --orange: #f59e0b;
-    --cyan: #06b6d4;
-    --radius: 10px;
+    --bg: #f0f4f8;
+    --surface: #ffffff;
+    --surface2: #f7f8fc;
+    --border: #e4e8f0;
+    --text: #1e2a3a;
+    --text2: #7a849b;
+    --accent: #e8505b;
+    --accent-hover: #d43d48;
+    --green: #2ecc71;
+    --red: #e74c3c;
+    --orange: #f5a623;
+    --cyan: #2bbcb3;
+    --radius: 14px;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
   }
   header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    background: linear-gradient(135deg, #e8505b 0%, #d43d48 100%);
+    border-bottom: none;
     padding: 16px 32px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    box-shadow: 0 4px 20px rgba(232, 80, 91, 0.25);
   }
   header h1 {
     font-size: 18px;
-    font-weight: 600;
+    font-weight: 700;
     display: flex;
     align-items: center;
     gap: 10px;
+    color: #fff;
   }
-  header h1 span { color: var(--accent); }
+  header h1 span { color: rgba(255,255,255,0.85); }
   .status-dot {
     width: 8px; height: 8px;
-    background: var(--green);
+    background: #7ef29d;
     border-radius: 50%;
     display: inline-block;
+    box-shadow: 0 0 6px rgba(126, 242, 157, 0.5);
   }
   .tab-bar {
     background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    border-bottom: none;
     display: flex;
     gap: 0;
     overflow-x: auto;
     padding: 0 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   }
   .tab-bar button {
-    padding: 12px 20px;
+    padding: 14px 22px;
     border: none;
     background: transparent;
     color: var(--text2);
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
     font-family: inherit;
-    border-bottom: 2px solid transparent;
-    transition: all 0.15s;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s;
     white-space: nowrap;
   }
   .tab-bar button:hover { color: var(--text); }
@@ -79,20 +86,25 @@ export function getDashboardHtml(): string {
   .tab-content { display: none; }
   .tab-content.active { display: block; }
   main {
-    max-width: 1100px;
+    max-width: 1200px;
     margin: 0 auto;
-    padding: 24px 16px 60px;
+    padding: 28px 24px 60px;
   }
   .card {
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: none;
     border-radius: var(--radius);
-    padding: 24px;
+    padding: 28px;
     margin-bottom: 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    transition: box-shadow 0.2s;
+  }
+  .card:hover {
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
   }
   .card h2 {
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 700;
     margin-bottom: 18px;
     color: var(--text);
     display: flex;
@@ -107,7 +119,7 @@ export function getDashboardHtml(): string {
   label {
     display: block;
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text2);
     margin-bottom: 6px;
     text-transform: uppercase;
@@ -116,17 +128,18 @@ export function getDashboardHtml(): string {
   input, select, textarea {
     width: 100%;
     background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
     color: var(--text);
-    padding: 10px 12px;
+    padding: 11px 14px;
     font-size: 14px;
     font-family: inherit;
     outline: none;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, box-shadow 0.2s;
   }
   input:focus, select:focus, textarea:focus {
     border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(232, 80, 91, 0.1);
   }
   textarea { resize: vertical; min-height: 200px; font-size: 13px; line-height: 1.5; }
   select { cursor: pointer; }
@@ -140,16 +153,17 @@ export function getDashboardHtml(): string {
     padding: 0;
     height: 6px;
     -webkit-appearance: none;
-    background: var(--border);
+    background: #e0e4ec;
     border-radius: 3px;
     border: none;
   }
   .range-wrap input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 16px; height: 16px;
+    width: 18px; height: 18px;
     background: var(--accent);
     border-radius: 50%;
     cursor: pointer;
+    box-shadow: 0 2px 6px rgba(232, 80, 91, 0.3);
   }
   .range-val {
     font-size: 13px;
@@ -162,24 +176,24 @@ export function getDashboardHtml(): string {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 10px 20px;
+    padding: 10px 22px;
     border: none;
-    border-radius: 6px;
+    border-radius: 10px;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.2s;
     font-family: inherit;
   }
-  .btn-primary { background: var(--accent); color: white; }
-  .btn-primary:hover { background: var(--accent-hover); }
-  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
-  .btn-secondary:hover { background: var(--border); }
-  .btn-green { background: var(--green); color: white; }
-  .btn-green:hover { opacity: 0.9; }
-  .btn-red { background: var(--red); color: white; }
-  .btn-red:hover { opacity: 0.9; }
-  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-primary { background: var(--accent); color: white; box-shadow: 0 3px 10px rgba(232, 80, 91, 0.25); }
+  .btn-primary:hover { background: var(--accent-hover); box-shadow: 0 4px 14px rgba(232, 80, 91, 0.35); transform: translateY(-1px); }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1.5px solid var(--border); }
+  .btn-secondary:hover { background: #edf0f5; border-color: #d0d5e0; }
+  .btn-green { background: var(--green); color: white; box-shadow: 0 3px 10px rgba(46, 204, 113, 0.25); }
+  .btn-green:hover { opacity: 0.9; transform: translateY(-1px); }
+  .btn-red { background: var(--red); color: white; box-shadow: 0 3px 10px rgba(231, 76, 60, 0.25); }
+  .btn-red:hover { opacity: 0.9; transform: translateY(-1px); }
+  .btn-sm { padding: 7px 14px; font-size: 12px; border-radius: 8px; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .call-row { display: flex; gap: 12px; align-items: flex-end; }
   .call-row .field { flex: 1; }
@@ -187,15 +201,16 @@ export function getDashboardHtml(): string {
     position: fixed;
     bottom: 24px;
     right: 24px;
-    padding: 12px 20px;
-    border-radius: 8px;
+    padding: 14px 24px;
+    border-radius: 12px;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
     color: white;
     z-index: 999;
     opacity: 0;
     transform: translateY(10px);
     transition: all 0.3s;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
   }
   .toast.show { opacity: 1; transform: translateY(0); }
   .toast.success { background: var(--green); }
@@ -203,10 +218,10 @@ export function getDashboardHtml(): string {
   .call-log {
     font-family: 'SF Mono', 'Fira Code', monospace;
     font-size: 12px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 12px;
+    background: #f7f8fc;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
     max-height: 180px;
     overflow-y: auto;
     line-height: 1.8;
@@ -228,29 +243,31 @@ export function getDashboardHtml(): string {
     gap: 10px;
   }
   .voice-card {
-    background: var(--surface2);
+    background: var(--surface);
     border: 2px solid var(--border);
-    border-radius: 8px;
-    padding: 12px;
+    border-radius: 12px;
+    padding: 14px;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.2s;
     position: relative;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
   }
-  .voice-card:hover { border-color: var(--accent); }
-  .voice-card.selected { border-color: var(--accent); background: rgba(99, 102, 241, 0.1); }
+  .voice-card:hover { border-color: var(--accent); box-shadow: 0 3px 12px rgba(232, 80, 91, 0.1); }
+  .voice-card.selected { border-color: var(--accent); background: rgba(232, 80, 91, 0.06); }
   .voice-card .vc-name { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
   .voice-card .vc-desc { font-size: 11px; color: var(--text2); line-height: 1.3; }
-  .voice-card .vc-tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; margin-top: 6px; }
-  .voice-card .vc-tag.sales { background: rgba(34,197,94,0.15); color: var(--green); }
-  .voice-card .vc-tag.neutral { background: rgba(148,153,173,0.15); color: var(--text2); }
+  .voice-card .vc-tag { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 6px; margin-top: 6px; font-weight: 600; }
+  .voice-card .vc-tag.sales { background: rgba(46,204,113,0.12); color: var(--green); }
+  .voice-card .vc-tag.neutral { background: rgba(122,132,155,0.1); color: var(--text2); }
   .vc-play {
     position: absolute; top: 10px; right: 10px;
     width: 28px; height: 28px; border-radius: 50%;
-    border: 1px solid var(--border); background: var(--surface);
-    color: var(--text); display: flex; align-items: center; justify-content: center;
-    cursor: pointer; font-size: 12px; transition: all 0.15s;
+    border: 1.5px solid var(--border); background: var(--surface);
+    color: var(--text2); display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 12px; transition: all 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
   }
-  .vc-play:hover { border-color: var(--accent); color: var(--accent); }
+  .vc-play:hover { border-color: var(--accent); color: var(--accent); background: rgba(232,80,91,0.05); }
   .vc-play.loading { opacity: 0.5; cursor: wait; }
   .vc-check { display: none; position: absolute; bottom: 8px; right: 10px; font-size: 14px; color: var(--accent); }
   .voice-card.selected .vc-check { display: block; }
@@ -258,30 +275,36 @@ export function getDashboardHtml(): string {
   .voice-card.disabled .vc-play { display: none; }
   .provider-toggle {
     display: flex; gap: 0; background: var(--surface2);
-    border-radius: 8px; overflow: hidden; border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden; border: 1.5px solid var(--border);
   }
   .provider-toggle button {
     flex: 1; padding: 12px 20px; border: none; background: transparent;
-    color: var(--text2); font-size: 14px; font-weight: 500; cursor: pointer;
-    font-family: inherit; transition: all 0.15s;
+    color: var(--text2); font-size: 14px; font-weight: 600; cursor: pointer;
+    font-family: inherit; transition: all 0.2s;
     display: flex; align-items: center; justify-content: center; gap: 8px;
   }
-  .provider-toggle button:hover { background: var(--border); }
-  .provider-toggle button.active { background: var(--accent); color: white; }
+  .provider-toggle button:hover { background: #edf0f5; }
+  .provider-toggle button.active { background: var(--accent); color: white; box-shadow: 0 2px 8px rgba(232, 80, 91, 0.25); }
   .provider-toggle button .prov-label { font-size: 14px; }
   .provider-toggle button .prov-sub { font-size: 11px; opacity: 0.7; }
   .el-settings { margin-top: 16px; }
   .el-settings .el-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px; }
   .stat-card {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 16px;
+    background: var(--surface);
+    border: none;
+    border-radius: 14px;
+    padding: 20px 16px;
     text-align: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.08);
   }
   .stat-card .stat-value {
-    font-size: 28px;
-    font-weight: 700;
+    font-size: 30px;
+    font-weight: 800;
     color: var(--accent);
     line-height: 1.2;
   }
@@ -290,7 +313,8 @@ export function getDashboardHtml(): string {
     color: var(--text2);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-top: 4px;
+    margin-top: 6px;
+    font-weight: 600;
   }
   .stat-card.green .stat-value { color: var(--green); }
   .stat-card.red .stat-value { color: var(--red); }
@@ -304,37 +328,44 @@ export function getDashboardHtml(): string {
   .data-table th {
     text-align: left;
     color: var(--text2);
-    padding: 8px;
-    border-bottom: 1px solid var(--border);
-    font-weight: 500;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--border);
+    font-weight: 700;
     text-transform: uppercase;
     font-size: 11px;
     letter-spacing: 0.3px;
   }
   .data-table td {
-    padding: 8px;
-    border-bottom: 1px solid var(--border);
+    padding: 10px 12px;
+    border-bottom: 1px solid #f0f2f7;
     color: var(--text);
   }
-  .data-table tr:hover td { background: rgba(99,102,241,0.04); }
+  .data-table tr:hover td { background: rgba(232, 80, 91, 0.03); }
   .badge {
     display: inline-block;
-    padding: 2px 8px;
-    border-radius: 4px;
+    padding: 3px 10px;
+    border-radius: 8px;
     font-size: 11px;
-    font-weight: 500;
+    font-weight: 600;
   }
-  .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
-  .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
-  .badge-orange { background: rgba(245,158,11,0.15); color: var(--orange); }
-  .badge-blue { background: rgba(99,102,241,0.15); color: var(--accent); }
-  .badge-gray { background: rgba(148,153,173,0.15); color: var(--text2); }
+  .badge-green { background: rgba(46,204,113,0.12); color: var(--green); }
+  .badge-red { background: rgba(231,76,60,0.12); color: var(--red); }
+  .badge-orange { background: rgba(245,166,35,0.12); color: var(--orange); }
+  .badge-blue { background: rgba(232,80,91,0.1); color: var(--accent); }
+  .badge-gray { background: rgba(122,132,155,0.1); color: var(--text2); }
   .empty-state {
     text-align: center;
-    padding: 32px;
+    padding: 40px;
     color: var(--text2);
     font-size: 14px;
+    background: var(--surface2);
+    border-radius: 12px;
   }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #d0d5e0; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #b0b8c8; }
+  ::selection { background: rgba(232, 80, 91, 0.15); }
   @media (max-width: 640px) {
     .grid, .grid-3, .grid-4, .el-settings .el-row { grid-template-columns: 1fr; }
     .call-row { flex-direction: column; }
@@ -349,7 +380,7 @@ export function getDashboardHtml(): string {
 <body>
 <header>
   <h1><img src="https://quotingfast.com/qflogo1.png" alt="Quoting Fast" style="height:32px;vertical-align:middle;margin-right:8px">Quoting Fast AI</h1>
-  <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)">
+  <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:rgba(255,255,255,0.85)">
     <span class="status-dot"></span> Connected
   </div>
 </header>
@@ -2136,8 +2167,8 @@ async function showLeadDetail(phone) {
     var res = await fetch('/api/leads/' + encodeURIComponent(phone) + '/detail');
     if (!res.ok) { toast('Lead not found', 'error'); return; }
     var d = await res.json();
-    var html = '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">';
-    html += '<div style="background:var(--surface);border-radius:12px;padding:24px;max-width:700px;width:90%;max-height:85vh;overflow-y:auto">';
+    var html = '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(30,42,58,0.4);backdrop-filter:blur(4px);z-index:1000;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">';
+    html += '<div style="background:var(--surface);border-radius:16px;padding:28px;max-width:700px;width:90%;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.15)">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2>' + d.name + '</h2><button class="btn btn-secondary btn-sm" onclick="this.closest(\\'div[style*=fixed]\\').remove()">Close</button></div>';
     html += '<div class="stat-grid" style="margin-bottom:16px">';
     html += '<div class="stat-card"><div class="stat-value">' + d.phone + '</div><div class="stat-label">Phone</div></div>';

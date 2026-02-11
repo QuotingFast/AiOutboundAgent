@@ -138,7 +138,7 @@ const settings: RuntimeSettings = {
       defaultToNumber: '',
 
       // Background noise
-      backgroundNoiseEnabled: false,
+      backgroundNoiseEnabled: true,
       backgroundNoiseVolume: 0.12,
 
       // AMD / Voicemail detection

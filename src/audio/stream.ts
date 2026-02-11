@@ -12,7 +12,7 @@ import { registerSession, removeSession, updateSessionStatus, onSessionFreed } f
 import { buildLeadContext, recordCallToLead } from '../memory';
 import { runPostCallWorkflow } from '../workflows';
 import { redactPII } from '../security';
-import { mixNoiseIntoAudio, resetNoisePosition } from './noise';
+import { mixNoiseIntoAudio, resetNoisePosition, getNoiseOnlyFrames } from './noise';
 import { handleAutoDnc, recordPhoneCall } from '../compliance';
 import { endCall as endCallTwilio } from '../twilio/client';
 
@@ -91,6 +91,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let silenceDisconnectFired = false;
   let silenceCheckInterval: ReturnType<typeof setInterval> | null = null;
 
+  // Background noise fill during silence (sends noise when AI is not speaking)
+  let noiseFillInterval: ReturnType<typeof setInterval> | null = null;
+
   logger.info('stream', 'Twilio WS opened', { sessionId });
 
   // --- Twilio WebSocket handlers ---
@@ -144,6 +147,26 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           callStartedAt = Date.now();
           lastSpeechActivityAt = Date.now();
           resetNoisePosition();
+
+          // Start background noise fill: send noise during silence so ambiance is continuous
+          const noiseStartSettings = getSettings();
+          if (noiseStartSettings.backgroundNoiseEnabled) {
+            const NOISE_INTERVAL_MS = 20; // 20ms = 160 samples @ 8kHz (matches Twilio frame size)
+            const NOISE_SAMPLES_PER_FRAME = 160;
+            noiseFillInterval = setInterval(() => {
+              if (twilioWs.readyState !== WebSocket.OPEN || !streamSid) return;
+              // Only send noise fill when the agent is NOT speaking (avoid double noise)
+              if (responseIsPlaying) return;
+              const s = getSettings();
+              if (!s.backgroundNoiseEnabled) return;
+              const noiseFrames = getNoiseOnlyFrames(NOISE_SAMPLES_PER_FRAME, s.backgroundNoiseVolume);
+              twilioWs.send(JSON.stringify({
+                event: 'media',
+                streamSid,
+                media: { payload: noiseFrames.toString('base64') },
+              }));
+            }, NOISE_INTERVAL_MS);
+          }
 
           // Start silence (dead air) monitoring
           const silenceSettings = getSettings();
@@ -1250,6 +1273,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     if (silenceCheckInterval) {
       clearInterval(silenceCheckInterval);
       silenceCheckInterval = null;
+    }
+    if (noiseFillInterval) {
+      clearInterval(noiseFillInterval);
+      noiseFillInterval = null;
     }
     if (openaiWs) {
       openaiWs.close();

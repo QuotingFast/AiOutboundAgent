@@ -9,6 +9,18 @@ import { startScheduler, setDialFunction } from '../scheduler';
 import { startOutboundCall } from '../twilio/client';
 import { registerPendingSession } from '../audio/stream';
 import { recordCall } from '../config/runtime';
+import { campaignRouter } from '../campaign/routes';
+import { resolveCampaignMiddleware } from '../campaign/middleware';
+import {
+  seedCampaigns,
+  isFeatureFlagEnabled,
+  recordOutboundCall,
+  getCampaign,
+} from '../campaign/store';
+import {
+  setCampaignDialFunction,
+  startScheduledCallbackWorker,
+} from '../campaign/scheduled-callbacks';
 
 export function createServer(): http.Server {
   const app = express();
@@ -16,7 +28,13 @@ export function createServer(): http.Server {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // Mount routes
+  // Campaign context resolution middleware (runs on all routes)
+  app.use(resolveCampaignMiddleware);
+
+  // Mount campaign management routes
+  app.use(campaignRouter);
+
+  // Mount main routes
   app.use(router);
 
   // Create HTTP server
@@ -38,6 +56,9 @@ export function createServer(): http.Server {
 }
 
 export function startServer(): void {
+  // Seed default campaigns
+  seedCampaigns();
+
   const server = createServer();
 
   server.listen(config.port, () => {
@@ -48,6 +69,8 @@ export function startServer(): void {
     logger.info('server', `TTS Provider: ${config.ttsProvider}`);
     logger.info('server', `DeepSeek: ${config.deepseek.apiKey ? 'configured' : 'not configured'}`);
     logger.info('server', `Debug mode: ${config.debug}`);
+    logger.info('server', `Multi-campaign mode: ${isFeatureFlagEnabled('multi_campaign_mode')}`);
+    logger.info('server', `Hardened isolation: ${isFeatureFlagEnabled('hardened_campaign_isolation')}`);
     logger.info('server', 'Endpoints:');
     logger.info('server', `  Dashboard:  ${config.baseUrl}/dashboard`);
     logger.info('server', `  Outbound:   POST ${config.baseUrl}/call/start`);
@@ -56,8 +79,9 @@ export function startServer(): void {
     logger.info('server', `  Stream:     WS   ${config.baseUrl.replace(/^http/, 'ws')}/twilio/stream`);
     logger.info('server', `  Health:     GET  ${config.baseUrl}/health`);
     logger.info('server', `  SMS In:     POST ${config.baseUrl}/twilio/sms-incoming`);
+    logger.info('server', `  Campaigns:  GET  ${config.baseUrl}/api/campaigns`);
 
-    // Start callback/retry scheduler
+    // Start callback/retry scheduler (legacy)
     setDialFunction(async (phone: string, leadName: string, state?: string) => {
       try {
         const from = config.twilio.fromNumber;
@@ -77,5 +101,49 @@ export function startServer(): void {
       }
     });
     startScheduler();
+
+    // Start campaign-locked scheduled callback worker
+    setCampaignDialFunction(async (params) => {
+      try {
+        const campaign = getCampaign(params.campaignId);
+        if (!campaign) return false;
+        const from = campaign.assignedDids[0] || config.twilio.fromNumber;
+        if (!from) return false;
+        const result = await startOutboundCall({
+          to: params.phone,
+          from,
+          lead: { first_name: 'Callback' },
+        });
+        registerPendingSession(result.callSid, { first_name: 'Callback' }, undefined, params.phone);
+        recordCall(result.callSid, params.phone, 'Scheduled Callback');
+        // Record outbound call for campaign tracking
+        recordOutboundCall({
+          callId: result.callSid,
+          leadId: params.leadId,
+          toPhone: params.phone,
+          fromDid: from,
+          campaignId: params.campaignId,
+          aiProfileId: params.aiProfileId,
+          voiceId: params.voiceId,
+          messageProfileId: campaign.smsTemplateSetId,
+          timestamp: new Date().toISOString(),
+          status: 'initiated',
+        });
+        logger.info('scheduler', 'Campaign callback dialed', {
+          callSid: result.callSid,
+          campaignId: params.campaignId,
+          phone: params.phone,
+        });
+        return true;
+      } catch (err) {
+        logger.error('scheduler', 'Campaign callback dial failed', {
+          phone: params.phone,
+          campaignId: params.campaignId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return false;
+      }
+    });
+    startScheduledCallbackWorker();
   });
 }

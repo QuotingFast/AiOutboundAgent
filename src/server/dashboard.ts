@@ -1016,15 +1016,15 @@ export function getDashboardHtml(): string {
         <div>
           <label>Stability (0.0 - 1.0)</label>
           <div class="range-wrap">
-            <input type="range" id="dsStability" min="0" max="1" step="0.05" value="0.5">
-            <span class="range-val" id="dsStabilityVal">0.50</span>
+            <input type="range" id="dsStability" min="0" max="1" step="0.05" value="0.62">
+            <span class="range-val" id="dsStabilityVal">0.62</span>
           </div>
         </div>
         <div>
           <label>Similarity Boost (0.0 - 1.0)</label>
           <div class="range-wrap">
-            <input type="range" id="dsSimilarityBoost" min="0" max="1" step="0.05" value="0.75">
-            <span class="range-val" id="dsSimilarityBoostVal">0.75</span>
+            <input type="range" id="dsSimilarityBoost" min="0" max="1" step="0.05" value="0.82">
+            <span class="range-val" id="dsSimilarityBoostVal">0.82</span>
           </div>
         </div>
       </div>
@@ -1350,15 +1350,15 @@ export function getDashboardHtml(): string {
         <div>
           <label>Stability (0.0 - 1.0)</label>
           <div class="range-wrap">
-            <input type="range" id="elevenlabsStability" min="0" max="1" step="0.05" value="0.5">
-            <span class="range-val" id="elevenlabsStabilityVal">0.50</span>
+            <input type="range" id="elevenlabsStability" min="0" max="1" step="0.05" value="0.62">
+            <span class="range-val" id="elevenlabsStabilityVal">0.62</span>
           </div>
         </div>
         <div>
           <label>Similarity Boost (0.0 - 1.0)</label>
           <div class="range-wrap">
-            <input type="range" id="elevenlabsSimilarityBoost" min="0" max="1" step="0.05" value="0.75">
-            <span class="range-val" id="elevenlabsSimilarityBoostVal">0.75</span>
+            <input type="range" id="elevenlabsSimilarityBoost" min="0" max="1" step="0.05" value="0.82">
+            <span class="range-val" id="elevenlabsSimilarityBoostVal">0.82</span>
           </div>
         </div>
       </div>
@@ -1379,8 +1379,8 @@ export function getDashboardHtml(): string {
       <div>
         <label>Temperature</label>
         <div class="range-wrap">
-          <input type="range" id="temperature" min="0" max="1" step="0.05" value="0.7">
-          <span class="range-val" id="temperatureVal">0.70</span>
+          <input type="range" id="temperature" min="0" max="1" step="0.05" value="0.8">
+          <span class="range-val" id="temperatureVal">0.80</span>
         </div>
       </div>
     </div>
@@ -1393,13 +1393,13 @@ export function getDashboardHtml(): string {
       <div>
         <label>VAD Threshold</label>
         <div class="range-wrap">
-          <input type="range" id="vadThreshold" min="0.3" max="1.0" step="0.05" value="0.75">
-          <span class="range-val" id="vadThresholdVal">0.75</span>
+          <input type="range" id="vadThreshold" min="0.3" max="1.0" step="0.05" value="0.9">
+          <span class="range-val" id="vadThresholdVal">0.90</span>
         </div>
       </div>
       <div>
         <label>Silence Duration (ms)</label>
-        <input type="number" id="silenceDurationMs" value="700" min="200" max="2000" step="50">
+        <input type="number" id="silenceDurationMs" value="950" min="200" max="2000" step="50">
       </div>
       <div>
         <label>Prefix Padding (ms)</label>
@@ -1407,7 +1407,7 @@ export function getDashboardHtml(): string {
       </div>
       <div>
         <label>Barge-in Debounce (ms)</label>
-        <input type="number" id="bargeInDebounceMs" value="250" min="50" max="1000" step="25">
+        <input type="number" id="bargeInDebounceMs" value="350" min="50" max="1000" step="25">
       </div>
       <div>
         <label>Echo Suppression (ms)</label>

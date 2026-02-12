@@ -464,6 +464,13 @@ export function getDashboardHtml(): string {
   <div class="card">
     <h2><span class="icon">&#128222;</span> Quick Call</h2>
     <div class="call-row">
+      <div class="field" style="min-width:160px">
+        <label>Campaign</label>
+        <select id="callCampaign" onchange="onCallCampaignChange(this.value)" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;font-weight:500">
+          <option value="campaign-consumer-auto">Consumer Auto</option>
+          <option value="campaign-agency-dev">Agency Dev</option>
+        </select>
+      </div>
       <div class="field">
         <label>To Number</label>
         <input type="text" id="callTo" placeholder="+19547905093">
@@ -1871,14 +1878,15 @@ async function saveSettings() {
 
 // ── From Number Dropdown ──
 var SMS_ONLY_DID = '+18445117954';
-async function populateFromNumberDropdown() {
+async function populateFromNumberDropdown(campaignId) {
+  var cid = campaignId || currentCampaignId;
   var sel = document.getElementById('callFrom');
   // Keep first option (Auto-Rotate)
   sel.length = 1;
   try {
-    var c = campaignData[currentCampaignId];
+    var c = campaignData[cid];
     if (!c) {
-      var res = await fetch('/api/campaigns/' + currentCampaignId);
+      var res = await fetch('/api/campaigns/' + cid);
       if (res.ok) c = await res.json();
     }
     if (c && c.assignedDids && c.assignedDids.length) {
@@ -1894,19 +1902,27 @@ async function populateFromNumberDropdown() {
   } catch (e) { console.error('populateFromNumberDropdown', e); }
 }
 
+// ── Quick Call Campaign Selector ──
+function onCallCampaignChange(campaignId) {
+  currentCampaignId = campaignId;
+  populateFromNumberDropdown(campaignId);
+}
+
 // ── Calling ──
 async function makeCall() {
   var to = document.getElementById('callTo').value.trim();
   var from = document.getElementById('callFrom').value;
   var name = document.getElementById('callName').value.trim() || 'there';
   var state = document.getElementById('callState').value.trim() || 'FL';
+  var callCampaignEl = document.getElementById('callCampaign');
+  var campaignId = callCampaignEl ? callCampaignEl.value : currentCampaignId;
   if (!to) { toast('Enter a phone number', 'error'); return; }
   var btn = document.getElementById('callBtn');
   btn.disabled = true; btn.textContent = 'Calling...';
   try {
     var res = await fetch('/call/start', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ to: to, from: from || undefined, lead: { first_name: name, state: state }, campaign_id: currentCampaignId }),
+      body: JSON.stringify({ to: to, from: from || undefined, lead: { first_name: name, state: state }, campaign_id: campaignId }),
     });
     var data = await res.json();
     if (res.ok) {
@@ -2541,6 +2557,10 @@ var campaignData = {};
 
 function selectCampaignView(id) {
   currentCampaignId = id;
+  // Sync Quick Call campaign dropdown
+  var callCampaignEl = document.getElementById('callCampaign');
+  if (callCampaignEl) callCampaignEl.value = id;
+  populateFromNumberDropdown(id);
   document.getElementById('toggleConsumer').className = 'btn campaign-toggle ' + (id === 'campaign-consumer-auto' ? 'btn-primary active' : 'btn-secondary');
   document.getElementById('toggleAgency').className = 'btn campaign-toggle ' + (id === 'campaign-agency-dev' ? 'btn-primary active' : 'btn-secondary');
   if (id === 'campaign-consumer-auto') {

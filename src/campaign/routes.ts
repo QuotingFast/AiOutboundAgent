@@ -39,6 +39,11 @@ import { resolveCallbackCampaign, buildFallbackIvrTwiml, handleCampaignSelection
 import { enforceCampaignContext } from './middleware';
 import { SmsTemplate } from '../sms';
 import { getLeadMemory, createOrUpdateLead, getAllLeads } from '../memory';
+import {
+  getNotificationLog,
+  getNotificationConfig,
+  updateNotificationConfig,
+} from '../notifications';
 
 const campaignRouter = Router();
 
@@ -432,6 +437,30 @@ campaignRouter.post('/twilio/campaign-select', (req: Request, res: Response) => 
   const result = handleCampaignSelection(digit, callerPhone);
   res.type('text/xml');
   res.send(result.twiml);
+});
+
+// ── Notification Management ───────────────────────────────────────
+
+campaignRouter.get('/api/notifications/log', (req: Request, res: Response) => {
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+  res.json(getNotificationLog(limit));
+});
+
+campaignRouter.get('/api/notifications/config', (_req: Request, res: Response) => {
+  const cfg = getNotificationConfig();
+  // Mask sensitive fields
+  res.json({
+    ...cfg,
+    sendgridApiKey: cfg.sendgridApiKey ? '***configured***' : '',
+  });
+});
+
+campaignRouter.put('/api/notifications/config', (req: Request, res: Response) => {
+  const updated = updateNotificationConfig(req.body);
+  res.json({
+    ...updated,
+    sendgridApiKey: updated.sendgridApiKey ? '***configured***' : '',
+  });
 });
 
 export { campaignRouter };

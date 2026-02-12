@@ -40,6 +40,16 @@ export const config = {
     model: optional('DEEPSEEK_MODEL', 'deepseek-chat'),
   },
 
+  sendgrid: {
+    apiKey: optional('SENDGRID_API_KEY', ''),
+  },
+
+  notifications: {
+    ownerPhone: optional('NOTIFICATION_PHONE', '+19547905093'),
+    ownerEmail: optional('NOTIFICATION_EMAIL', 'info@quotingfast.com'),
+    senderEmail: optional('NOTIFICATION_SENDER_EMAIL', 'notifications@quotingfast.com'),
+  },
+
   ttsProvider: optional('TTS_PROVIDER', 'elevenlabs') as 'openai' | 'elevenlabs' | 'deepseek',
   sttProvider: optional('STT_PROVIDER', 'openai') as 'openai' | 'deepgram',
 

@@ -4,6 +4,7 @@
 // All data is campaign-scoped. No global defaults for user-facing behavior.
 
 import { logger } from '../utils/logger';
+import { buildSystemPrompt } from '../agent/prompts';
 import {
   CampaignConfig,
   CampaignContext,
@@ -295,7 +296,7 @@ export function seedCampaigns(): void {
     temperature: 0.8,
     maxResponseTokens: 275,
     realtimeModel: 'gpt-4o-realtime-preview',
-    systemPrompt: '', // Will use buildSystemPrompt from prompts module
+    systemPrompt: buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}' }),
     inboundPrompt: '',
     greetingText: 'Hi, is this {{first_name}}?',
     inboundGreetingText: 'Thanks for calling Affordable Auto Rates, this is Alex. How can I help you today?',

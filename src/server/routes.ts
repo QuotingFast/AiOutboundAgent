@@ -28,7 +28,7 @@ import {
 } from '../testing/ab';
 import {
   getAllLeads, getLeadMemory, createOrUpdateLead,
-  setLeadDisposition, addLeadNote, scheduleCallback,
+  setLeadDisposition, addLeadNote, addLeadTag, scheduleCallback,
   getLeadCount, getLeadsByDisposition, getLeadsForCallback,
   searchLeads, importLeadsFromCSV, exportLeadsToCSV, calculateLeadScore,
 } from '../memory';
@@ -81,6 +81,7 @@ import {
   getCampaign,
   logEnforcement,
 } from '../campaign/store';
+import { CampaignContext } from '../campaign/types';
 
 const router = Router();
 
@@ -1167,19 +1168,58 @@ function normalizePhone(phone: string): string {
 }
 
 // ── Weblead Webhook Endpoint (Jangl/QuotingFast format) ────────────────
-router.post('/webhook/weblead', async (req: Request, res: Response) => {
+// Supports campaign routing via:
+//   1. Query param:  POST /webhook/weblead?campaign_id=campaign-consumer-auto
+//   2. URL path:     POST /webhook/weblead/campaign-consumer-auto
+//   3. Body field:   { "campaign_id": "campaign-consumer-auto", ... }
+
+async function handleWeblead(req: Request, res: Response) {
     try {
           const body = req.body;
           const contact = body.contact || {};
           const data = body.data || {};
           const meta = body.meta || {};
 
+          // ── Campaign resolution (priority: query param > URL path > body field) ──
+          const rawCampaignId = (
+                  (req.query.campaign_id as string) ||
+                  req.params.campaignId ||
+                  body.campaign_id ||
+                  ''
+          ).trim();
+
+          let resolvedCampaignId: string | null = null;
+          let campaignResolved = false;
+
+          if (rawCampaignId) {
+                  const campaign = getCampaign(rawCampaignId);
+                  if (campaign && campaign.active) {
+                        resolvedCampaignId = rawCampaignId;
+                        campaignResolved = true;
+                        logger.info('routes', 'Weblead campaign resolved', {
+                              campaignId: resolvedCampaignId,
+                              source: req.query.campaign_id ? 'query_param' :
+                                      req.params.campaignId ? 'url_path' : 'body_field',
+                        });
+                  } else if (campaign && !campaign.active) {
+                        logger.warn('routes', 'Weblead campaign_id references inactive campaign', {
+                              campaignId: rawCampaignId,
+                        });
+                  } else {
+                        logger.warn('routes', 'Weblead campaign_id not found', {
+                              campaignId: rawCampaignId,
+                        });
+                  }
+          } else {
+                  logger.info('routes', 'Weblead received without campaign_id');
+          }
+
           // Extract and normalize phone number from various possible fields
           const rawPhone = (
-                  contact.phone || 
-                  body.phone || 
-                  body.phone_number || 
-                  body.primary_phone || 
+                  contact.phone ||
+                  body.phone ||
+                  body.phone_number ||
+                  body.primary_phone ||
                   ''
                 ).toString().trim();
 
@@ -1214,7 +1254,7 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                   leadId: body.id,
                   timestamp: body.timestamp,
                   sellPrice: body.sell_price,
-                  campaignId: body.campaign_id,
+                  campaignId: resolvedCampaignId || body.campaign_id,
                   tcpaCompliant: meta.tcpa_compliant,
                   trustedFormUrl: meta.trusted_form_cert_url,
                   driversCount: drivers.length,
@@ -1294,8 +1334,13 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                   customFields: formDataSummary,
           });
 
+          // Tag lead with resolved campaign for easy filtering
+          if (resolvedCampaignId) {
+                  addLeadTag(phone, `campaign:${resolvedCampaignId}`);
+          }
+
           // Add auto-generated note with form submission details
-          addLeadNote(phone, `Weblead received: ${drivers.length} driver(s), ${vehicles.length} vehicle(s). Current insurer: ${currentInsurer || 'N/A'}. Lead ID: ${body.id || 'N/A'}`);
+          addLeadNote(phone, `Weblead received: ${drivers.length} driver(s), ${vehicles.length} vehicle(s). Current insurer: ${currentInsurer || 'N/A'}. Lead ID: ${body.id || 'N/A'}. Campaign: ${resolvedCampaignId || 'none'}`);
 
           // Check settings for auto-dial
           const settings = getSettings();
@@ -1305,7 +1350,7 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
           if (autoDialEnabled && fromNumber) {
                   // Check concurrency before auto-dialing
                   if (!canAcceptCall()) {
-                        logger.info('routes', 'Weblead auto-dial skipped: max concurrency reached', { phone });
+                        logger.info('routes', 'Weblead auto-dial skipped: max concurrency reached', { phone, campaignId: resolvedCampaignId });
                         res.json({
                               success: true,
                               phone,
@@ -1314,6 +1359,8 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                               call: null,
                               autoDialed: false,
                               reason: 'max_concurrency',
+                              campaignId: resolvedCampaignId,
+                              campaignResolved,
                               formData: formDataSummary,
                         });
                         return;
@@ -1322,6 +1369,25 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                   const compliance = runPreCallComplianceCheck(phone, state, settings.tcpaOverride);
 
                   if (compliance.allowed) {
+                            // Campaign enforcement for auto-dial (soft — never blocks the call)
+                            let campaignCtx: CampaignContext | null = null;
+                            if (resolvedCampaignId) {
+                                  const campaignEnforcement = enforceOutboundDial({
+                                        phone,
+                                        campaignId: resolvedCampaignId,
+                                        leadId: phone,
+                                  });
+                                  if (campaignEnforcement.allowed && campaignEnforcement.context) {
+                                        campaignCtx = campaignEnforcement.context;
+                                  } else {
+                                        logger.warn('routes', 'Weblead auto-dial campaign enforcement failed, proceeding without campaign context', {
+                                              phone,
+                                              campaignId: resolvedCampaignId,
+                                              reason: campaignEnforcement.reason,
+                                        });
+                                  }
+                            }
+
                             const cr = await startOutboundCall({
                                         to: phone,
                                         from: fromNumber,
@@ -1340,10 +1406,27 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
 
                             recordCall(cr.callSid, phone, firstName);
 
-                            logger.info('routes', 'Weblead call started', { 
-                                        phone, 
+                            // Record outbound call for campaign tracking (mirrors /call/start)
+                            if (campaignCtx) {
+                                  recordOutboundCall({
+                                        callId: cr.callSid,
+                                        leadId: null,
+                                        toPhone: phone,
+                                        fromDid: fromNumber,
+                                        campaignId: campaignCtx.campaignId,
+                                        aiProfileId: campaignCtx.aiProfileId,
+                                        voiceId: campaignCtx.voiceId,
+                                        messageProfileId: campaignCtx.smsTemplateSetId,
+                                        timestamp: new Date().toISOString(),
+                                        status: 'initiated',
+                                  });
+                            }
+
+                            logger.info('routes', 'Weblead call started', {
+                                        phone,
                                         callSid: cr.callSid,
                                         leadId: body.id,
+                                        campaignId: campaignCtx?.campaignId || resolvedCampaignId || 'none',
                             });
 
                             res.json({
@@ -1353,12 +1436,14 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                                         state,
                                         callSid: cr.callSid,
                                         autoDialed: true,
+                                        campaignId: resolvedCampaignId,
+                                        campaignResolved,
                                         formData: formDataSummary,
                             });
                             return;
                   }
 
-                  logger.info('routes', 'Weblead compliance failed', { phone, state });
+                  logger.info('routes', 'Weblead compliance failed', { phone, state, campaignId: resolvedCampaignId });
                   res.json({
                             success: true,
                             phone,
@@ -1367,13 +1452,15 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                             call: null,
                             reason: 'compliance',
                             autoDialed: false,
+                            campaignId: resolvedCampaignId,
+                            campaignResolved,
                             formData: formDataSummary,
                   });
                   return;
           }
 
           // Auto-dial disabled or no from number configured
-          logger.info('routes', 'Weblead stored (no auto-dial)', { phone, leadId: body.id });
+          logger.info('routes', 'Weblead stored (no auto-dial)', { phone, leadId: body.id, campaignId: resolvedCampaignId });
           res.json({
                   success: true,
                   phone,
@@ -1382,6 +1469,8 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
                   call: null,
                   autoDialed: false,
                   reason: autoDialEnabled ? 'no_from_number' : 'auto_dial_disabled',
+                  campaignId: resolvedCampaignId,
+                  campaignResolved,
                   formData: formDataSummary,
           });
 
@@ -1390,7 +1479,11 @@ router.post('/webhook/weblead', async (req: Request, res: Response) => {
           logger.error('routes', 'Weblead webhook error', { error: msg });
           res.status(500).json({ error: msg });
     }
-});
+}
+
+// Parameterized route must be registered first so Express matches it before the bare path
+router.post('/webhook/weblead/:campaignId', handleWeblead);
+router.post('/webhook/weblead', handleWeblead);
 
 // ── AMD Status Webhook ──────────────────────────────────────────────
 

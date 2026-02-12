@@ -468,9 +468,11 @@ export function getDashboardHtml(): string {
         <label>To Number</label>
         <input type="text" id="callTo" placeholder="+19547905093">
       </div>
-      <div class="field">
-        <label>From Number</label>
-        <input type="text" id="callFrom" placeholder="+18557702370">
+      <div class="field" style="min-width:180px">
+        <label>From Number <span id="callFromMode" style="font-size:10px;color:var(--accent);font-weight:400"></span></label>
+        <select id="callFrom" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;font-family:monospace">
+          <option value="">Auto-Rotate (Round Robin)</option>
+        </select>
       </div>
       <div class="field">
         <label>Lead Name</label>
@@ -1797,7 +1799,7 @@ async function loadSettings() {
     if (s.elevenlabsSimilarityBoost != null) { document.getElementById('dsSimilarityBoost').value = s.elevenlabsSimilarityBoost; var dss = document.getElementById('dsSimilarityBoostVal'); if (dss) dss.textContent = parseFloat(s.elevenlabsSimilarityBoost).toFixed(2); }
     if (s.deepseekModel) document.getElementById('deepseekModel').value = s.deepseekModel;
     if (s.defaultToNumber) document.getElementById('callTo').value = s.defaultToNumber;
-    if (s.defaultFromNumber) document.getElementById('callFrom').value = s.defaultFromNumber;
+    populateFromNumberDropdown();
     document.getElementById('inboundEnabled').checked = s.inboundEnabled !== false;
     document.getElementById('inboundWebhookUrl').value = location.origin + '/twilio/incoming';
     // Load checkbox fields
@@ -1867,10 +1869,35 @@ async function saveSettings() {
   finally { btn.disabled = false; btn.textContent = 'Save All Settings'; }
 }
 
+// ── From Number Dropdown ──
+var SMS_ONLY_DID = '+18445117954';
+async function populateFromNumberDropdown() {
+  var sel = document.getElementById('callFrom');
+  // Keep first option (Auto-Rotate)
+  sel.length = 1;
+  try {
+    var c = campaignData[currentCampaignId];
+    if (!c) {
+      var res = await fetch('/api/campaigns/' + currentCampaignId);
+      if (res.ok) c = await res.json();
+    }
+    if (c && c.assignedDids && c.assignedDids.length) {
+      c.assignedDids.forEach(function(did) {
+        var opt = document.createElement('option');
+        opt.value = did;
+        opt.textContent = did + (did === SMS_ONLY_DID ? '  (SMS)' : '');
+        sel.appendChild(opt);
+      });
+      var modeEl = document.getElementById('callFromMode');
+      if (modeEl) modeEl.textContent = c.assignedDids.length + ' DIDs';
+    }
+  } catch (e) { console.error('populateFromNumberDropdown', e); }
+}
+
 // ── Calling ──
 async function makeCall() {
   var to = document.getElementById('callTo').value.trim();
-  var from = document.getElementById('callFrom').value.trim();
+  var from = document.getElementById('callFrom').value;
   var name = document.getElementById('callName').value.trim() || 'there';
   var state = document.getElementById('callState').value.trim() || 'FL';
   if (!to) { toast('Enter a phone number', 'error'); return; }
@@ -2556,6 +2583,8 @@ async function loadCampaignConfig(id) {
     renderTransferRoutes(c.transferRouting?.routes || []);
     // DIDs
     renderCampaignDids(c.assignedDids || []);
+    // Refresh from-number dropdown on Calls tab
+    populateFromNumberDropdown();
     // SMS Templates
     loadCampaignSmsTemplates(id);
     // Voices
@@ -2627,7 +2656,11 @@ function renderCampaignDids(dids) {
   if (!dids.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text2)">No DIDs assigned</div>'; return; }
   var html = '';
   dids.forEach(function(did) {
-    html += '<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--surface2);border-radius:8px;margin:4px;font-size:13px;font-family:monospace">' + did + ' <button class="btn btn-sm btn-secondary" onclick="removeCampaignDid(\\'' + did + '\\')" style="padding:2px 6px;font-size:10px">x</button></span>';
+    var isSms = did === SMS_ONLY_DID;
+    html += '<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--surface2);border-radius:8px;margin:4px;font-size:13px;font-family:monospace">'
+      + did
+      + (isSms ? ' <span class="badge badge-blue" style="font-size:9px;padding:2px 6px">SMS</span>' : '')
+      + ' <button class="btn btn-sm btn-secondary" onclick="removeCampaignDid(\'' + did + '\')" style="padding:2px 6px;font-size:10px">x</button></span>';
   });
   el.innerHTML = html;
 }

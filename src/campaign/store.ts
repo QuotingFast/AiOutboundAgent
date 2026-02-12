@@ -31,6 +31,9 @@ const outboundCallRecords: OutboundCallRecord[] = [];
 const scheduledCallbacks: CampaignScheduledCallback[] = [];
 const enforcementLog: EnforcementLogEntry[] = [];
 
+// Round-robin index per campaign for DID rotation
+const didRoundRobinIndex = new Map<string, number>();
+
 // Per-campaign template registries
 const campaignSmsTemplates = new Map<string, SmsTemplate[]>();
 const campaignEmailTemplates = new Map<string, SmsTemplate[]>(); // reuse SmsTemplate shape for email
@@ -122,6 +125,26 @@ export function getAllDidMappings(): DidMapping[] {
 
 export function removeDidMapping(did: string): boolean {
   return didMappings.delete(normalizePhone(did));
+}
+
+// ── Round-Robin DID Selection ────────────────────────────────────
+
+/**
+ * Get the next outbound DID for a campaign using round-robin rotation.
+ * Cycles through the campaign's assignedDids to spread calls across numbers.
+ * Returns undefined if no DIDs are assigned.
+ */
+export function getNextOutboundDid(campaignId: string): string | undefined {
+  const campaign = campaigns.get(campaignId);
+  if (!campaign || !campaign.assignedDids.length) return undefined;
+
+  const dids = campaign.assignedDids;
+  const currentIndex = didRoundRobinIndex.get(campaignId) || 0;
+  const did = dids[currentIndex % dids.length];
+  didRoundRobinIndex.set(campaignId, (currentIndex + 1) % dids.length);
+
+  logger.info('campaign-store', 'Round-robin DID selected', { campaignId, did, index: currentIndex });
+  return did;
 }
 
 // ── Outbound Call Records ──────────────────────────────────────────
@@ -371,7 +394,22 @@ export function seedCampaigns(): void {
       emailFollowUps: false,
       inboundEnabled: true,
     },
-    assignedDids: [],
+    assignedDids: [
+      '+18557702370',
+      '+18776411610',
+      '+18339780604',
+      '+18884326989',
+      '+18774788573',
+      '+18445117954', // SMS-capable
+      '+18444820894',
+      '+18668836505',
+      '+18552231164',
+      '+18883086986',
+      '+18666526230',
+      '+18666201404',
+      '+18669131884',
+      '+18335421152',
+    ],
     voiceWhitelist: [],
     uiAccentColor: '#3B82F6', // blue
     uiBadgeLabel: 'Consumer',
@@ -509,6 +547,11 @@ Use the transfer_call function when appropriate.`,
 
   createCampaign(consumerCampaign);
   createCampaign(agencyCampaign);
+
+  // Seed DID mappings for consumer campaign
+  for (const did of consumerCampaign.assignedDids) {
+    setDidMapping(did, consumerCampaign.id);
+  }
 
   // Seed consumer SMS templates
   const consumerSmsTemplates: SmsTemplate[] = [

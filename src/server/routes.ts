@@ -79,10 +79,14 @@ import {
   recordOutboundCall,
   isFeatureFlagEnabled as isCampaignFlagEnabled,
   getCampaign,
+  getNextOutboundDid,
   logEnforcement,
 } from '../campaign/store';
 
 const router = Router();
+
+// SMS-capable DID — only this number can send SMS
+const SMS_FROM_DID = '+18445117954';
 
 // ── Recording store ─────────────────────────────────────────────────
 
@@ -180,7 +184,11 @@ router.post('/call/start', async (req: Request, res: Response) => {
       return;
     }
 
-    const result = await startOutboundCall({ to, from, lead, amdEnabled: settings.amdEnabled });
+    // Round-robin DID rotation: if no explicit from number, pick next DID from campaign pool
+    const effectiveFrom = from || (campaign_id ? getNextOutboundDid(campaign_id) : undefined)
+      || settings.defaultFromNumber || config.twilio.fromNumber;
+
+    const result = await startOutboundCall({ to, from: effectiveFrom, lead, amdEnabled: settings.amdEnabled });
 
     // Register session data so the WebSocket handler can pick it up when the call connects
     registerPendingSession(result.callSid, lead, transfer, to);
@@ -195,7 +203,7 @@ router.post('/call/start', async (req: Request, res: Response) => {
         callId: result.callSid,
         leadId: null,
         toPhone: to,
-        fromDid: from || settings.defaultFromNumber || config.twilio.fromNumber,
+        fromDid: effectiveFrom,
         campaignId: ctx.campaignId,
         aiProfileId: ctx.aiProfileId,
         voiceId: ctx.voiceId,
@@ -1503,7 +1511,7 @@ router.post('/api/sms/send', async (req: Request, res: Response) => {
     });
 
     try {
-      const result = await sendSms(phone, body);
+      const result = await sendSms(phone, body, SMS_FROM_DID);
       entry.status = 'sent';
       entry.twilioSid = result.sid;
       res.json({ success: true, smsId: entry.id, twilioSid: result.sid });
@@ -1619,7 +1627,7 @@ router.post('/api/sms/send-template', async (req: Request, res: Response) => {
       triggerReason: tpl.category,
     });
 
-    const result = await sendSms(phone, body);
+    const result = await sendSms(phone, body, SMS_FROM_DID);
     entry.status = 'sent';
     entry.twilioSid = result.sid;
     res.json({ success: true, smsId: entry.id, body });
@@ -1815,7 +1823,7 @@ router.post('/api/leads/:phone/sms', async (req: Request, res: Response) => {
       triggerReason: 'manual',
     });
 
-    const result = await sendSms(phone, body);
+    const result = await sendSms(phone, body, SMS_FROM_DID);
     entry.status = 'sent';
     entry.twilioSid = result.sid;
     addLeadNote(phone, `SMS sent: "${body.substring(0, 80)}"`);

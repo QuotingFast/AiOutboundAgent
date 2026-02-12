@@ -139,9 +139,11 @@ router.post('/call/start', async (req: Request, res: Response) => {
     }
 
     // Campaign enforcement (if hardened isolation is enabled)
+    // Default to consumer campaign when no campaign_id provided (e.g. cached dashboard)
+    const effectiveCampaignId = campaign_id || 'campaign-consumer-auto';
     const campaignEnforcement = enforceOutboundDial({
       phone: to,
-      campaignId: campaign_id,
+      campaignId: effectiveCampaignId,
       leadId: to,
     });
     if (isCampaignFlagEnabled('hardened_campaign_isolation') && !campaignEnforcement.allowed) {
@@ -185,7 +187,7 @@ router.post('/call/start', async (req: Request, res: Response) => {
     }
 
     // Round-robin DID rotation: if no explicit from number, pick next DID from campaign pool
-    const effectiveFrom = from || (campaign_id ? getNextOutboundDid(campaign_id) : undefined)
+    const effectiveFrom = from || getNextOutboundDid(effectiveCampaignId)
       || settings.defaultFromNumber || config.twilio.fromNumber;
 
     const result = await startOutboundCall({ to, from: effectiveFrom, lead, amdEnabled: settings.amdEnabled });

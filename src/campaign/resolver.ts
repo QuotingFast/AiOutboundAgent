@@ -34,10 +34,10 @@ export interface ResolveResult {
 /**
  * Resolve CampaignContext from available identifiers.
  * Priority order:
- *   1. inbound DID / Twilio number mapping -> campaign_id
- *   2. lead_id -> campaign_id (via lead memory custom fields)
- *   3. last_outbound_call mapping (phone+campaign) -> campaign_id
- *   4. explicit campaign_id passed by internal service
+ *   1. explicit campaign_id passed by internal service (most reliable for outbound)
+ *   2. inbound DID / Twilio number mapping -> campaign_id
+ *   3. lead_id -> campaign_id (via lead memory custom fields)
+ *   4. last_outbound_call mapping (phone+campaign) -> campaign_id
  * If none match: FAIL CLOSED.
  */
 export function resolveCampaignContext(params: {
@@ -53,7 +53,16 @@ export function resolveCampaignContext(params: {
 
   const { inboundDid, leadPhone, leadId, explicitCampaignId } = params;
 
-  // 1. Inbound DID mapping
+  // 1. Explicit campaign_id (most reliable for outbound calls / API requests)
+  if (explicitCampaignId) {
+    const ctx = buildContext(explicitCampaignId, 'explicit_campaign_id');
+    if (ctx) {
+      logResolution('explicit_campaign_id', explicitCampaignId, inboundDid, leadPhone, true);
+      return { success: true, context: ctx, source: 'explicit_campaign_id', ambiguous: false, error: null };
+    }
+  }
+
+  // 2. Inbound DID mapping
   if (inboundDid) {
     const mapping = getDidMapping(inboundDid);
     if (mapping) {
@@ -65,7 +74,7 @@ export function resolveCampaignContext(params: {
     }
   }
 
-  // 2. Lead ID / phone -> campaign_id
+  // 3. Lead ID / phone -> campaign_id
   if (leadPhone || leadId) {
     const phone = leadPhone || leadId || '';
     const lead = getLeadMemory(phone);
@@ -79,7 +88,7 @@ export function resolveCampaignContext(params: {
     }
   }
 
-  // 3. Last outbound call mapping
+  // 4. Last outbound call mapping
   if (leadPhone) {
     const recentCalls = findOutboundByPhone(leadPhone, 30);
     if (recentCalls.length > 0) {
@@ -102,15 +111,6 @@ export function resolveCampaignContext(params: {
           error: `Ambiguous: phone ${leadPhone} has outbound records for campaigns: ${uniqueCampaigns.join(', ')}`,
         };
       }
-    }
-  }
-
-  // 4. Explicit campaign_id
-  if (explicitCampaignId) {
-    const ctx = buildContext(explicitCampaignId, 'explicit_campaign_id');
-    if (ctx) {
-      logResolution('explicit_campaign_id', explicitCampaignId, inboundDid, leadPhone, true);
-      return { success: true, context: ctx, source: 'explicit_campaign_id', ambiguous: false, error: null };
     }
   }
 

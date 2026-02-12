@@ -14,7 +14,18 @@ import { runPostCallWorkflow } from '../workflows';
 import { redactPII } from '../security';
 import { mixNoiseIntoAudio, resetNoisePosition } from './noise';
 import { handleAutoDnc, recordPhoneCall } from '../compliance';
-import { endCall as endCallTwilio } from '../twilio/client';
+import { endCall as endCallTwilio, sendSms } from '../twilio/client';
+import { logSms } from '../sms';
+import { addLeadNote } from '../memory';
+import {
+  notifySchedulingTextSent,
+  notifySchedulingEmailSent,
+  notifyCallbackScheduled,
+  sendProspectEmail,
+} from '../notifications';
+import {
+  scheduleCallback as scheduleCallbackTimer,
+} from '../scheduler';
 
 // Map of callSid -> session data for passing lead/transfer info
 const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig; toPhone?: string }>();
@@ -1139,6 +1150,227 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
         logger.error('stream', 'Failed to end call via Twilio API', { sessionId, error: errMsg });
+      }
+    } else if (name === 'send_scheduling_text') {
+      // Send a text with Zoom scheduling link to the prospect
+      const prospectName = args.prospect_name || leadData.first_name || 'there';
+      const targetPhone = callerNumber;
+
+      logger.info('stream', 'Sending scheduling text', { sessionId, prospectName, targetPhone });
+
+      if (!targetPhone) {
+        if (!useDeepSeek) {
+          sendFunctionOutput(call_id, { status: 'error', reason: 'no_phone_number' });
+        }
+        const errMsg = '[System: Could not send the text — no phone number available for this prospect.]';
+        if (useDeepSeek) callDeepSeekStreaming(errMsg);
+        else sendUserMessage(errMsg);
+      } else {
+        try {
+          const textBody = `Hi ${prospectName}, it's Jordan from Quoting Fast! Here's the link to schedule a Zoom meeting with our team: https://QuotingFast.com/schedule — Pick a time that works for you and we'll show you how our exclusive leads can grow your book of business. Talk soon!`;
+
+          const result = await sendSms(targetPhone, textBody);
+          logSms({
+            phone: targetPhone,
+            direction: 'outbound',
+            status: 'sent',
+            body: textBody,
+            twilioSid: result.sid,
+            leadName: prospectName,
+            triggerReason: 'zoom_scheduling',
+          });
+          addLeadNote(targetPhone, `Zoom scheduling text sent during call`);
+
+          if (!useDeepSeek) {
+            sendFunctionOutput(call_id, { status: 'sent', message: 'Scheduling text sent successfully' });
+          }
+
+          if (analytics) analytics.addTag('scheduling_text_sent');
+
+          // Fire notification (async, don't block)
+          notifySchedulingTextSent(targetPhone, prospectName).catch(err =>
+            logger.error('stream', 'Notification error', { error: String(err) })
+          );
+
+          logger.info('stream', 'Scheduling text sent', { sessionId, targetPhone, sid: result.sid });
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          logger.error('stream', 'Failed to send scheduling text', { sessionId, error: errMsg });
+          if (!useDeepSeek) {
+            sendFunctionOutput(call_id, { status: 'error', reason: errMsg });
+          }
+          const failMsg = '[System: The text failed to send. Let the prospect know you\'ll send it shortly after the call.]';
+          if (useDeepSeek) callDeepSeekStreaming(failMsg);
+          else sendUserMessage(failMsg);
+        }
+      }
+    } else if (name === 'send_scheduling_email') {
+      // Send a scheduling email to the prospect
+      const prospectName = args.prospect_name || leadData.first_name || 'there';
+      const prospectEmail = args.prospect_email || '';
+
+      logger.info('stream', 'Sending scheduling email', { sessionId, prospectName, prospectEmail });
+
+      if (!prospectEmail) {
+        if (!useDeepSeek) {
+          sendFunctionOutput(call_id, { status: 'error', reason: 'no_email_provided' });
+        }
+        const errMsg = '[System: No email address was provided. Ask the prospect for their email address.]';
+        if (useDeepSeek) callDeepSeekStreaming(errMsg);
+        else sendUserMessage(errMsg);
+      } else {
+        try {
+          const emailSubject = 'Schedule Your Quoting Fast Demo - Zoom Meeting Link';
+          const emailBody = `<p>Hi ${prospectName},</p>
+<p>Great chatting with you! As promised, here's the link to schedule a Zoom meeting with our team:</p>
+<p><a href="https://QuotingFast.com/schedule">https://QuotingFast.com/schedule</a></p>
+<p>During the call, we'll walk you through:</p>
+<ul>
+<li>How our exclusive auto insurance leads work</li>
+<li>Real-time delivery options (webhook, CRM, email)</li>
+<li>Geographic and volume targeting</li>
+<li>Our performance guarantees</li>
+</ul>
+<p>Pick a time that works best for you — looking forward to it!</p>
+<p>Best,<br>Jordan<br>Quoting Fast<br><a href="https://QuotingFast.com">QuotingFast.com</a></p>`;
+
+          const sent = await sendProspectEmail(prospectEmail, emailSubject, emailBody);
+
+          if (!useDeepSeek) {
+            sendFunctionOutput(call_id, {
+              status: sent ? 'sent' : 'queued',
+              message: sent ? 'Email sent successfully' : 'Email queued (will be sent when email service is configured)',
+            });
+          }
+
+          if (callerNumber) {
+            addLeadNote(callerNumber, `Zoom scheduling email sent to ${prospectEmail}`);
+          }
+          if (analytics) analytics.addTag('scheduling_email_sent');
+
+          // Fire notification (async, don't block)
+          notifySchedulingEmailSent(callerNumber || 'unknown', prospectName, prospectEmail).catch(err =>
+            logger.error('stream', 'Notification error', { error: String(err) })
+          );
+
+          logger.info('stream', 'Scheduling email processed', { sessionId, prospectEmail, sent });
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          logger.error('stream', 'Failed to send scheduling email', { sessionId, error: errMsg });
+          if (!useDeepSeek) {
+            sendFunctionOutput(call_id, { status: 'error', reason: errMsg });
+          }
+          const failMsg = '[System: The email failed to send. Let the prospect know you\'ll send it shortly after the call.]';
+          if (useDeepSeek) callDeepSeekStreaming(failMsg);
+          else sendUserMessage(failMsg);
+        }
+      }
+    } else if (name === 'schedule_callback') {
+      // Schedule a callback to call the prospect back later
+      const callbackTime = args.callback_time || '';
+      const prospectName = args.prospect_name || leadData.first_name || 'Unknown';
+      const reason = args.reason || '';
+      const targetPhone = callerNumber;
+
+      logger.info('stream', 'Scheduling callback', { sessionId, prospectName, callbackTime, targetPhone });
+
+      if (!targetPhone) {
+        if (!useDeepSeek) {
+          sendFunctionOutput(call_id, { status: 'error', reason: 'no_phone_number' });
+        }
+        const errMsg = '[System: Could not schedule the callback — no phone number available for this prospect.]';
+        if (useDeepSeek) callDeepSeekStreaming(errMsg);
+        else sendUserMessage(errMsg);
+      } else if (!callbackTime) {
+        if (!useDeepSeek) {
+          sendFunctionOutput(call_id, { status: 'error', reason: 'no_time_specified' });
+        }
+        const errMsg = '[System: No callback time was specified. Ask the prospect when they would like to be called back.]';
+        if (useDeepSeek) callDeepSeekStreaming(errMsg);
+        else sendUserMessage(errMsg);
+      } else {
+        try {
+          // Parse the callback time — the scheduler handles flexible time parsing
+          // For now, try to create a reasonable ISO timestamp
+          let scheduledAt: string;
+          const now = new Date();
+
+          // Simple time parsing for common patterns
+          const lowerTime = callbackTime.toLowerCase().trim();
+          if (lowerTime.includes('tomorrow')) {
+            const tomorrow = new Date(now);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            // Extract hour if mentioned
+            const hourMatch = lowerTime.match(/(\d{1,2})\s*(am|pm)/i);
+            if (hourMatch) {
+              let hour = parseInt(hourMatch[1], 10);
+              if (hourMatch[2].toLowerCase() === 'pm' && hour < 12) hour += 12;
+              if (hourMatch[2].toLowerCase() === 'am' && hour === 12) hour = 0;
+              tomorrow.setHours(hour, 0, 0, 0);
+            } else {
+              tomorrow.setHours(10, 0, 0, 0); // Default 10am
+            }
+            scheduledAt = tomorrow.toISOString();
+          } else if (lowerTime.includes('hour')) {
+            const hoursMatch = lowerTime.match(/(\d+)\s*hour/);
+            const hours = hoursMatch ? parseInt(hoursMatch[1], 10) : 1;
+            scheduledAt = new Date(now.getTime() + hours * 3600_000).toISOString();
+          } else if (lowerTime.includes('minute')) {
+            const minsMatch = lowerTime.match(/(\d+)\s*minute/);
+            const mins = minsMatch ? parseInt(minsMatch[1], 10) : 30;
+            scheduledAt = new Date(now.getTime() + mins * 60_000).toISOString();
+          } else {
+            // Try to parse as a date/time string directly
+            const parsed = new Date(callbackTime);
+            if (!isNaN(parsed.getTime()) && parsed.getTime() > now.getTime()) {
+              scheduledAt = parsed.toISOString();
+            } else {
+              // Default: schedule for next business day at 10am
+              const nextDay = new Date(now);
+              nextDay.setDate(nextDay.getDate() + 1);
+              nextDay.setHours(10, 0, 0, 0);
+              scheduledAt = nextDay.toISOString();
+            }
+          }
+
+          const cb = scheduleCallbackTimer({
+            phone: targetPhone,
+            leadName: prospectName,
+            state: leadData.state,
+            reason: reason || `Callback requested during call: ${callbackTime}`,
+            scheduledAt,
+          });
+
+          if (!useDeepSeek) {
+            sendFunctionOutput(call_id, {
+              status: 'scheduled',
+              callbackId: cb.id,
+              scheduledAt: cb.scheduledAt,
+              message: `Callback scheduled for ${callbackTime}`,
+            });
+          }
+
+          if (callerNumber) {
+            addLeadNote(callerNumber, `Callback scheduled for ${callbackTime} (${cb.scheduledAt}). Reason: ${reason || 'requested during call'}`);
+          }
+          if (analytics) analytics.addTag('callback_scheduled');
+
+          // Fire notification (async, don't block)
+          notifyCallbackScheduled(targetPhone, prospectName, callbackTime).catch(err =>
+            logger.error('stream', 'Notification error', { error: String(err) })
+          );
+
+          logger.info('stream', 'Callback scheduled', { sessionId, callbackId: cb.id, scheduledAt: cb.scheduledAt, callbackTime });
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          logger.error('stream', 'Failed to schedule callback', { sessionId, error: errMsg });
+          if (!useDeepSeek) {
+            sendFunctionOutput(call_id, { status: 'error', reason: errMsg });
+          }
+          const failMsg = '[System: Failed to schedule the callback. Apologize and let the prospect know your team will reach out at the requested time.]';
+          if (useDeepSeek) callDeepSeekStreaming(failMsg);
+          else sendUserMessage(failMsg);
+        }
       }
     }
   }

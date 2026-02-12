@@ -161,6 +161,63 @@ export function getRealtimeTools(): any[] {
         required: ['reason'],
       },
     },
+    {
+      type: 'function',
+      name: 'send_scheduling_text',
+      description: 'Send the prospect a text message with a link to schedule a Zoom meeting at QuotingFast.com. Use this when the prospect is interested in a demo or meeting, or when you want to follow up with a scheduling link. Tell the prospect you are sending the text before calling this function.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prospect_name: {
+            type: 'string',
+            description: 'The name of the person or agency you are sending the text to',
+          },
+        },
+        required: ['prospect_name'],
+      },
+    },
+    {
+      type: 'function',
+      name: 'send_scheduling_email',
+      description: 'Send the prospect an email with information about scheduling a Zoom meeting at QuotingFast.com. Use this when the prospect prefers email over text. You must ask for their email address first. Tell the prospect you are sending the email before calling this function.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prospect_name: {
+            type: 'string',
+            description: 'The name of the person or agency',
+          },
+          prospect_email: {
+            type: 'string',
+            description: 'The email address to send the scheduling info to',
+          },
+        },
+        required: ['prospect_name', 'prospect_email'],
+      },
+    },
+    {
+      type: 'function',
+      name: 'schedule_callback',
+      description: 'Schedule a callback to call the prospect back at a later time. Use this when the prospect says they are busy now but wants to be called back. Ask what time works best for them. The system will automatically call them back at the scheduled time.',
+      parameters: {
+        type: 'object',
+        properties: {
+          callback_time: {
+            type: 'string',
+            description: 'When to call them back, e.g. "tomorrow at 2pm", "Thursday at 10am", "in 2 hours". Be as specific as possible with the date and time.',
+          },
+          prospect_name: {
+            type: 'string',
+            description: 'The name of the person requesting the callback',
+          },
+          reason: {
+            type: 'string',
+            description: 'Brief note about why they want a callback, e.g. "busy now, interested in demo", "wants to discuss with partner first"',
+          },
+        },
+        required: ['callback_time', 'prospect_name'],
+      },
+    },
   ];
 }
 

@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger';
+import { notifyCallbackExecuting, notifyCallbackFailed } from '../notifications';
 
 // ── Callback Scheduler ─────────────────────────────────────────────
 // Checks every 30 seconds for scheduled callbacks that are due and
@@ -168,6 +169,10 @@ async function processDueItems(): Promise<void> {
     cb.lastAttemptAt = new Date().toISOString();
     logger.info('scheduler', 'Firing callback', { id: cb.id, phone: cb.phone, attempt: cb.attempts });
 
+    notifyCallbackExecuting(cb.phone, cb.leadName, cb.attempts, cb.maxAttempts).catch(err =>
+      logger.error('scheduler', 'Notification error', { error: String(err) })
+    );
+
     try {
       const success = await dialFunction(cb.phone, cb.leadName, cb.state);
       if (success) {
@@ -184,6 +189,9 @@ async function processDueItems(): Promise<void> {
         cb.status = 'failed';
         cb.result = 'max_attempts_exhausted';
         logger.warn('scheduler', 'Callback failed after max attempts', { id: cb.id });
+        notifyCallbackFailed(cb.phone, cb.leadName, cb.attempts).catch(err =>
+          logger.error('scheduler', 'Notification error', { error: String(err) })
+        );
       }
     } catch (err) {
       cb.status = cb.attempts < cb.maxAttempts ? 'pending' : 'failed';
@@ -218,6 +226,9 @@ async function processDueItems(): Promise<void> {
       } else {
         retry.status = 'exhausted';
         retry.lastResult = 'max_retries_exhausted';
+        notifyCallbackFailed(retry.phone, retry.leadName, retry.retryCount).catch(err =>
+          logger.error('scheduler', 'Notification error', { error: String(err) })
+        );
       }
     } catch (err) {
       retry.lastResult = err instanceof Error ? err.message : String(err);
@@ -228,6 +239,9 @@ async function processDueItems(): Promise<void> {
         retry.status = 'pending';
       } else {
         retry.status = 'exhausted';
+        notifyCallbackFailed(retry.phone, retry.leadName, retry.retryCount).catch(notifErr =>
+          logger.error('scheduler', 'Notification error', { error: String(notifErr) })
+        );
       }
     }
   }

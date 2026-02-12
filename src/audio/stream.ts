@@ -1167,7 +1167,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         else sendUserMessage(errMsg);
       } else {
         try {
-          const textBody = `Hi ${prospectName}, it's Jordan from Quoting Fast! Here's the link to schedule a Zoom meeting with our team: https://QuotingFast.com/schedule — Pick a time that works for you and we'll show you how our exclusive leads can grow your book of business. Talk soon!`;
+          const s = getSettings();
+          const textBody = `Hi ${prospectName}, it's ${s.agentName} from Quoting Fast! Here's a link to learn more about what we do and schedule a meeting with one of our Agency Lead Reps: https://quotingfast.com/schedule — Pick a time that works for you and we'll walk you through everything. Talk soon!`;
 
           const result = await sendSms(targetPhone, textBody);
           logSms({
@@ -1220,19 +1221,23 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         else sendUserMessage(errMsg);
       } else {
         try {
-          const emailSubject = 'Schedule Your Quoting Fast Demo - Zoom Meeting Link';
+          const s = getSettings();
+          const emailSubject = 'Learn More About Quoting Fast — Schedule a Meeting';
           const emailBody = `<p>Hi ${prospectName},</p>
-<p>Great chatting with you! As promised, here's the link to schedule a Zoom meeting with our team:</p>
-<p><a href="https://QuotingFast.com/schedule">https://QuotingFast.com/schedule</a></p>
-<p>During the call, we'll walk you through:</p>
+<p>Great chatting with you! As promised, here's a link to learn more about Quoting Fast and schedule a meeting with one of our Agency Lead Reps:</p>
+<p style="text-align:center;margin:20px 0;">
+  <a href="https://quotingfast.com/schedule" style="background-color:#2563eb;color:white;padding:12px 28px;text-decoration:none;border-radius:6px;font-size:16px;font-weight:bold;">Schedule Your Meeting</a>
+</p>
+<p>Or copy this link: <a href="https://quotingfast.com/schedule">https://quotingfast.com/schedule</a></p>
+<p>Here's a quick look at what we can help with:</p>
 <ul>
-<li>How our exclusive auto insurance leads work</li>
-<li>Real-time delivery options (webhook, CRM, email)</li>
-<li>Geographic and volume targeting</li>
-<li>Our performance guarantees</li>
+<li>Connecting you with high-quality auto insurance leads</li>
+<li>Flexible delivery options that fit your workflow</li>
+<li>Targeting by geography, volume, and your ideal customer profile</li>
+<li>Transparent pricing and performance guarantees</li>
 </ul>
-<p>Pick a time that works best for you — looking forward to it!</p>
-<p>Best,<br>Jordan<br>Quoting Fast<br><a href="https://QuotingFast.com">QuotingFast.com</a></p>`;
+<p>Check out <a href="https://quotingfast.com">quotingfast.com</a> for more details, or pick a meeting time and we'll walk you through everything personally.</p>
+<p>Best,<br>${s.agentName}<br>Agency Lead Rep<br>Quoting Fast<br><a href="https://quotingfast.com">quotingfast.com</a></p>`;
 
           const sent = await sendProspectEmail(prospectEmail, emailSubject, emailBody);
 

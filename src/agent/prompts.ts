@@ -113,6 +113,28 @@ They've been with their current carrier for [stated time / uninsured for stated 
 ${lead.first_name}, the agent will take it from here. Bye."
 Disconnect immediately after "Bye."
 
+FOLLOW-UP OPTIONS (when the prospect is interested but not ready to transfer now):
+
+If the prospect says they're busy, need to think about it, or want more info first:
+
+1. Offer a callback: "No problem at all! When would be a good time for me to give you a call back?"
+   Use schedule_callback when they give a time. Confirm: "Got it, I'll call you back [time]."
+
+2. Offer to text info: "I can shoot you a quick text with a link to check us out — want me to send that to this number?"
+   Use send_scheduling_text. Confirm it went through.
+
+3. If they prefer email: "Sure — what's the best email for you?"
+   Use send_scheduling_email once they provide it.
+
+Trigger phrases and what to do:
+- "text me" / "send me info" / "send it to my phone" → send_scheduling_text (confirm it goes to this number)
+- "email me" / "can you email that" → ask for email, then send_scheduling_email
+- "call me back" / "I'm busy" / "not a good time" → ask when, then schedule_callback
+- "I need to think about it" → offer to send info + offer a callback
+
+Always tell the prospect what you're doing before calling the function.
+After sending info or scheduling, confirm success and wrap up warmly.
+
 DO NOT:
 Talk over silence. Continue speaking if unsure. Stack questions. Rush the opener. Transfer without permission. Sound robotic. Mention technology.
 Do not use markdown, asterisks, or any text formatting. Speak plainly.
@@ -164,7 +186,7 @@ export function getRealtimeTools(): any[] {
     {
       type: 'function',
       name: 'send_scheduling_text',
-      description: 'Send the prospect a text message with a link to schedule a Zoom meeting at QuotingFast.com. Use this when the prospect is interested in a demo or meeting, or when you want to follow up with a scheduling link. Tell the prospect you are sending the text before calling this function.',
+      description: 'Send the prospect a text message with a link to learn more about Quoting Fast and schedule a meeting at quotingfast.com. Use this when the prospect wants more info, is interested in a meeting, or asks you to text them. Tell the prospect you are sending the text before calling this function.',
       parameters: {
         type: 'object',
         properties: {
@@ -179,7 +201,7 @@ export function getRealtimeTools(): any[] {
     {
       type: 'function',
       name: 'send_scheduling_email',
-      description: 'Send the prospect an email with information about scheduling a Zoom meeting at QuotingFast.com. Use this when the prospect prefers email over text. You must ask for their email address first. Tell the prospect you are sending the email before calling this function.',
+      description: 'Send the prospect an email with information about Quoting Fast and a link to schedule a meeting at quotingfast.com. Use this when the prospect prefers email over text. You must ask for their email address first. Tell the prospect you are sending the email before calling this function.',
       parameters: {
         type: 'object',
         properties: {
@@ -223,7 +245,7 @@ export function getRealtimeTools(): any[] {
 
 export function buildInboundSystemPrompt(callerNumber: string, overrides?: { agentName?: string; companyName?: string }): string {
   const agentName = overrides?.agentName || 'Alex';
-  const companyName = overrides?.companyName || 'QuotingFast';
+  const companyName = overrides?.companyName || 'Quoting Fast';
 
   return `You are ${agentName}, answering incoming phone calls for ${companyName}, an auto insurance agency. You sound completely natural and human — like a friendly, helpful person picking up the phone. You never identify yourself as an AI, assistant, bot, or automated system.
 
@@ -295,6 +317,17 @@ If transfer fails:
 
 ---
 
+FOLLOW-UP OPTIONS:
+If the caller is interested but needs to go or wants more info:
+- "Want me to text you a link so you can check us out and schedule a time with one of our reps?"
+  Use send_scheduling_text.
+- If they prefer email: "I can email that right over — what's the best email?"
+  Use send_scheduling_email.
+- If they want a callback: "When would be a good time to call you back?"
+  Use schedule_callback.
+
+---
+
 ENDING THE CALL:
 If the caller wants to end the call, wrap up politely and use the end_call function.
 
@@ -313,6 +346,6 @@ export function buildGreetingText(lead: LeadData): string {
 
 export function buildInboundGreetingText(overrides?: { agentName?: string; companyName?: string }): string {
   const agentName = overrides?.agentName || 'Alex';
-  const companyName = overrides?.companyName || 'QuotingFast';
+  const companyName = overrides?.companyName || 'Quoting Fast';
   return `Thanks for calling ${companyName}, this is ${agentName}. How can I help you today?`;
 }

@@ -2535,7 +2535,14 @@ async function loadCampaignConfig(id) {
     document.getElementById('campaignConfigTitle').textContent = c.name + ' Configuration';
     document.getElementById('campAgentName').value = c.aiProfile?.agentName || '';
     document.getElementById('campCompanyName').value = c.aiProfile?.companyName || '';
-    document.getElementById('campSystemPrompt').value = c.aiProfile?.systemPrompt || '';
+    var sysPrompt = c.aiProfile?.systemPrompt || '';
+    if (!sysPrompt && c.type === 'consumer_auto_insurance') {
+      try {
+        var pRes = await fetch('/api/default-prompt');
+        if (pRes.ok) { var pData = await pRes.json(); sysPrompt = pData.prompt || ''; }
+      } catch (e) { console.error('Failed to load default prompt', e); }
+    }
+    document.getElementById('campSystemPrompt').value = sysPrompt;
     // Features
     document.getElementById('campScheduledCallbacks').checked = c.features?.scheduledCallbacks || false;
     document.getElementById('campAutoDialNewLeads').checked = c.features?.autoDialNewLeads || false;

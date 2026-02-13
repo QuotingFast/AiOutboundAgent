@@ -184,7 +184,10 @@ router.post('/call/start', async (req: Request, res: Response) => {
     const result = await startOutboundCall({ to, from, lead, amdEnabled: settings.amdEnabled });
 
     // Register session data so the WebSocket handler can pick it up when the call connects
-    registerPendingSession(result.callSid, lead, transfer, to);
+    // Always pass campaign_id through — even when hardened isolation is off, the stream
+    // handler uses it to load the correct AI profile, voice, and system prompt.
+    const resolvedCampaignId = campaignEnforcement.context?.campaignId || campaign_id || undefined;
+    registerPendingSession(result.callSid, lead, transfer, to, resolvedCampaignId);
 
     // Record this call with current settings for history tracking
     recordCall(result.callSid, to, lead.first_name);

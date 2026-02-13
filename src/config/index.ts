@@ -21,6 +21,7 @@ export const config = {
     accountSid: required('TWILIO_ACCOUNT_SID'),
     authToken: required('TWILIO_AUTH_TOKEN'),
     fromNumber: optional('TWILIO_FROM_NUMBER', ''),
+    smsFromNumber: optional('TWILIO_SMS_FROM_NUMBER', '+18445117954'),
   },
 
   openai: {

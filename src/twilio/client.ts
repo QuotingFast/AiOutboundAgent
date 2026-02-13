@@ -114,9 +114,11 @@ export async function endCall(callSid: string): Promise<void> {
 // ── SMS ──
 
 export async function sendSms(to: string, body: string, from?: string): Promise<{ sid: string; status: string }> {
-  const fromNumber = from || config.twilio.fromNumber;
+  // SMS must always go out from the SMS-capable DID (+18445117954).
+  // Voice DIDs cannot send SMS — Twilio will silently reject them.
+  const fromNumber = from || config.twilio.smsFromNumber || config.twilio.fromNumber;
   if (!fromNumber) {
-    throw new Error('No "from" number provided and TWILIO_FROM_NUMBER not set');
+    throw new Error('No SMS-capable "from" number configured. Set TWILIO_SMS_FROM_NUMBER.');
   }
 
   logger.info('twilio-client', 'Sending SMS', { to, from: fromNumber });

@@ -44,7 +44,7 @@ const featureFlags: CampaignFeatureFlags = {
   multi_campaign_mode: true,
   scheduled_callbacks: true,
   dynamic_voice_sync: true,
-  hardened_campaign_isolation: true,
+  hardened_campaign_isolation: false,
 };
 
 const MAX_ENFORCEMENT_LOG = 1000;

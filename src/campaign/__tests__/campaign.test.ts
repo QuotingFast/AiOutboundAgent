@@ -258,16 +258,16 @@ describe('CampaignContext Resolver', () => {
     assert(result.ambiguous, 'Marked as ambiguous');
   });
 
-  it('should follow priority: DID > lead > call history > explicit', () => {
+  it('should follow priority: explicit > DID > lead > call history', () => {
     setDidMapping('+18002222222', 'campaign-agency-dev');
-    // Even with an explicit consumer campaign_id, DID should win
+    // Explicit campaign_id takes highest priority over DID mapping
     const result = resolveCampaignContext({
       inboundDid: '+18002222222',
       explicitCampaignId: 'campaign-consumer-auto',
     });
     assert(result.success, 'Resolution succeeded');
-    assertEqual(result.context!.campaignId, 'campaign-agency-dev', 'DID takes priority');
-    assertEqual(result.source, 'inbound_did', 'Source confirms DID priority');
+    assertEqual(result.context!.campaignId, 'campaign-consumer-auto', 'Explicit takes priority');
+    assertEqual(result.source, 'explicit_campaign_id', 'Source confirms explicit priority');
   });
 });
 

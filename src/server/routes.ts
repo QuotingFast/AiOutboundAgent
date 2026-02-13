@@ -1485,8 +1485,9 @@ router.post('/api/sms/send', async (req: Request, res: Response) => {
     }
 
     // Campaign enforcement for SMS
+    const effectiveSmsCampaignId = campaign_id || 'campaign-consumer-auto';
     if (isCampaignFlagEnabled('hardened_campaign_isolation')) {
-      const smsEnforcement = enforceSmsSend({ phone, campaignId: campaign_id });
+      const smsEnforcement = enforceSmsSend({ phone, campaignId: effectiveSmsCampaignId });
       if (!smsEnforcement.allowed) {
         res.status(403).json({
           error: 'Campaign context required for SMS',

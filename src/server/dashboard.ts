@@ -2525,7 +2525,7 @@ async function sendSmsUI() {
   var body = document.getElementById('smsBody').value.trim();
   if (!phone || !body) { toast('Phone and message required', 'error'); return; }
   try {
-    var res = await fetch('/api/sms/send', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone: phone, body: body }) });
+    var res = await fetch('/api/sms/send', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone: phone, body: body, campaign_id: currentCampaignId }) });
     var data = await res.json();
     if (res.ok) { toast('SMS sent!', 'success'); document.getElementById('smsBody').value = ''; loadSmsLog(); }
     else toast(data.error || 'Failed', 'error');

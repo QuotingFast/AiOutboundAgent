@@ -32,7 +32,9 @@ const notificationConfig: NotificationConfig = {
 export type NotificationEventType =
   | 'scheduling_text_sent'
   | 'scheduling_email_sent'
-  | 'callback_scheduled';
+  | 'callback_scheduled'
+  | 'callback_executing'
+  | 'callback_failed';
 
 export interface NotificationLogEntry {
   id: string;
@@ -179,9 +181,13 @@ export async function sendProspectEmail(to: string, subject: string, body: strin
  * Notify when a scheduling text was sent to a prospect.
  */
 export async function notifySchedulingTextSent(prospectPhone: string, prospectName: string): Promise<void> {
-  const smsBody = `[Quoting Fast] Zoom scheduling text sent to ${prospectName} (${prospectPhone}). They were invited to schedule a meeting at QuotingFast.com.`;
+  const smsBody = `[Quoting Fast] Scheduling text sent to ${prospectName} (${prospectPhone}). They were invited to learn more and schedule a meeting at quotingfast.com.`;
 
   const smsSent = await sendNotificationSms(smsBody);
+
+  const emailSubject = `Scheduling Text Sent: ${prospectName} (${prospectPhone})`;
+  const emailBody = `A scheduling text was sent to a prospect.\n\nProspect: ${prospectName}\nPhone: ${prospectPhone}\nAction: Sent text with quotingfast.com scheduling link\nTime: ${new Date().toISOString()}\n\n-- Quoting Fast AI Agent`;
+  const emailSent = await sendNotificationEmail(notificationConfig.ownerEmail, emailSubject, emailBody);
 
   const entry: NotificationLogEntry = {
     id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -190,7 +196,7 @@ export async function notifySchedulingTextSent(prospectPhone: string, prospectNa
     prospectName,
     message: smsBody,
     smsNotificationSent: smsSent,
-    emailNotificationSent: false,
+    emailNotificationSent: emailSent,
     timestamp: new Date().toISOString(),
   };
   notificationLog.unshift(entry);
@@ -201,9 +207,13 @@ export async function notifySchedulingTextSent(prospectPhone: string, prospectNa
  * Notify when a scheduling email was sent to a prospect.
  */
 export async function notifySchedulingEmailSent(prospectPhone: string, prospectName: string, prospectEmail: string): Promise<void> {
-  const smsBody = `[Quoting Fast] Zoom scheduling email sent to ${prospectName} (${prospectEmail}). They were invited to schedule a meeting at QuotingFast.com.`;
+  const smsBody = `[Quoting Fast] Scheduling email sent to ${prospectName} (${prospectEmail}). They were invited to learn more and schedule a meeting at quotingfast.com.`;
 
   const smsSent = await sendNotificationSms(smsBody);
+
+  const emailSubject = `Scheduling Email Sent: ${prospectName} (${prospectEmail})`;
+  const emailBody = `A scheduling email was sent to a prospect.\n\nProspect: ${prospectName}\nPhone: ${prospectPhone}\nEmail: ${prospectEmail}\nAction: Sent email with quotingfast.com scheduling link\nTime: ${new Date().toISOString()}\n\n-- Quoting Fast AI Agent`;
+  const emailSent = await sendNotificationEmail(notificationConfig.ownerEmail, emailSubject, emailBody);
 
   const entry: NotificationLogEntry = {
     id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -212,7 +222,7 @@ export async function notifySchedulingEmailSent(prospectPhone: string, prospectN
     prospectName,
     message: smsBody,
     smsNotificationSent: smsSent,
-    emailNotificationSent: false,
+    emailNotificationSent: emailSent,
     timestamp: new Date().toISOString(),
     details: { prospectEmail },
   };
@@ -248,6 +258,67 @@ export async function notifyCallbackScheduled(
     emailNotificationSent: emailSent,
     timestamp: new Date().toISOString(),
     details: { callbackTime },
+  };
+  notificationLog.unshift(entry);
+  if (notificationLog.length > MAX_LOG) notificationLog.length = MAX_LOG;
+}
+
+/**
+ * Notify when a scheduled callback is being executed (dialing the prospect).
+ */
+export async function notifyCallbackExecuting(
+  prospectPhone: string,
+  prospectName: string,
+  attempt: number,
+  maxAttempts: number,
+): Promise<void> {
+  const smsBody = `[Quoting Fast] Callback executing: Dialing ${prospectName} (${prospectPhone}) now. Attempt ${attempt} of ${maxAttempts}.`;
+  const smsSent = await sendNotificationSms(smsBody);
+
+  const emailSubject = `Callback Executing: ${prospectName} (${prospectPhone})`;
+  const emailBody = `A scheduled callback is now being executed.\n\nProspect: ${prospectName}\nPhone: ${prospectPhone}\nAttempt: ${attempt} of ${maxAttempts}\nTime: ${new Date().toISOString()}\n\n-- Quoting Fast AI Agent`;
+  const emailSent = await sendNotificationEmail(notificationConfig.ownerEmail, emailSubject, emailBody);
+
+  const entry: NotificationLogEntry = {
+    id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    eventType: 'callback_executing',
+    prospectPhone,
+    prospectName,
+    message: smsBody,
+    smsNotificationSent: smsSent,
+    emailNotificationSent: emailSent,
+    timestamp: new Date().toISOString(),
+    details: { attempt, maxAttempts },
+  };
+  notificationLog.unshift(entry);
+  if (notificationLog.length > MAX_LOG) notificationLog.length = MAX_LOG;
+}
+
+/**
+ * Notify when a callback has failed after exhausting all attempts.
+ */
+export async function notifyCallbackFailed(
+  prospectPhone: string,
+  prospectName: string,
+  totalAttempts: number,
+): Promise<void> {
+  const smsBody = `[Quoting Fast] CALLBACK FAILED: Could not reach ${prospectName} (${prospectPhone}) after ${totalAttempts} attempts. Manual follow-up may be needed.`;
+  const smsSent = await sendNotificationSms(smsBody);
+
+  const emailSubject = `CALLBACK FAILED: ${prospectName} (${prospectPhone})`;
+  const emailBody = `A scheduled callback has failed after exhausting all retry attempts.\n\nProspect: ${prospectName}\nPhone: ${prospectPhone}\nTotal Attempts: ${totalAttempts}\nStatus: FAILED — manual follow-up recommended\nTime: ${new Date().toISOString()}\n\n-- Quoting Fast AI Agent`;
+  const emailSent = await sendNotificationEmail(notificationConfig.ownerEmail, emailSubject, emailBody);
+
+  const entry: NotificationLogEntry = {
+    id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    eventType: 'callback_failed',
+    prospectPhone,
+    prospectName,
+    message: smsBody,
+    smsNotificationSent: smsSent,
+    emailNotificationSent: emailSent,
+    timestamp: new Date().toISOString(),
+    details: { totalAttempts },
   };
   notificationLog.unshift(entry);
   if (notificationLog.length > MAX_LOG) notificationLog.length = MAX_LOG;

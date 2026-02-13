@@ -150,16 +150,25 @@ export function handleMediaStream(twilioWs: WebSocket): void {
               leadData = session.lead;
               transferConfig = session.transfer;
               callerNumber = session.toPhone || '';
-              // Load campaign config for campaign-specific prompts/voice/settings
-              if (session.campaignId) {
-                activeCampaign = getCampaign(session.campaignId);
+              // Load campaign config: prefer pendingSession, fall back to TwiML parameter
+              const outboundCampaignId = session.campaignId || customParams.campaignId || '';
+              if (outboundCampaignId) {
+                activeCampaign = getCampaign(outboundCampaignId);
                 if (activeCampaign) {
-                  logger.info('stream', 'Outbound call campaign loaded', { sessionId, campaignId: session.campaignId, campaignName: activeCampaign.name });
+                  logger.info('stream', 'Outbound call campaign loaded', { sessionId, campaignId: outboundCampaignId, campaignName: activeCampaign.name });
                 }
               }
               pendingSessions.delete(callSid);
-              logger.info('stream', 'Session found', { sessionId, lead: leadData.first_name, toPhone: callerNumber, campaignId: session.campaignId || 'none' });
+              logger.info('stream', 'Session found', { sessionId, lead: leadData.first_name, toPhone: callerNumber, campaignId: outboundCampaignId || 'none' });
             } else {
+              // No pending session — try TwiML parameter as last resort
+              const fallbackCampaignId = customParams.campaignId || '';
+              if (fallbackCampaignId) {
+                activeCampaign = getCampaign(fallbackCampaignId);
+                if (activeCampaign) {
+                  logger.info('stream', 'Campaign loaded from TwiML param (no pending session)', { sessionId, campaignId: fallbackCampaignId });
+                }
+              }
               logger.warn('stream', 'No session found, using default', {
                 sessionId,
                 callSid,

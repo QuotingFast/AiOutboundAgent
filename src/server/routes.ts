@@ -181,13 +181,10 @@ router.post('/call/start', async (req: Request, res: Response) => {
       return;
     }
 
-    const result = await startOutboundCall({ to, from, lead, amdEnabled: settings.amdEnabled });
-
-    // Register session data so the WebSocket handler can pick it up when the call connects
-    // Always pass campaign_id through — even when hardened isolation is off, the stream
-    // handler uses it to load the correct AI profile, voice, and system prompt.
+    // Resolve the campaign ID: enforcement context > explicit param
     const resolvedCampaignId = campaignEnforcement.context?.campaignId || campaign_id || undefined;
-    registerPendingSession(result.callSid, lead, transfer, to, resolvedCampaignId);
+
+    const result = await startOutboundCall({ to, from, lead, amdEnabled: settings.amdEnabled, campaignId: resolvedCampaignId });
 
     // Record this call with current settings for history tracking
     recordCall(result.callSid, to, lead.first_name);
@@ -245,14 +242,15 @@ router.post('/twilio/voice', (req: Request, res: Response) => {
   const toPhone = req.body?.To || '';
   const lead = req.query.lead ? JSON.parse(req.query.lead as string) : null;
   const transfer = req.query.transfer ? JSON.parse(req.query.transfer as string) : null;
+  const campaignId = req.query.campaign_id as string | undefined;
 
-  logger.info('routes', 'Voice webhook hit', { callSid, toPhone });
+  logger.info('routes', 'Voice webhook hit', { callSid, toPhone, campaignId: campaignId || 'none' });
 
   if (lead && callSid !== 'unknown') {
-    registerPendingSession(callSid, lead, transfer, toPhone);
+    registerPendingSession(callSid, lead, transfer, toPhone, campaignId);
   }
 
-  const twiml = buildMediaStreamTwiml('outbound');
+  const twiml = buildMediaStreamTwiml('outbound', undefined, campaignId);
   res.type('text/xml');
   res.send(twiml);
 });

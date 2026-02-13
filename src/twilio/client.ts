@@ -18,6 +18,7 @@ export interface StartCallParams {
     target_number: string;
   };
   amdEnabled?: boolean;
+  campaignId?: string;
 }
 
 export async function startOutboundCall(params: StartCallParams): Promise<{ callSid: string; status: string }> {
@@ -26,11 +27,14 @@ export async function startOutboundCall(params: StartCallParams): Promise<{ call
     throw new Error('No "from" number provided and TWILIO_FROM_NUMBER not set');
   }
 
-  // Encode lead + transfer data as query params so the webhook can read them
+  // Encode lead + transfer + campaign data as query params so the webhook can read them
   const webhookUrl = new URL('/twilio/voice', config.baseUrl);
   webhookUrl.searchParams.set('lead', JSON.stringify(params.lead));
   if (params.transfer) {
     webhookUrl.searchParams.set('transfer', JSON.stringify(params.transfer));
+  }
+  if (params.campaignId) {
+    webhookUrl.searchParams.set('campaign_id', params.campaignId);
   }
 
   logger.info('twilio-client', 'Placing outbound call', { to: params.to, from: fromNumber });

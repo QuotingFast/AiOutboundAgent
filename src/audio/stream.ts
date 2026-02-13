@@ -26,15 +26,17 @@ import {
 import {
   scheduleCallback as scheduleCallbackTimer,
 } from '../scheduler';
+import { getCampaign } from '../campaign/store';
+import { CampaignConfig } from '../campaign/types';
 
 // Map of callSid -> session data for passing lead/transfer info
-const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig; toPhone?: string }>();
+const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig; toPhone?: string; campaignId?: string }>();
 
 // Active live transcript listeners (callSid -> callback)
 const liveTranscriptListeners = new Map<string, (entry: { role: string; text: string; timestamp: number }) => void>();
 
-export function registerPendingSession(callSid: string, lead: LeadData, transfer?: TransferConfig, toPhone?: string): void {
-  pendingSessions.set(callSid, { lead, transfer, toPhone });
+export function registerPendingSession(callSid: string, lead: LeadData, transfer?: TransferConfig, toPhone?: string, campaignId?: string): void {
+  pendingSessions.set(callSid, { lead, transfer, toPhone, campaignId });
 }
 
 export function registerTranscriptListener(callSid: string, callback: (entry: { role: string; text: string; timestamp: number }) => void): void {
@@ -56,6 +58,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   // Call direction and caller info
   let callDirection: 'outbound' | 'inbound' = 'outbound';
   let callerNumber = '';
+
+  // Campaign-specific config (resolved from campaign selection)
+  let activeCampaign: CampaignConfig | undefined;
 
   // Voice provider determined at call start
   let useElevenLabs = false;
@@ -129,6 +134,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           if (callDirection === 'inbound') {
             // Inbound call — no pending session expected, create lead from caller info
             leadData = { first_name: 'there' };  // We don't know their name yet
+            // Load campaign from TwiML custom parameter if provided
+            const inboundCampaignId = customParams.campaignId || '';
+            if (inboundCampaignId) {
+              activeCampaign = getCampaign(inboundCampaignId);
+              if (activeCampaign) {
+                logger.info('stream', 'Inbound call campaign loaded', { sessionId, campaignId: inboundCampaignId, campaignName: activeCampaign.name });
+              }
+            }
             logger.info('stream', 'Inbound call connected', { sessionId, callerNumber });
           } else {
             // Outbound call — look up pending session
@@ -137,8 +150,15 @@ export function handleMediaStream(twilioWs: WebSocket): void {
               leadData = session.lead;
               transferConfig = session.transfer;
               callerNumber = session.toPhone || '';
+              // Load campaign config for campaign-specific prompts/voice/settings
+              if (session.campaignId) {
+                activeCampaign = getCampaign(session.campaignId);
+                if (activeCampaign) {
+                  logger.info('stream', 'Outbound call campaign loaded', { sessionId, campaignId: session.campaignId, campaignName: activeCampaign.name });
+                }
+              }
               pendingSessions.delete(callSid);
-              logger.info('stream', 'Session found', { sessionId, lead: leadData.first_name, toPhone: callerNumber });
+              logger.info('stream', 'Session found', { sessionId, lead: leadData.first_name, toPhone: callerNumber, campaignId: session.campaignId || 'none' });
             } else {
               logger.warn('stream', 'No session found, using default', {
                 sessionId,
@@ -227,8 +247,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
   function connectToOpenAIRealtime(): void {
     const s = getSettings();
-    const model = s.realtimeModel;
-    useDeepSeek = s.voiceProvider === 'deepseek';
+    // Use campaign voice config if available, fall back to global settings
+    const campaignVoice = activeCampaign?.voiceConfig;
+    const effectiveVoiceProvider = campaignVoice?.voiceProvider || s.voiceProvider;
+    const model = activeCampaign?.aiProfile?.realtimeModel || s.realtimeModel;
+    useDeepSeek = effectiveVoiceProvider === 'deepseek';
 
     // Fall back to ElevenLabs mode if DeepSeek selected but API key missing
     if (useDeepSeek && !config.deepseek.apiKey) {
@@ -236,7 +259,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       useDeepSeek = false;
     }
 
-    useElevenLabs = s.voiceProvider === 'elevenlabs' || s.voiceProvider === 'deepseek';
+    useElevenLabs = effectiveVoiceProvider === 'elevenlabs' || effectiveVoiceProvider === 'deepseek';
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
 
     logger.info('stream', 'Connecting to OpenAI Realtime', {
@@ -282,8 +305,29 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     bargeInDebounceMs = s.bargeInDebounceMs;
     echoSuppressionMs = s.echoSuppressionMs;
 
+    // Use campaign-specific AI profile and voice when available, fall back to global settings
+    const campaignProfile = activeCampaign?.aiProfile;
+    const campaignVoice = activeCampaign?.voiceConfig;
+    const effectiveAgentName = campaignProfile?.agentName || s.agentName;
+    const effectiveCompanyName = campaignProfile?.companyName || s.companyName;
+
     let instructions: string;
-    if (s.systemPromptOverride) {
+    if (campaignProfile?.systemPrompt && callDirection === 'outbound') {
+      // Campaign has its own system prompt — use it with variable substitution
+      instructions = campaignProfile.systemPrompt
+        .replace(/\{\{first_name\}\}/g, leadData.first_name)
+        .replace(/\{\{state\}\}/g, leadData.state || 'unknown')
+        .replace(/\{\{current_insurer\}\}/g, leadData.current_insurer || 'unknown')
+        .replace(/\{\{agent_name\}\}/g, effectiveAgentName)
+        .replace(/\{\{company_name\}\}/g, effectiveCompanyName)
+        .replace(/\{\{agency_name\}\}/g, leadData.first_name);
+    } else if (campaignProfile?.inboundPrompt && callDirection === 'inbound') {
+      // Campaign has its own inbound prompt
+      instructions = campaignProfile.inboundPrompt
+        .replace(/\{\{caller_number\}\}/g, callerNumber)
+        .replace(/\{\{agent_name\}\}/g, effectiveAgentName)
+        .replace(/\{\{company_name\}\}/g, effectiveCompanyName);
+    } else if (s.systemPromptOverride) {
       instructions = s.systemPromptOverride
         .replace(/\{\{first_name\}\}/g, leadData.first_name)
         .replace(/\{\{state\}\}/g, leadData.state || 'unknown')
@@ -292,12 +336,20 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       instructions = s.inboundPromptOverride
         ? s.inboundPromptOverride
             .replace(/\{\{caller_number\}\}/g, callerNumber)
-            .replace(/\{\{agent_name\}\}/g, s.agentName)
-            .replace(/\{\{company_name\}\}/g, s.companyName)
-        : buildInboundSystemPrompt(callerNumber, { agentName: s.agentName, companyName: s.companyName });
+            .replace(/\{\{agent_name\}\}/g, effectiveAgentName)
+            .replace(/\{\{company_name\}\}/g, effectiveCompanyName)
+        : buildInboundSystemPrompt(callerNumber, { agentName: effectiveAgentName, companyName: effectiveCompanyName });
     } else {
-      instructions = buildSystemPrompt(leadData, { agentName: s.agentName, companyName: s.companyName });
+      instructions = buildSystemPrompt(leadData, { agentName: effectiveAgentName, companyName: effectiveCompanyName });
     }
+
+    logger.info('stream', 'Using campaign config for session', {
+      sessionId,
+      campaignId: activeCampaign?.id || 'none',
+      campaignName: activeCampaign?.name || 'global',
+      agentName: effectiveAgentName,
+      companyName: effectiveCompanyName,
+    });
 
     // Inject lead memory context if available
     const leadContext = buildLeadContext(callerNumber);
@@ -314,14 +366,21 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       }
     }
 
+    // Use campaign-specific temperature and max tokens if available
+    const effectiveTemperature = activeCampaign?.aiProfile?.temperature ?? s.temperature;
+    const effectiveMaxTokens = activeCampaign?.aiProfile?.maxResponseTokens ?? s.maxResponseTokens;
+
+    const effectiveModel = activeCampaign?.aiProfile?.realtimeModel || s.realtimeModel;
+
     logger.info('stream', 'Configuring session', {
       sessionId,
-      voiceProvider: s.voiceProvider,
-      voice: useElevenLabs ? `elevenlabs:${s.elevenlabsVoiceId}` : s.voice,
-      model: s.realtimeModel,
+      campaignId: activeCampaign?.id || 'none',
+      voiceProvider: campaignVoice?.voiceProvider || s.voiceProvider,
+      voice: useElevenLabs ? `elevenlabs:${campaignVoice?.elevenlabsVoiceId || s.elevenlabsVoiceId}` : s.voice,
+      model: effectiveModel,
       vadThreshold: s.vadThreshold,
       silenceDurationMs: s.silenceDurationMs,
-      maxTokens: s.maxResponseTokens,
+      maxTokens: effectiveMaxTokens,
     });
 
     if (useDeepSeek) {
@@ -365,8 +424,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             interrupt_response: true,
           },
           tools: getRealtimeTools(),
-          max_response_output_tokens: s.maxResponseTokens,
-          temperature: s.temperature,
+          max_response_output_tokens: effectiveMaxTokens,
+          temperature: effectiveTemperature,
         },
       }));
     } else {
@@ -375,7 +434,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         session: {
           modalities: ['text', 'audio'],
           instructions,
-          voice: s.voice,
+          voice: campaignVoice?.openaiVoice || s.voice,
           input_audio_format: 'g711_ulaw',
           output_audio_format: 'g711_ulaw',
           input_audio_transcription: { model: 'whisper-1' },
@@ -388,8 +447,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             interrupt_response: true,
           },
           tools: getRealtimeTools(),
-          max_response_output_tokens: s.maxResponseTokens,
-          temperature: s.temperature,
+          max_response_output_tokens: effectiveMaxTokens,
+          temperature: effectiveTemperature,
         },
       }));
     }
@@ -397,15 +456,35 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
   function triggerGreeting(): void {
     const s = getSettings();
-    logger.info('stream', 'Triggering greeting', { sessionId, direction: callDirection, lead: leadData.first_name });
+    const campaignProfile = activeCampaign?.aiProfile;
+    const effectiveAgentName = campaignProfile?.agentName || s.agentName;
+    const effectiveCompanyName = campaignProfile?.companyName || s.companyName;
+
+    logger.info('stream', 'Triggering greeting', { sessionId, direction: callDirection, lead: leadData.first_name, campaignId: activeCampaign?.id || 'none' });
     responseRequestedAt = Date.now();
 
     let greetingInstruction: string;
     if (callDirection === 'inbound') {
-      const greetingText = buildInboundGreetingText({ agentName: s.agentName, companyName: s.companyName });
-      greetingInstruction = `[An inbound call has just connected. Someone is calling your company. Answer the phone warmly. Start with: "${greetingText}"]`;
+      // Use campaign-specific inbound greeting if available
+      if (campaignProfile?.inboundGreetingText) {
+        const greetingText = campaignProfile.inboundGreetingText
+          .replace(/\{\{agent_name\}\}/g, effectiveAgentName)
+          .replace(/\{\{company_name\}\}/g, effectiveCompanyName);
+        greetingInstruction = `[An inbound call has just connected. Someone is calling your company. Answer the phone warmly. Start with: "${greetingText}"]`;
+      } else {
+        const greetingText = buildInboundGreetingText({ agentName: effectiveAgentName, companyName: effectiveCompanyName });
+        greetingInstruction = `[An inbound call has just connected. Someone is calling your company. Answer the phone warmly. Start with: "${greetingText}"]`;
+      }
     } else {
-      greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "Hey — is this ${leadData.first_name}?"]`;
+      // Use campaign-specific outbound greeting if available
+      if (campaignProfile?.greetingText) {
+        const greetingText = campaignProfile.greetingText
+          .replace(/\{\{first_name\}\}/g, leadData.first_name)
+          .replace(/\{\{agency_name\}\}/g, leadData.first_name);
+        greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "${greetingText}"]`;
+      } else {
+        greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "Hey — is this ${leadData.first_name}?"]`;
+      }
     }
 
     if (useDeepSeek) {
@@ -435,18 +514,26 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
   function connectElevenLabs(): void {
     const s = getSettings();
-    if (!config.elevenlabs.apiKey || !s.elevenlabsVoiceId) {
+    // Use campaign voice config for ElevenLabs voice ID, model, and tuning
+    const campaignVoice = activeCampaign?.voiceConfig;
+    const effectiveVoiceId = campaignVoice?.elevenlabsVoiceId || s.elevenlabsVoiceId;
+    const effectiveModelId = campaignVoice?.elevenlabsModelId || s.elevenlabsModelId || 'eleven_turbo_v2_5';
+    const effectiveStability = campaignVoice?.elevenlabsStability ?? s.elevenlabsStability;
+    const effectiveSimilarityBoost = campaignVoice?.elevenlabsSimilarityBoost ?? s.elevenlabsSimilarityBoost;
+
+    if (!config.elevenlabs.apiKey || !effectiveVoiceId) {
       logger.error('stream', 'ElevenLabs MISSING config', {
         sessionId,
         hasApiKey: !!config.elevenlabs.apiKey,
-        voiceId: s.elevenlabsVoiceId || '(empty)',
+        voiceId: effectiveVoiceId || '(empty)',
+        campaignId: activeCampaign?.id || 'none',
       });
       return;
     }
 
-    const voiceId = s.elevenlabsVoiceId;
-    logger.info('stream', 'ElevenLabs connecting', { sessionId, voiceId });
-    const modelId = s.elevenlabsModelId || 'eleven_turbo_v2_5';
+    const voiceId = effectiveVoiceId;
+    logger.info('stream', 'ElevenLabs connecting', { sessionId, voiceId, campaignId: activeCampaign?.id || 'none' });
+    const modelId = effectiveModelId;
     const url = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=${modelId}&output_format=ulaw_8000`;
 
     const ws = new WebSocket(url);
@@ -463,8 +550,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       ws.send(JSON.stringify({
         text: ' ',
         voice_settings: {
-          stability: s.elevenlabsStability,
-          similarity_boost: s.elevenlabsSimilarityBoost,
+          stability: effectiveStability,
+          similarity_boost: effectiveSimilarityBoost,
         },
         xi_api_key: config.elevenlabs.apiKey,
       }));
@@ -973,7 +1060,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         if (event.response?.output) {
           for (const item of event.response.output) {
             if (item.type === 'function_call') {
-              handleFunctionCall(item);
+              handleFunctionCall(item).catch(err => {
+                logger.error('stream', 'Function call error', { sessionId, name: item.name, error: String(err) });
+              });
             }
           }
         }
@@ -1168,7 +1257,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       } else {
         try {
           const s = getSettings();
-          const textBody = `Hi ${prospectName}, it's ${s.agentName} from Quoting Fast! Here's a link to learn more about what we do and schedule a meeting with one of our Agency Lead Reps: https://quotingfast.com/schedule — Pick a time that works for you and we'll walk you through everything. Talk soon!`;
+          const effectiveAgent = activeCampaign?.aiProfile?.agentName || s.agentName;
+          const effectiveCompany = activeCampaign?.aiProfile?.companyName || s.companyName;
+          const textBody = `Hi ${prospectName}, it's ${effectiveAgent} from ${effectiveCompany}! Here's a link to learn more about what we do and schedule a meeting with one of our Agency Lead Reps: https://quotingfast.com/schedule — Pick a time that works for you and we'll walk you through everything. Talk soon!`;
 
           const result = await sendSms(targetPhone, textBody);
           logSms({

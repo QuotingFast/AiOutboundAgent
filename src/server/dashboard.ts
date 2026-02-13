@@ -480,6 +480,13 @@ export function getDashboardHtml(): string {
         <label>Lead State</label>
         <input type="text" id="callState" value="FL" style="max-width:80px">
       </div>
+      <div class="field">
+        <label>Campaign</label>
+        <select id="callCampaign" style="padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px">
+          <option value="campaign-consumer-auto">Consumer Auto</option>
+          <option value="campaign-agency-dev">Agency Dev</option>
+        </select>
+      </div>
       <button class="btn btn-green" id="callBtn" onclick="makeCall()">Call</button>
     </div>
     <div class="call-log" id="callLog" style="margin-top:14px">
@@ -1873,13 +1880,14 @@ async function makeCall() {
   var from = document.getElementById('callFrom').value.trim();
   var name = document.getElementById('callName').value.trim() || 'there';
   var state = document.getElementById('callState').value.trim() || 'FL';
+  var campaignId = document.getElementById('callCampaign').value;
   if (!to) { toast('Enter a phone number', 'error'); return; }
   var btn = document.getElementById('callBtn');
   btn.disabled = true; btn.textContent = 'Calling...';
   try {
     var res = await fetch('/call/start', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ to: to, from: from || undefined, lead: { first_name: name, state: state } }),
+      body: JSON.stringify({ to: to, from: from || undefined, lead: { first_name: name, state: state }, campaign_id: campaignId }),
     });
     var data = await res.json();
     if (res.ok) {

@@ -12,17 +12,18 @@
   "dependencies": {
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
-    "twilio": "^5.3.0",
-    "ws": "^8.18.0",
     "openai": "^4.67.0",
-    "uuid": "^10.0.0"
+    "openclaw": "^2026.2.13",
+    "twilio": "^5.3.0",
+    "uuid": "^10.0.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
-    "@types/ws": "^8.5.12",
     "@types/node": "^22.7.0",
     "@types/uuid": "^10.0.0",
-    "typescript": "^5.6.0",
-    "ts-node": "^10.9.2"
+    "@types/ws": "^8.5.12",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.0"
   }
 }

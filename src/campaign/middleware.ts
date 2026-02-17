@@ -206,13 +206,52 @@ function blockResult(ctx: CampaignContext, action: string, reason: string): Enfo
 
 // ── Express Middleware ──────────────────────────────────────────────
 
+// Routes that never carry campaign identifiers — skip resolution entirely
+// to avoid noisy enforcement_block warnings on every dashboard/API hit.
+const EXEMPT_PREFIXES = [
+  '/dashboard',
+  '/favicon',
+  '/health',
+  '/api/settings',
+  '/api/calls',
+  '/api/recordings',
+  '/api/analytics',
+  '/api/campaigns',
+  '/api/voices',
+  '/api/leads',
+  '/api/prompts',
+  '/api/compliance',
+  '/api/performance',
+  '/api/ab-tests',
+  '/api/security',
+  '/api/workflows',
+  '/api/routing',
+  '/api/default-prompt',
+  '/api/voice-preview',
+  '/api/did-mappings',
+  '/api/campaign-flags',
+  '/api/campaign-callbacks',
+  '/api/outbound-records',
+  '/api/enforcement-log',
+  '/api/notifications',
+  '/api/infer-timezone',
+  '/twilio/status',
+  '/twilio/recording-status',
+  '/twilio/campaign-select',
+];
+
+function isExemptRoute(path: string): boolean {
+  return EXEMPT_PREFIXES.some(prefix => path.startsWith(prefix));
+}
+
 /**
  * Express middleware that resolves CampaignContext from the request.
  * Attaches to req.campaignContext if resolved.
+ * Skips routes that never carry campaign identifiers (dashboard, settings, etc.).
  * For routes that REQUIRE campaign context, use requireCampaignContext().
  */
 export function resolveCampaignMiddleware(req: Request, _res: Response, next: NextFunction): void {
-  if (!isFeatureFlagEnabled('hardened_campaign_isolation')) {
+  if (!isFeatureFlagEnabled('hardened_campaign_isolation') || isExemptRoute(req.path)) {
     next();
     return;
   }

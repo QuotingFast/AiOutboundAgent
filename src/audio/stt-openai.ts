@@ -48,7 +48,7 @@ export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
     const file = new File([wavBuffer], 'audio.wav', { type: 'audio/wav' });
     const result = await openai.audio.transcriptions.create({
       model: 'whisper-1',
-      file,
+      file: file as any,
       language: 'en',
       response_format: 'text',
       prompt: 'This is a phone conversation about auto insurance quotes.',

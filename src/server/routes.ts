@@ -446,8 +446,19 @@ router.get('/api/settings', (_req: Request, res: Response) => {
 });
 
 router.put('/api/settings', (req: Request, res: Response) => {
-  const updated = updateSettings(req.body);
-  logger.info('routes', 'Settings updated', { keys: Object.keys(req.body) });
+  const b = req.body;
+  const errors: string[] = [];
+  if (b.maxCallDurationSec !== undefined && b.maxCallDurationSec < 0) errors.push('maxCallDurationSec cannot be negative');
+  if (b.maxCallsPerPhonePerDay !== undefined && b.maxCallsPerPhonePerDay < 0) errors.push('maxCallsPerPhonePerDay cannot be negative');
+  if (b.callDurationWarnPct !== undefined && (b.callDurationWarnPct < 0 || b.callDurationWarnPct > 100)) errors.push('callDurationWarnPct must be 0-100');
+  if (b.vadThreshold !== undefined && (b.vadThreshold < 0 || b.vadThreshold > 1)) errors.push('vadThreshold must be 0-1');
+  if (b.backgroundNoiseVolume !== undefined && (b.backgroundNoiseVolume < 0 || b.backgroundNoiseVolume > 0.5)) errors.push('backgroundNoiseVolume must be 0-0.5');
+  if (errors.length) {
+    res.status(400).json({ error: 'Validation failed', details: errors });
+    return;
+  }
+  const updated = updateSettings(b);
+  logger.info('routes', 'Settings updated', { keys: Object.keys(b) });
   res.json(updated);
 });
 
@@ -929,6 +940,38 @@ router.get('/api/leads', (req: Request, res: Response) => {
 
 router.get('/api/leads/callbacks', (_req: Request, res: Response) => {
   res.json(getLeadsForCallback());
+});
+
+/**
+ * GET /api/leads/export
+ * Export all leads as CSV.
+ * NOTE: Must be registered before /api/leads/:phone to avoid route conflict.
+ */
+router.get('/api/leads/export', (_req: Request, res: Response) => {
+  const csv = exportLeadsToCSV();
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=leads.csv');
+  res.send(csv);
+});
+
+/**
+ * GET /api/leads/search
+ * Search leads with filters.
+ * NOTE: Must be registered before /api/leads/:phone to avoid route conflict.
+ */
+router.get('/api/leads/search', (req: Request, res: Response) => {
+  const result = searchLeads({
+    query: req.query.q as string,
+    disposition: req.query.disposition as string,
+    state: req.query.state as string,
+    tag: req.query.tag as string,
+    dateFrom: req.query.dateFrom as string,
+    dateTo: req.query.dateTo as string,
+    source: req.query.source as string,
+    page: req.query.page ? parseInt(req.query.page as string) : undefined,
+    limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+  });
+  res.json(result);
 });
 
 router.get('/api/leads/:phone', (req: Request, res: Response) => {
@@ -1818,38 +1861,6 @@ router.post('/api/leads/import', (req: Request, res: Response) => {
     return;
   }
   const result = importLeadsFromCSV(csv);
-  res.json(result);
-});
-
-/**
- * GET /api/leads/export
- * Export all leads as CSV.
- */
-router.get('/api/leads/export', (_req: Request, res: Response) => {
-  const csv = exportLeadsToCSV();
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename=leads.csv');
-  res.send(csv);
-});
-
-// ── Lead Search ─────────────────────────────────────────────────────
-
-/**
- * GET /api/leads/search
- * Search leads with filters.
- */
-router.get('/api/leads/search', (req: Request, res: Response) => {
-  const result = searchLeads({
-    query: req.query.q as string,
-    disposition: req.query.disposition as string,
-    state: req.query.state as string,
-    tag: req.query.tag as string,
-    dateFrom: req.query.dateFrom as string,
-    dateTo: req.query.dateTo as string,
-    source: req.query.source as string,
-    page: req.query.page ? parseInt(req.query.page as string) : undefined,
-    limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
-  });
   res.json(result);
 });
 

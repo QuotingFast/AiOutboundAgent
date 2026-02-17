@@ -169,7 +169,7 @@ export class CallAnalytics {
   private updateLatencyStats(): void {
     const totals = this.data.latencyHistory
       .map(l => l.totalMs)
-      .filter((t): t is number => t !== undefined);
+      .filter((t): t is number => t !== undefined && t > 0);
     if (totals.length === 0) return;
     this.data.avgLatencyMs = Math.round(totals.reduce((a, b) => a + b, 0) / totals.length);
     this.data.maxLatencyMs = Math.max(...totals);
@@ -258,6 +258,13 @@ export class CallAnalytics {
       c.elevenlabsCharacters * PRICING.elevenlabsPerChar +
       durationMin * PRICING.twilioPerMin
     ).toFixed(4));
+
+    // Reclassify "dropped" calls that had significant engagement
+    if (this.data.outcome === 'dropped' && (this.data.turnCount >= 5 || this.data.durationMs > 60000)) {
+      this.data.outcome = 'ended';
+      this.data.endReason = this.data.endReason || 'reclassified: significant engagement detected';
+      this.addTag('auto-reclassified');
+    }
 
     // Auto-score if not manually scored
     if (this.data.score === undefined) {

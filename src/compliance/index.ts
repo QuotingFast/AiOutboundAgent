@@ -62,24 +62,29 @@ export interface TimeCheckResult {
   localTime: string;
   timezone: string;
   reason?: string;
+  stateValid: boolean;
 }
 
 export function checkCallTimeAllowed(state?: string): TimeCheckResult {
-  const tz = state ? STATE_TIMEZONES[state.toUpperCase()] : undefined;
+  const upperState = state ? state.toUpperCase().trim() : undefined;
+  const tz = upperState ? STATE_TIMEZONES[upperState] : undefined;
+  const stateValid = !state || !!tz;
   const timezone = tz || 'America/New_York'; // Default to Eastern if unknown
 
   const now = new Date();
   const localTime = now.toLocaleString('en-US', { timeZone: timezone, hour: 'numeric', minute: 'numeric', hour12: true });
   const localHour = parseInt(now.toLocaleString('en-US', { timeZone: timezone, hour: 'numeric', hour12: false }));
 
+  const warning = !stateValid ? `Unknown state code "${state}" — defaulting to Eastern time. ` : '';
+
   if (localHour < 8) {
-    return { allowed: false, localTime, timezone, reason: `Too early: ${localTime} local time (before 8am TCPA window)` };
+    return { allowed: false, localTime, timezone, stateValid, reason: `${warning}Too early: ${localTime} local time (before 8am TCPA window)` };
   }
   if (localHour >= 21) {
-    return { allowed: false, localTime, timezone, reason: `Too late: ${localTime} local time (after 9pm TCPA window)` };
+    return { allowed: false, localTime, timezone, stateValid, reason: `${warning}Too late: ${localTime} local time (after 9pm TCPA window)` };
   }
 
-  return { allowed: true, localTime, timezone };
+  return { allowed: true, localTime, timezone, stateValid, reason: warning || undefined };
 }
 
 // ── TCPA Consent tracking ───────────────────────────────────────────

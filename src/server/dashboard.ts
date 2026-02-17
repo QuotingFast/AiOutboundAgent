@@ -291,7 +291,7 @@ export function getDashboardHtml(): string {
     <div class="nav-section-label">Insights</div>
     <button class="nav-item" onclick="switchTab('analytics')">
       <span class="nav-icon">&#128200;</span> Analytics
-      <span class="nav-badge">3</span>
+      <span class="nav-badge" id="analyticsBadge" style="display:none"></span>
     </button>
     <button class="nav-item" onclick="switchTab('monitoring')">
       <span class="nav-icon">&#128994;</span> Monitoring
@@ -1511,7 +1511,8 @@ export function getDashboardHtml(): string {
       <code style="background:var(--surface2);padding:2px 6px;border-radius:3px">{{state}}</code>,
       <code style="background:var(--surface2);padding:2px 6px;border-radius:3px">{{current_insurer}}</code>.
     </p>
-    <textarea id="systemPromptOverride" placeholder="Leave empty for default prompt..."></textarea>
+    <textarea id="systemPromptOverride" placeholder="Leave empty for default prompt..." oninput="updatePromptCounter()"></textarea>
+    <div id="promptCounter" style="font-size:11px;color:var(--text2);margin-top:4px;margin-bottom:8px"></div>
     <div class="section-actions">
       <button class="btn btn-secondary" onclick="loadDefaultPrompt()">Load Default</button>
       <button class="btn btn-secondary" onclick="clearPrompt()">Clear</button>
@@ -1586,7 +1587,7 @@ export function getDashboardHtml(): string {
       </div>
       <div>
         <label>Duration Warn %</label>
-        <input type="number" id="callDurationWarnPct" value="80" min="50" max="95" step="5">
+        <input type="number" id="callDurationWarnPct" value="80" min="0" max="100" step="5">
       </div>
       <div>
         <label>Silence Timeout (sec)</label>
@@ -1687,7 +1688,16 @@ export function getDashboardHtml(): string {
 var sidebarEl = document.getElementById('sidebar');
 var overlayEl = document.getElementById('sidebarOverlay');
 var toggleEl = document.getElementById('menuToggle');
-toggleEl.addEventListener('click', function() { sidebarEl.classList.toggle('open'); overlayEl.classList.toggle('show'); });
+var sidebarToggling = false;
+toggleEl.addEventListener('click', function(e) {
+  e.stopPropagation();
+  if (sidebarToggling) return;
+  sidebarToggling = true;
+  var isOpen = sidebarEl.classList.contains('open');
+  if (isOpen) { sidebarEl.classList.remove('open'); overlayEl.classList.remove('show'); }
+  else { sidebarEl.classList.add('open'); overlayEl.classList.add('show'); }
+  setTimeout(function() { sidebarToggling = false; }, 300);
+});
 overlayEl.addEventListener('click', function() { sidebarEl.classList.remove('open'); overlayEl.classList.remove('show'); });
 
 // ── Tab/Page titles ──
@@ -1709,7 +1719,7 @@ function switchTab(name) {
   sidebarEl.classList.remove('open');
   overlayEl.classList.remove('show');
   // Load tab data
-  if (name === 'campaigns') loadCampaignConfig(currentCampaignId);
+  if (name === 'campaigns') { loadCampaignConfig(currentCampaignId); loadCampaignStats(); }
   if (name === 'recordings') loadRecordings();
   if (name === 'analytics') loadAnalytics();
   if (name === 'monitoring') loadMonitoring();
@@ -1774,6 +1784,25 @@ function toast(msg, type) {
   el.className = 'toast ' + type + ' show';
   setTimeout(function() { el.classList.remove('show'); }, 3000);
 }
+function formatPhone(phone) {
+  if (!phone) return '--';
+  var digits = String(phone).replace(/\\D/g, '');
+  if (digits.length === 10) return '+1' + digits;
+  if (digits.length === 11 && digits[0] === '1') return '+' + digits;
+  if (String(phone).indexOf('+') === 0) return phone;
+  return '+1' + digits;
+}
+function resolveVoiceName(voice) {
+  if (!voice) return '--';
+  // Check EL_VOICES lookup (defined later, but available at call time)
+  if (typeof EL_VOICES !== 'undefined' && EL_VOICES[voice]) return EL_VOICES[voice];
+  // Check for deepseek+el: prefix
+  if (voice.indexOf('deepseek+el:') === 0) {
+    var elId = voice.substring(12);
+    if (typeof EL_VOICES !== 'undefined' && EL_VOICES[elId]) return EL_VOICES[elId] + ' (DeepSeek)';
+  }
+  return voice;
+}
 
 async function loadSettings() {
   try {
@@ -1812,6 +1841,7 @@ async function loadSettings() {
       var cbEl = document.getElementById(CHECKBOX_FIELDS[ci]);
       if (cbEl) cbEl.checked = !!s[CHECKBOX_FIELDS[ci]];
     }
+    updatePromptCounter();
     toast('Settings loaded', 'success');
   } catch (e) { toast('Failed to load settings', 'error'); }
 }
@@ -1862,6 +1892,7 @@ async function saveSettings() {
     if (vad < 0 || vad > 1) { toast('VAD threshold must be 0-1', 'error'); return; }
     if (body.backgroundNoiseVolume < 0 || body.backgroundNoiseVolume > 0.5) { toast('Noise volume must be 0-0.5', 'error'); return; }
     if (body.maxCallDurationSec < 0) { toast('Max duration cannot be negative', 'error'); return; }
+    if (body.callDurationWarnPct < 0 || body.callDurationWarnPct > 100) { toast('Warn % must be 0-100', 'error'); return; }
     if (body.maxCallsPerPhonePerDay < 0) { toast('Rate limit cannot be negative', 'error'); return; }
     var ct = document.getElementById('callTo').value.trim();
     var cf = document.getElementById('callFrom').value.trim();
@@ -1916,15 +1947,39 @@ function addLog(html) {
   log.scrollTop = log.scrollHeight;
 }
 
+function updatePromptCounter() {
+  var text = document.getElementById('systemPromptOverride').value;
+  var chars = text.length;
+  var words = text.trim() ? text.trim().split(/\\s+/).length : 0;
+  document.getElementById('promptCounter').textContent = chars + ' characters / ' + words + ' words';
+}
 async function loadDefaultPrompt() {
-  try { var res = await fetch('/api/default-prompt'); var d = await res.json(); document.getElementById('systemPromptOverride').value = d.prompt; toast('Loaded', 'success'); }
+  try { var res = await fetch('/api/default-prompt'); var d = await res.json(); document.getElementById('systemPromptOverride').value = d.prompt; updatePromptCounter(); toast('Loaded', 'success'); }
   catch (e) { toast('Failed', 'error'); }
 }
-function clearPrompt() { document.getElementById('systemPromptOverride').value = ''; toast('Cleared', 'success'); }
+function clearPrompt() { if (!confirm('Clear the entire system prompt? This cannot be undone.')) return; document.getElementById('systemPromptOverride').value = ''; updatePromptCounter(); toast('Cleared', 'success'); }
 
 function copyWebhookUrl() {
   var url = document.getElementById('inboundWebhookUrl').value;
-  navigator.clipboard.writeText(url).then(function() { toast('Copied!', 'success'); }).catch(function() { toast('Copy failed', 'error'); });
+  var btn = event && event.target ? event.target : null;
+  function onCopied() {
+    toast('Copied to clipboard!', 'success');
+    if (btn) { var orig = btn.textContent; btn.textContent = 'Copied!'; setTimeout(function() { btn.textContent = orig; }, 2000); }
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(onCopied).catch(function() {
+      // Fallback for non-HTTPS contexts
+      var ta = document.createElement('textarea'); ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); onCopied(); } catch (e) { toast('Copy failed', 'error'); }
+      document.body.removeChild(ta);
+    });
+  } else {
+    var ta = document.createElement('textarea'); ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); onCopied(); } catch (e) { toast('Copy failed', 'error'); }
+    document.body.removeChild(ta);
+  }
 }
 
 async function loadCallHistory() {
@@ -1948,12 +2003,12 @@ async function loadCallHistory() {
       var cost = dur ? (dur / 60) * 0.014 : 0;
       totalCost += cost;
       var costStr = cost > 0 ? '$' + cost.toFixed(3) : '--';
-      html += '<tr><td style="font-size:11px">' + t + '</td><td>' + c.to + '</td><td>' + c.leadName + '</td>'
-        + '<td>' + (s.voiceProvider || 'openai') + '</td><td style="color:var(--accent)">' + s.voice + '</td><td>' + s.agentName + '</td>'
+      html += '<tr><td style="font-size:11px">' + t + '</td><td style="font-family:monospace;font-size:11px">' + formatPhone(c.to) + '</td><td>' + c.leadName + '</td>'
+        + '<td>' + (s.voiceProvider || 'openai') + '</td><td style="color:var(--accent)">' + resolveVoiceName(s.voice) + '</td><td>' + s.agentName + '</td>'
         + '<td>' + durStr + '</td><td style="color:#4ade80">' + costStr + '</td></tr>';
     }
     html += '</table>';
-    if (totalCost > 0) html += '<div style="margin-top:8px;font-size:12px;color:var(--text2)">Total Twilio cost: <span style="color:#4ade80;font-weight:600">$' + totalCost.toFixed(3) + '</span></div>';
+    if (totalCost > 0) html += '<div style="margin-top:8px;font-size:12px;color:var(--text2)">Twilio telecom cost: <span style="color:#4ade80;font-weight:600">$' + totalCost.toFixed(3) + '</span></div>';
     el.innerHTML = html;
   } catch (e) { document.getElementById('callHistory').innerHTML = '<span class="err">Failed</span>'; }
 }
@@ -1965,7 +2020,7 @@ async function loadRecordings() {
     var data = await res.json();
     var el = document.getElementById('recordingsTable');
     var recordings = data.recordings || [];
-    if (!recordings.length) { el.innerHTML = '<div class="empty-state">No recordings yet. Recordings appear after calls complete.</div>'; return; }
+    if (!recordings.length) { el.innerHTML = '<div class="empty-state">No recordings yet.<br><span style="font-size:12px;color:var(--text2)">Ensure RECORDING_ENABLED=true in your settings and the Twilio recording-status webhook is configured at: <code>' + location.origin + '/twilio/recording-status</code></span></div>'; return; }
     var totalCost = 0;
     var html = '<table class="data-table"><tr><th>Time</th><th>Phone</th><th>Lead</th><th>Disposition</th><th>Duration</th><th>Source</th><th>Est. Cost</th><th>Play</th></tr>';
     for (var i = 0; i < recordings.length; i++) {
@@ -1979,7 +2034,7 @@ async function loadRecordings() {
       var db = r.disposition === 'transferred' ? 'badge-green' : r.disposition === 'not_interested' ? 'badge-red' : 'badge-gray';
       html += '<tr>'
         + '<td style="font-size:11px">' + t + '</td>'
-        + '<td style="font-family:monospace;font-size:11px">' + (r.phone || '--') + '</td>'
+        + '<td style="font-family:monospace;font-size:11px">' + formatPhone(r.phone) + '</td>'
         + '<td>' + (r.leadName || '--') + '</td>'
         + '<td><span class="badge ' + db + '">' + (r.disposition || '--') + '</span></td>'
         + '<td>' + dur + '</td>'
@@ -2082,7 +2137,7 @@ async function loadAnalytics() {
       '<div class="stat-card"><div class="stat-value">' + summary.totalCalls + '</div><div class="stat-label">Total Calls</div></div>'
       + '<div class="stat-card green"><div class="stat-value">' + summary.transferRate + '%</div><div class="stat-label">Transfer Rate</div></div>'
       + '<div class="stat-card cyan"><div class="stat-value">' + summary.avgLatencyMs + 'ms</div><div class="stat-label">Avg Latency</div></div>'
-      + '<div class="stat-card orange"><div class="stat-value">$' + summary.totalCostUsd + '</div><div class="stat-label">Total Cost</div></div>';
+      + '<div class="stat-card orange"><div class="stat-value">$' + summary.totalCostUsd + '</div><div class="stat-label">Total Cost (AI + Telecom)</div></div>';
     var o = summary.outcomes || {};
     document.getElementById('analyticsOutcomes').innerHTML =
       '<div class="stat-card green"><div class="stat-value">' + (o.transferred||0) + '</div><div class="stat-label">Transferred</div></div>'
@@ -2103,6 +2158,11 @@ async function loadAnalytics() {
         + '<td>' + (a.score != null ? a.score : '--') + '</td><td>$' + (a.costEstimate ? a.costEstimate.estimatedCostUsd : '--') + '</td><td>' + (tags||'--') + '</td></tr>';
     }
     tEl.innerHTML = html + '</table>';
+    // Update analytics badge with dropped call count
+    var badgeEl = document.getElementById('analyticsBadge');
+    var dropped = (summary.outcomes || {}).dropped || 0;
+    if (dropped > 0) { badgeEl.textContent = dropped; badgeEl.style.display = ''; badgeEl.title = dropped + ' dropped call(s)'; }
+    else { badgeEl.style.display = 'none'; }
   } catch (e) { document.getElementById('analyticsTable').innerHTML = '<div class="empty-state">Failed to load</div>'; }
 }
 
@@ -2118,7 +2178,7 @@ async function loadMonitoring() {
       '<div class="stat-card"><div class="stat-value">' + health.activeSessions + '</div><div class="stat-label">Active</div></div>'
       + '<div class="stat-card"><div class="stat-value">' + health.maxSessions + '</div><div class="stat-label">Max</div></div>'
       + '<div class="stat-card"><div class="stat-value">' + health.queueSize + '</div><div class="stat-label">Queue</div></div>'
-      + '<div class="stat-card ' + sc + '"><div class="stat-value">' + health.utilization + '%</div><div class="stat-label">' + health.status + '</div></div>';
+      + '<div class="stat-card ' + sc + '"><div class="stat-value">' + health.utilization + '% <span class="badge badge-' + sc + '" style="font-size:10px;vertical-align:middle">' + health.status.toUpperCase() + '</span></div><div class="stat-label">Utilization</div></div>';
     document.getElementById('maxConcurrency').value = sessions.max;
     var sEl = document.getElementById('activeSessions');
     if (!sessions.sessions.length) { sEl.innerHTML = '<div class="empty-state">No active sessions</div>'; }
@@ -2149,6 +2209,7 @@ async function loadMonitoring() {
 async function updateConcurrency() {
   try {
     var max = parseInt(document.getElementById('maxConcurrency').value);
+    if (isNaN(max) || max < 1) { toast('Must be at least 1', 'error'); return; }
     var res = await fetch('/api/performance/concurrency', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ max: max }) });
     if (res.ok) toast('Updated to ' + max, 'success'); else toast('Failed', 'error');
   } catch (e) { toast('Failed', 'error'); }
@@ -2171,7 +2232,9 @@ async function loadDnc() {
 }
 async function addDnc() {
   var phone = document.getElementById('dncPhone').value.trim();
-  if (!phone) { toast('Enter number', 'error'); return; }
+  if (!phone) { toast('Enter a phone number', 'error'); return; }
+  var digits = phone.replace(/\\D/g, '');
+  if (digits.length < 10) { toast('Invalid phone number — must be at least 10 digits', 'error'); return; }
   await fetch('/api/compliance/dnc', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone: phone }) });
   document.getElementById('dncPhone').value = '';
   toast('Added to DNC', 'success');
@@ -2184,11 +2247,13 @@ async function removeDnc(phone) {
 }
 async function checkTcpa() {
   var state = document.getElementById('tcpaState').value.trim();
+  if (!state) { toast('Enter a state code', 'error'); return; }
   var res = await fetch('/api/compliance/time-check?state=' + encodeURIComponent(state));
   var data = await res.json();
   var el = document.getElementById('tcpaResult');
-  if (data.allowed) el.innerHTML = '<span class="badge badge-green">ALLOWED</span> ' + data.localTime + ' (' + data.timezone + ')';
-  else el.innerHTML = '<span class="badge badge-red">BLOCKED</span> ' + (data.reason || 'Outside window') + ' (' + data.timezone + ')';
+  var warn = data.stateValid === false ? '<span class="badge badge-orange">INVALID STATE</span> ' : '';
+  if (data.allowed) el.innerHTML = warn + '<span class="badge badge-green">ALLOWED</span> ' + data.localTime + ' (' + data.timezone + ')' + (data.reason ? ' <span style="font-size:11px;color:var(--orange)">' + data.reason + '</span>' : '');
+  else el.innerHTML = warn + '<span class="badge badge-red">BLOCKED</span> ' + (data.reason || 'Outside window') + ' (' + data.timezone + ')';
 }
 async function loadAuditLog() {
   try {
@@ -2224,7 +2289,7 @@ async function loadLeads(page) {
     var data = await res.json();
     var leads = data.leads || [];
     var el = document.getElementById('leadsTable');
-    if (!leads.length) { el.innerHTML = '<div class="empty-state">No leads found' + (data.total ? ' (' + data.total + ' total)' : '') + '</div>'; document.getElementById('leadsPagination').innerHTML=''; return; }
+    if (!leads.length) { el.innerHTML = '<div class="empty-state">No leads found' + (data.total ? ' (' + data.total + ' total)' : '') + '.<br><span style="font-size:12px;color:var(--text2)">Leads are created from web form submissions, CSV imports, or the API.</span></div>'; document.getElementById('leadsPagination').innerHTML=''; return; }
     var html = '<table class="data-table"><tr><th>Phone</th><th>Name</th><th>State</th><th>Disposition</th><th>Score</th><th>Calls</th><th>Last Contact</th><th>Tags</th></tr>';
     for (var i = 0; i < leads.length; i++) {
       var l = leads[i];
@@ -2516,6 +2581,55 @@ document.querySelectorAll('input[type=range]').forEach(function(el) {
   });
 });
 
+// ── Campaign Stats ──
+async function loadCampaignStats() {
+  try {
+    var r = await Promise.all([
+      fetch('/api/analytics/history'),
+      fetch('/api/callbacks'),
+      fetch('/api/sms/log?limit=200')
+    ]);
+    var analytics = await r[0].json();
+    var callbacks = await r[1].json();
+    var smsLogs = await r[2].json();
+    var today = new Date().toDateString();
+    // Count calls per campaign from analytics (today only)
+    var consumerCalls = 0, consumerTransfers = 0, agencyCalls = 0, agencyMeetings = 0;
+    (analytics || []).forEach(function(a) {
+      var isToday = a.startTime && new Date(a.startTime).toDateString() === today;
+      if (!isToday) return;
+      var tags = a.tags || [];
+      var isCons = tags.indexOf('campaign:campaign-consumer-auto') > -1 || tags.indexOf('consumer') > -1;
+      var isAgency = tags.indexOf('campaign:campaign-agency-dev') > -1 || tags.indexOf('agency') > -1;
+      if (isCons) { consumerCalls++; if (a.outcome === 'transferred') consumerTransfers++; }
+      else if (isAgency) { agencyCalls++; if (a.outcome === 'transferred') agencyMeetings++; }
+      else { consumerCalls++; if (a.outcome === 'transferred') consumerTransfers++; }
+    });
+    // Count callbacks per campaign
+    var consumerCallbacks = 0, agencyCallbacks = 0;
+    (callbacks || []).forEach(function(cb) {
+      if (cb.campaignId === 'campaign-agency-dev') agencyCallbacks++;
+      else consumerCallbacks++;
+    });
+    // Count SMS per campaign (today only)
+    var consumerSms = 0, agencySms = 0;
+    (smsLogs || []).forEach(function(s) {
+      var isToday = s.timestamp && new Date(s.timestamp).toDateString() === today;
+      if (!isToday || s.direction !== 'outbound') return;
+      if (s.campaignId === 'campaign-agency-dev') agencySms++;
+      else consumerSms++;
+    });
+    document.getElementById('consumerCalls').textContent = consumerCalls;
+    document.getElementById('consumerTransfers').textContent = consumerTransfers;
+    document.getElementById('consumerCallbacks').textContent = consumerCallbacks;
+    document.getElementById('consumerSms').textContent = consumerSms;
+    document.getElementById('agencyCalls').textContent = agencyCalls;
+    document.getElementById('agencyMeetings').textContent = agencyMeetings;
+    document.getElementById('agencyCallbacks').textContent = agencyCallbacks;
+    document.getElementById('agencySms').textContent = agencySms;
+  } catch (e) { console.error('loadCampaignStats', e); }
+}
+
 // ── Campaigns ──
 var currentCampaignId = 'campaign-consumer-auto';
 var campaignData = {};
@@ -2719,6 +2833,7 @@ async function loadCampaignFlags() {
   var panel = document.getElementById('featureFlagsPanel');
   panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
   if (panel.style.display === 'none') return;
+  setTimeout(function() { panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 350);
   try {
     var res = await fetch('/api/campaign-flags');
     var flags = await res.json();
@@ -2746,10 +2861,13 @@ async function loadEnforcementLog() {
   var panel = document.getElementById('enforcementLogPanel');
   panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
   if (panel.style.display === 'none') return;
+  setTimeout(function() { panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 350);
   try {
     var res = await fetch('/api/enforcement-log?limit=50');
     var logs = await res.json();
     var el = document.getElementById('enforcementLogContent');
+    // Filter out page navigation noise (entries with no campaign and no phone)
+    logs = logs.filter(function(log) { return log.campaignId || log.phone; });
     if (!logs.length) { el.innerHTML = '<div class="empty-state">No enforcement events</div>'; return; }
     var html = '<table class="data-table"><tr><th>Time</th><th>Event</th><th>Campaign</th><th>Phone</th><th>Action</th><th>Result</th><th>Reason</th></tr>';
     logs.forEach(function(log) {
@@ -2790,6 +2908,8 @@ async function loadCampaignSmsTemplates(id) {
 loadSettings();
 loadCallHistory();
 loadCampaignConfig('campaign-consumer-auto');
+loadCampaignStats();
+updatePromptCounter();
 </script>
 </body>
 </html>`;

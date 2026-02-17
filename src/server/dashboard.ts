@@ -2636,6 +2636,8 @@ var campaignData = {};
 
 function selectCampaignView(id) {
   currentCampaignId = id;
+  var callCampaignEl = document.getElementById('callCampaign');
+  if (callCampaignEl) callCampaignEl.value = id;
   document.getElementById('toggleConsumer').className = 'btn campaign-toggle ' + (id === 'campaign-consumer-auto' ? 'btn-primary active' : 'btn-secondary');
   document.getElementById('toggleAgency').className = 'btn campaign-toggle ' + (id === 'campaign-agency-dev' ? 'btn-primary active' : 'btn-secondary');
   if (id === 'campaign-consumer-auto') {

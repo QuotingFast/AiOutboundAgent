@@ -298,7 +298,7 @@ export function seedCampaigns(): void {
     realtimeModel: 'gpt-4o-realtime-preview',
     systemPrompt: buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}' }),
     inboundPrompt: '',
-    greetingText: 'Hi, is this {{first_name}}?',
+    greetingText: 'Hey {{first_name}}, this is Alex over at Affordable Auto Rates — you had looked into an auto insurance quote not too long ago, right?',
     inboundGreetingText: 'Thanks for calling Affordable Auto Rates, this is Alex. How can I help you today?',
     tools: [],
   };

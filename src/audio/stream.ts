@@ -4,19 +4,17 @@ import { config } from '../config';
 import { getSettings } from '../config/runtime';
 import { buildSystemPrompt, buildInboundSystemPrompt, buildInboundGreetingText, getRealtimeTools, LeadData, TransferConfig } from '../agent/prompts';
 import { executeWarmTransfer } from '../twilio/transfer';
-import { endCall, startCallRecording } from '../twilio/client';
+import { endCall, startCallRecording, sendSms } from '../twilio/client';
 import { logger } from '../utils/logger';
 import { createCallAnalytics, finalizeCallAnalytics, CallAnalytics } from '../analytics';
 import { ConversationIntelligence } from '../conversation/intelligence';
 import { registerSession, removeSession, updateSessionStatus, onSessionFreed } from '../performance';
-import { buildLeadContext, recordCallToLead } from '../memory';
+import { buildLeadContext, recordCallToLead, addLeadNote } from '../memory';
 import { runPostCallWorkflow } from '../workflows';
 import { redactPII } from '../security';
 import { mixNoiseIntoAudio, resetNoisePosition } from './noise';
 import { handleAutoDnc, recordPhoneCall } from '../compliance';
-import { endCall as endCallTwilio, sendSms } from '../twilio/client';
 import { logSms } from '../sms';
-import { addLeadNote } from '../memory';
 import {
   notifySchedulingTextSent,
   notifySchedulingEmailSent,
@@ -188,7 +186,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
                 silenceDisconnectFired = true;
                 logger.warn('stream', 'Silence timeout reached, ending call', { sessionId, callSid, silentSec: Math.round(silentSec), timeoutSec: s2.silenceTimeoutSec });
                 if (analytics) analytics.setOutcome('dropped', `Silence timeout: no speech for ${Math.round(silentSec)}s`);
-                endCallTwilio(callSid).catch(() => {});
+                endCall(callSid).catch(() => {});
               }
             }, 5000); // Check every 5 seconds
           }
@@ -1536,7 +1534,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
         // Force end after 10s grace period
         setTimeout(async () => {
-          try { await endCallTwilio(callSid); } catch {}
+          try { await endCall(callSid); } catch {}
         }, 10_000);
       } else if (!durationWarningFired && elapsedSec >= warnThreshold) {
         durationWarningFired = true;

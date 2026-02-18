@@ -13,6 +13,7 @@ import {
   getCampaign,
 } from './store';
 import { config } from '../config';
+import { escapeXml } from '../twilio/twiml';
 
 export interface CallbackResolution {
   resolved: boolean;
@@ -227,11 +228,3 @@ export function handleCampaignSelection(digit: string, callerPhone: string): {
   };
 }
 
-function escapeXml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}

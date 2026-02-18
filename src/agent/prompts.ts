@@ -322,12 +322,6 @@ ABSOLUTE DON'Ts:
 - Do not be pushy — they called you, so be helpful and responsive.`;
 }
 
-export function buildGreetingText(lead: LeadData, overrides?: { agentName?: string; companyName?: string }): string {
-  const agentName = overrides?.agentName || 'Alex';
-  const companyName = overrides?.companyName || 'Affordable Auto Rates';
-  return `Hey ${lead.first_name}, this is ${agentName} over at ${companyName} — you had looked into an auto insurance quote not too long ago, right?`;
-}
-
 export function buildInboundGreetingText(overrides?: { agentName?: string; companyName?: string }): string {
   const agentName = overrides?.agentName || 'Alex';
   const companyName = overrides?.companyName || 'Quoting Fast';

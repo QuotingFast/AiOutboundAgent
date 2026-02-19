@@ -222,6 +222,21 @@ export function getRealtimeTools(): any[] {
         required: ['callback_time', 'prospect_name'],
       },
     },
+    {
+      type: 'function',
+      name: 'send_dtmf',
+      description: 'Send DTMF touch-tone digits on the active call. Use this to navigate automated phone systems (IVR menus) by pressing buttons. For example, send "0" to reach an operator, "1" to select option 1, etc. You can send multiple digits like "1w0" where "w" adds a half-second pause between digits. Only use this when you hear an automated system asking you to press a number.',
+      parameters: {
+        type: 'object',
+        properties: {
+          digits: {
+            type: 'string',
+            description: 'The DTMF digits to send. Valid characters: 0-9, *, #, w (500ms pause). Examples: "0" for operator, "1" for option 1, "2w1" for option 2 then option 1.',
+          },
+        },
+        required: ['digits'],
+      },
+    },
   ];
 }
 

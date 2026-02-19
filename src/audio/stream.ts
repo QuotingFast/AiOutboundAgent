@@ -1261,7 +1261,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           const s = getSettings();
           const effectiveAgent = activeCampaign?.aiProfile?.agentName || s.agentName;
           const effectiveCompany = activeCampaign?.aiProfile?.companyName || s.companyName;
-          const textBody = `Hi ${prospectName}, it's ${effectiveAgent} from ${effectiveCompany}! Here's a link to learn more about what we do and schedule a meeting with one of our Agency Lead Reps: https://quotingfast.com/schedule — Pick a time that works for you and we'll walk you through everything. Talk soon!`;
+          const textBody = `Hi ${prospectName}, it's ${effectiveAgent} from ${effectiveCompany}! Here's a link to learn more about what we do and schedule a meeting with one of our Agency Lead Reps: https://quotingfast.com — Pick a time that works for you and we'll walk you through everything. Talk soon!`;
 
           const result = await sendSms(targetPhone, textBody);
           logSms({
@@ -1320,9 +1320,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           const emailBody = `<p>Hi ${prospectName},</p>
 <p>Great chatting with you! As promised, here's a link to learn more about Quoting Fast and schedule a meeting with one of our Agency Lead Reps:</p>
 <p style="text-align:center;margin:20px 0;">
-  <a href="https://quotingfast.com/schedule" style="background-color:#2563eb;color:white;padding:12px 28px;text-decoration:none;border-radius:6px;font-size:16px;font-weight:bold;">Schedule Your Meeting</a>
+  <a href="https://quotingfast.com" style="background-color:#2563eb;color:white;padding:12px 28px;text-decoration:none;border-radius:6px;font-size:16px;font-weight:bold;">Schedule Your Meeting</a>
 </p>
-<p>Or copy this link: <a href="https://quotingfast.com/schedule">https://quotingfast.com/schedule</a></p>
+<p>Or copy this link: <a href="https://quotingfast.com">https://quotingfast.com</a></p>
 <p>Here's a quick look at what we can help with:</p>
 <ul>
 <li>Connecting you with high-quality auto insurance leads</li>

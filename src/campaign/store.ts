@@ -547,7 +547,7 @@ You are a real person making calls all day.
 
 13. AFTER INTEREST OR BOOKING
 - Always offer to send a text or email with info and a scheduling link: "Let me shoot you a quick text with a link so you can learn more and pick a time with one of our Agency Growth Experts — that way you can book a slot that works for you."
-- Use the send_scheduling_text function to send them a text with the QuotingFast.com link.
+- Use the send_scheduling_text function to send them a text with the quotingfast.com link.
 - If they prefer email: "Sure, I can email that over instead. What's the best email for you?"
 - Use the send_scheduling_email function to send the scheduling email.
 - You can also just send the text proactively after a good conversation.
@@ -586,7 +586,7 @@ INBOUND FLOW:
 
 BOOKING & SCHEDULING:
 - When an agency is interested, offer to send a text or email with info and a scheduling link to meet with one of our Agency Growth Experts.
-- Use the send_scheduling_text function to send a text with the QuotingFast.com link.
+- Use the send_scheduling_text function to send a text with the quotingfast.com link.
 - Use the send_scheduling_email function if they prefer email.
 - If they want a callback at a later time, use the schedule_callback function.
 
@@ -607,7 +607,7 @@ Use the transfer_call function when appropriate.`,
     voiceConfig: {
       voiceProvider: 'elevenlabs',
       openaiVoice: 'ash',
-      elevenlabsVoiceId: 'iP95p4xoKVk53GoZ742B', // chris
+      elevenlabsVoiceId: 'jn34bTlmmOgOJU9XfPuy', // steve
       elevenlabsModelId: 'eleven_turbo_v2_5',
       elevenlabsStability: 0.55,
       elevenlabsSimilarityBoost: 0.78,
@@ -737,7 +737,7 @@ Use the transfer_call function when appropriate.`,
     {
       id: 'agency-sms-zoom-scheduling',
       name: 'Agency Zoom Scheduling',
-      body: 'Hi {{first_name}}, it\'s Jordan from Quoting Fast! Here\'s the link to schedule a Zoom meeting with our team: https://QuotingFast.com/schedule — Pick a time that works for you and we\'ll show you how our exclusive leads can grow your book of business. Talk soon!',
+      body: 'Hi {{first_name}}, it\'s Jordan from Quoting Fast! Here\'s the link to schedule a Zoom meeting with our team: https://quotingfast.com — Pick a time that works for you and we\'ll show you how our exclusive leads can grow your book of business. Talk soon!',
       category: 'custom',
       active: true,
       createdAt: now,
@@ -769,7 +769,7 @@ Use the transfer_call function when appropriate.`,
     {
       id: 'agency-email-zoom-scheduling',
       name: 'Agency Zoom Scheduling Email',
-      body: 'Hi {{first_name}},\n\nGreat chatting with you! As promised, here\'s the link to schedule a Zoom meeting with our team:\n\nhttps://QuotingFast.com/schedule\n\nDuring the call, we\'ll walk you through:\n- How our exclusive auto insurance leads work\n- Real-time delivery options (webhook, CRM, email)\n- Geographic and volume targeting\n- Our performance guarantees\n\nPick a time that works best for you — looking forward to it!\n\nBest,\nJordan\nQuoting Fast\nhttps://QuotingFast.com',
+      body: 'Hi {{first_name}},\n\nGreat chatting with you! As promised, here\'s the link to schedule a Zoom meeting with our team:\n\nhttps://quotingfast.com\n\nDuring the call, we\'ll walk you through:\n- How our exclusive auto insurance leads work\n- Real-time delivery options (webhook, CRM, email)\n- Geographic and volume targeting\n- Our performance guarantees\n\nPick a time that works best for you — looking forward to it!\n\nBest,\nJordan\nQuoting Fast\nhttps://quotingfast.com',
       category: 'custom',
       active: true,
       createdAt: now,

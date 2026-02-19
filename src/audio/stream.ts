@@ -190,7 +190,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
                 silenceDisconnectFired = true;
                 logger.warn('stream', 'Silence timeout reached, ending call', { sessionId, callSid, silentSec: Math.round(silentSec), timeoutSec: s2.silenceTimeoutSec });
                 if (analytics) analytics.setOutcome('dropped', `Silence timeout: no speech for ${Math.round(silentSec)}s`);
-                endCall(callSid).catch(() => {});
+                endCall(callSid).catch(err => logger.error('stream', 'Failed to end call on silence timeout', { sessionId, callSid, error: String(err) }));
               }
             }, 5000); // Check every 5 seconds
           }
@@ -243,6 +243,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
   twilioWs.on('error', (err) => {
     logger.error('stream', 'Twilio WS error', { sessionId, error: err.message });
+    cleanup();
   });
 
   // --- OpenAI Realtime connection ---
@@ -297,6 +298,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
     openaiWs.on('error', (err) => {
       logger.error('stream', 'OpenAI WS error', { sessionId, error: err.message });
+      cleanup();
     });
   }
 

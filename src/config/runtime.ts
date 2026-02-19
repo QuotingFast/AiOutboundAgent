@@ -182,6 +182,11 @@ export function getSettings(): RuntimeSettings {
 export function updateSettings(updates: Partial<RuntimeSettings>): RuntimeSettings {
       for (const [key, value] of Object.entries(updates)) {
               if (key in settings) {
+                        // Validate type matches existing setting to prevent corrupt state
+                        const existing = (settings as any)[key];
+                        if (existing !== null && existing !== undefined && typeof value !== typeof existing) {
+                              continue; // Skip mismatched types silently
+                        }
                         (settings as any)[key] = value;
               }
       }

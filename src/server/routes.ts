@@ -942,7 +942,12 @@ router.post('/api/ab-tests/:id/record', (req: Request, res: Response) => {
 router.get('/api/leads', (req: Request, res: Response) => {
   const disposition = req.query.disposition as string;
   if (disposition) {
-    res.json(getLeadsByDisposition(disposition as any));
+    const validDispositions = ['new', 'contacted', 'interested', 'transferred', 'not_interested', 'dnc', 'callback'] as const;
+    if (!validDispositions.includes(disposition as any)) {
+      res.status(400).json({ error: `Invalid disposition. Must be one of: ${validDispositions.join(', ')}` });
+      return;
+    }
+    res.json(getLeadsByDisposition(disposition as typeof validDispositions[number]));
     return;
   }
   res.json({ leads: getAllLeads(), count: getLeadCount() });
@@ -1458,7 +1463,7 @@ async function handleWeblead(req: Request, res: Response) {
                                         first_name: firstName,
                                         state,
                                         current_insurer: currentInsurer,
-                            }, undefined, phone);
+                            }, undefined, phone, campaignCtx?.campaignId);
 
                             recordCall(cr.callSid, phone, firstName);
 
@@ -1556,7 +1561,7 @@ router.post('/twilio/amd-status', (req: Request, res: Response) => {
     if (settings.amdAction === 'hangup') {
       logger.info('routes', 'AMD detected machine, hanging up', { callSid });
       // End the call
-      endCall(callSid).catch(() => {});
+      endCall(callSid).catch(err => logger.error('routes', 'Failed to end call after AMD machine detection', { callSid, error: String(err) }));
     } else if (settings.amdAction === 'leave_message') {
       logger.info('routes', 'AMD detected machine, will leave message via stream', { callSid });
       // The stream handler will detect AMD and handle the message

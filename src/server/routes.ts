@@ -181,12 +181,14 @@ router.post('/call/start', async (req: Request, res: Response) => {
       return;
     }
 
-    const result = await startOutboundCall({ to, from, lead, amdEnabled: settings.amdEnabled });
+    // Resolve campaign ID early so it can be passed to Twilio webhook URL
+    const resolvedCampaignId = campaignEnforcement.context?.campaignId || campaign_id || undefined;
+
+    const result = await startOutboundCall({ to, from, lead, amdEnabled: settings.amdEnabled, campaignId: resolvedCampaignId });
 
     // Register session data so the WebSocket handler can pick it up when the call connects
     // Always pass campaign_id through — even when hardened isolation is off, the stream
     // handler uses it to load the correct AI profile, voice, and system prompt.
-    const resolvedCampaignId = campaignEnforcement.context?.campaignId || campaign_id || undefined;
     registerPendingSession(result.callSid, lead, transfer, to, resolvedCampaignId);
 
     // Record this call with current settings for history tracking
@@ -245,17 +247,18 @@ router.post('/twilio/voice', (req: Request, res: Response) => {
   const toPhone = req.body?.To || '';
   let lead = null;
   let transfer = null;
+  const campaignId = (req.query.campaign_id as string) || undefined;
   try { if (req.query.lead) lead = JSON.parse(req.query.lead as string); } catch {}
   try { if (req.query.transfer) transfer = JSON.parse(req.query.transfer as string); } catch {}
 
-  logger.info('routes', 'Voice webhook hit', { callSid, toPhone });
+  logger.info('routes', 'Voice webhook hit', { callSid, toPhone, campaignId: campaignId || 'none' });
 
   if (lead && callSid !== 'unknown') {
     // Only register if no pending session already exists (the /call/start route
     // registers with campaign_id; re-registering here would lose it).
     const existing = getPendingSession(callSid);
     if (!existing) {
-      registerPendingSession(callSid, lead, transfer, toPhone);
+      registerPendingSession(callSid, lead, transfer, toPhone, campaignId);
     }
   }
 

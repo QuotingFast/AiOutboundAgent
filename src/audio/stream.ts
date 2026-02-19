@@ -546,7 +546,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     // Use campaign voice config for ElevenLabs voice ID, model, and tuning
     const campaignVoice = activeCampaign?.voiceConfig;
     const effectiveVoiceId = campaignVoice?.elevenlabsVoiceId || s.elevenlabsVoiceId;
-    const effectiveModelId = campaignVoice?.elevenlabsModelId || s.elevenlabsModelId || 'eleven_turbo_v2_5';
+    const effectiveModelId = campaignVoice?.elevenlabsModelId || s.elevenlabsModelId || 'eleven_flash_v2_5';
     const effectiveStability = campaignVoice?.elevenlabsStability ?? s.elevenlabsStability;
     const effectiveSimilarityBoost = campaignVoice?.elevenlabsSimilarityBoost ?? s.elevenlabsSimilarityBoost;
 

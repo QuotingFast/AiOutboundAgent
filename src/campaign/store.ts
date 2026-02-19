@@ -315,7 +315,7 @@ export function seedCampaigns(): void {
       voiceProvider: 'elevenlabs',
       openaiVoice: 'coral',
       elevenlabsVoiceId: 'cjVigY5qzO86Huf0OWal', // eric
-      elevenlabsModelId: 'eleven_turbo_v2_5',
+      elevenlabsModelId: 'eleven_flash_v2_5',
       elevenlabsStability: 0.62,
       elevenlabsSimilarityBoost: 0.82,
       deepseekModel: 'deepseek-chat',
@@ -628,7 +628,7 @@ Use the transfer_call function when appropriate.`,
       voiceProvider: 'elevenlabs',
       openaiVoice: 'ash',
       elevenlabsVoiceId: 'jn34bTlmmOgOJU9XfPuy', // steve
-      elevenlabsModelId: 'eleven_turbo_v2_5',
+      elevenlabsModelId: 'eleven_flash_v2_5',
       elevenlabsStability: 0.55,
       elevenlabsSimilarityBoost: 0.78,
       deepseekModel: 'deepseek-chat',

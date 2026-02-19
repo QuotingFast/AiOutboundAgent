@@ -115,7 +115,7 @@ const settings: RuntimeSettings = {
       realtimeModel: config.openai.realtimeModel,
       temperature: 0.8,
       elevenlabsVoiceId: config.elevenlabs.voiceId,
-      elevenlabsModelId: 'eleven_turbo_v2_5',
+      elevenlabsModelId: 'eleven_flash_v2_5',
       elevenlabsStability: 0.62,
       elevenlabsSimilarityBoost: 0.82,
       deepseekModel: config.deepseek.model || 'deepseek-chat',

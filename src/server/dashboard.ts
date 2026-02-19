@@ -1077,9 +1077,9 @@ export function getDashboardHtml(): string {
         <div>
           <label>ElevenLabs TTS Model</label>
           <select id="dsElevenlabsModelId">
-            <option value="eleven_turbo_v2_5">Turbo v2.5 (fastest)</option>
+            <option value="eleven_flash_v2_5">Flash v2.5 (fastest)</option>
+            <option value="eleven_turbo_v2_5">Turbo v2.5</option>
             <option value="eleven_multilingual_v2">Multilingual v2</option>
-            <option value="eleven_monolingual_v1">Monolingual v1</option>
           </select>
         </div>
         <div></div>
@@ -1411,9 +1411,9 @@ export function getDashboardHtml(): string {
         <div>
           <label>ElevenLabs Model</label>
           <select id="elevenlabsModelId">
-            <option value="eleven_turbo_v2_5">Turbo v2.5 (fastest)</option>
+            <option value="eleven_flash_v2_5">Flash v2.5 (fastest)</option>
+            <option value="eleven_turbo_v2_5">Turbo v2.5</option>
             <option value="eleven_multilingual_v2">Multilingual v2</option>
-            <option value="eleven_monolingual_v1">Monolingual v1</option>
           </select>
         </div>
         <div></div>

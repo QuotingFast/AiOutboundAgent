@@ -7,6 +7,7 @@ import { getSettings, updateSettings, recordCall, getCallHistory } from '../conf
 import { getDashboardHtml } from './dashboard';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { loadData, scheduleSave } from '../db/persistence';
 
 // Module imports
 import { getAnalyticsHistory, getAnalyticsSummary, getActiveAnalytics } from '../analytics';
@@ -99,6 +100,20 @@ export interface CallRecording {
 
 const recordingStore: CallRecording[] = [];
 const MAX_RECORDINGS = 200;
+
+const RECORDINGS_KEY = 'recordings';
+
+function persistRecordings(): void {
+  scheduleSave(RECORDINGS_KEY, () => recordingStore);
+}
+
+export function loadRecordingsFromDisk(): void {
+  const data = loadData<CallRecording[]>(RECORDINGS_KEY);
+  if (data) {
+    recordingStore.push(...data);
+    logger.info('routes', `Loaded ${recordingStore.length} recordings from disk`);
+  }
+}
 
 export function getRecordings(): CallRecording[] {
   return [...recordingStore];
@@ -420,6 +435,7 @@ router.post('/twilio/recording-status', (req: Request, res: Response) => {
     if (recordingStore.length > MAX_RECORDINGS) {
       recordingStore.length = MAX_RECORDINGS;
     }
+    persistRecordings();
 
     logger.info('routes', 'Recording completed', {
       recordingSid: RecordingSid,

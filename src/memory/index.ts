@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger';
+import { loadData, scheduleSave } from '../db/persistence';
 
 // ── Cross-Session Lead Memory ───────────────────────────────────────
 
@@ -29,8 +30,24 @@ export interface LeadCallSummary {
   sentimentOverall: string;
 }
 
-// In-memory store (in production, this would be a database)
+// In-memory store backed by JSON file persistence
 const leadStore = new Map<string, LeadMemory>();
+
+const LEADS_STORE_KEY = 'leads';
+
+function persistLeads(): void {
+  scheduleSave(LEADS_STORE_KEY, () => Object.fromEntries(leadStore));
+}
+
+export function loadLeadsFromDisk(): void {
+  const data = loadData<Record<string, LeadMemory>>(LEADS_STORE_KEY);
+  if (data) {
+    for (const [key, value] of Object.entries(data)) {
+      leadStore.set(key, value);
+    }
+    logger.info('memory', `Loaded ${leadStore.size} leads from disk`);
+  }
+}
 
 function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '').replace(/^1/, '');
@@ -54,6 +71,7 @@ export function createOrUpdateLead(phone: string, data: Partial<LeadMemory>): Le
     if (data.callHistory) updated.callHistory = [...existing.callHistory, ...data.callHistory];
     if (data.customFields) updated.customFields = { ...existing.customFields, ...data.customFields };
     leadStore.set(normalized, updated);
+    persistLeads();
     return updated;
   }
 
@@ -71,6 +89,7 @@ export function createOrUpdateLead(phone: string, data: Partial<LeadMemory>): Le
     customFields: data.customFields || {},
   };
   leadStore.set(normalized, newLead);
+  persistLeads();
   return newLead;
 }
 
@@ -88,18 +107,23 @@ export function recordCallToLead(phone: string, summary: LeadCallSummary): LeadM
   else if (summary.outcome === 'ended') lead.disposition = 'contacted';
 
   leadStore.set(normalized, lead);
+  persistLeads();
   return lead;
 }
 
 export function setLeadDisposition(phone: string, disposition: LeadMemory['disposition']): void {
   const lead = leadStore.get(normalizePhone(phone));
-  if (lead) lead.disposition = disposition;
+  if (lead) {
+    lead.disposition = disposition;
+    persistLeads();
+  }
 }
 
 export function addLeadNote(phone: string, note: string): void {
   const lead = leadStore.get(normalizePhone(phone));
   if (lead) {
     lead.notes.push(`[${new Date().toISOString()}] ${note}`);
+    persistLeads();
   }
 }
 
@@ -107,6 +131,7 @@ export function addLeadTag(phone: string, tag: string): void {
   const lead = leadStore.get(normalizePhone(phone));
   if (lead && !lead.tags.includes(tag)) {
     lead.tags.push(tag);
+    persistLeads();
   }
 }
 
@@ -115,6 +140,7 @@ export function scheduleCallback(phone: string, dateTime: string): void {
   if (lead) {
     lead.callbackScheduled = dateTime;
     lead.disposition = 'callback';
+    persistLeads();
     logger.info('memory', 'Callback scheduled', { phone: normalizePhone(phone), dateTime });
   }
 }
@@ -267,6 +293,7 @@ export function importLeadsFromCSV(csvText: string): { imported: number; skipped
     }
   }
 
+  persistLeads();
   logger.info('memory', 'CSV import completed', { imported, skipped, errors: errors.length });
   return { imported, skipped, errors };
 }

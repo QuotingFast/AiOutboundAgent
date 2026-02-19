@@ -1,4 +1,5 @@
 import { config } from './index';
+import { loadData, scheduleSave } from '../db/persistence';
 
 export interface RuntimeSettings {
       // Voice provider: 'openai' = Realtime speech-to-speech, 'elevenlabs' = OpenAI LLM + EL TTS, 'deepseek' = DeepSeek LLM + EL TTS
@@ -175,6 +176,33 @@ const settings: RuntimeSettings = {
 const callHistory: CallRecord[] = [];
 const MAX_HISTORY = 20;
 
+const CALL_HISTORY_KEY = 'call_history';
+const SETTINGS_KEY = 'settings';
+
+function persistCallHistory(): void {
+  scheduleSave(CALL_HISTORY_KEY, () => callHistory);
+}
+
+function persistSettings(): void {
+  scheduleSave(SETTINGS_KEY, () => settings);
+}
+
+export function loadRuntimeFromDisk(): void {
+  const savedHistory = loadData<CallRecord[]>(CALL_HISTORY_KEY);
+  if (savedHistory) {
+    callHistory.push(...savedHistory);
+  }
+
+  const savedSettings = loadData<Partial<RuntimeSettings>>(SETTINGS_KEY);
+  if (savedSettings) {
+    for (const [key, value] of Object.entries(savedSettings)) {
+      if (key in settings) {
+        (settings as any)[key] = value;
+      }
+    }
+  }
+}
+
 export function getSettings(): RuntimeSettings {
       return { ...settings };
 }
@@ -185,6 +213,7 @@ export function updateSettings(updates: Partial<RuntimeSettings>): RuntimeSettin
                         (settings as any)[key] = value;
               }
       }
+      persistSettings();
       return { ...settings };
 }
 
@@ -212,6 +241,7 @@ export function recordCall(callSid: string, to: string, leadName: string): void 
       if (callHistory.length > MAX_HISTORY) {
               callHistory.length = MAX_HISTORY;
       }
+      persistCallHistory();
 }
 
 export function getCallHistory(): CallRecord[] {

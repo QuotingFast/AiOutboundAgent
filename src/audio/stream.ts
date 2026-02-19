@@ -12,8 +12,7 @@ import { registerSession, removeSession, updateSessionStatus, onSessionFreed } f
 import { buildLeadContext, recordCallToLead, addLeadNote } from '../memory';
 import { runPostCallWorkflow } from '../workflows';
 import { redactPII } from '../security';
-import { mixNoiseIntoAudio, resetNoisePosition, getNoiseOnlyFrames } from './noise';
-import { generateDtmfAudio, isValidDtmf } from './dtmf';
+import { mixNoiseIntoAudio, resetNoisePosition } from './noise';
 import { handleAutoDnc, recordPhoneCall } from '../compliance';
 import { logSms } from '../sms';
 import {
@@ -109,10 +108,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let lastSpeechActivityAt = 0;
   let silenceDisconnectFired = false;
   let silenceCheckInterval: ReturnType<typeof setInterval> | null = null;
-
-  // Continuous background noise (plays during silence between TTS)
-  let noiseInterval: ReturnType<typeof setInterval> | null = null;
-  let lastTtsAudioAt = 0;
 
   logger.info('stream', 'Twilio WS opened', { sessionId });
 
@@ -213,26 +208,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           }
 
           connectToOpenAIRealtime();
-
-          // Start continuous background noise loop (sends ambient noise during silence)
-          const noiseSettings = getSettings();
-          if (noiseSettings.backgroundNoiseEnabled) {
-            const NOISE_INTERVAL_MS = 20; // Send 20ms frames to match Twilio's expected cadence
-            const NOISE_SAMPLES_PER_FRAME = Math.round((8000 * NOISE_INTERVAL_MS) / 1000); // 160 samples
-            noiseInterval = setInterval(() => {
-              const ns = getSettings();
-              if (!ns.backgroundNoiseEnabled || twilioWs.readyState !== WebSocket.OPEN || !streamSid) return;
-              // Only send noise frames when TTS is NOT actively streaming (avoid double-mixing)
-              if (Date.now() - lastTtsAudioAt < 80) return;
-              const noiseFrame = getNoiseOnlyFrames(NOISE_SAMPLES_PER_FRAME, ns.backgroundNoiseVolume);
-              twilioWs.send(JSON.stringify({
-                event: 'media',
-                streamSid,
-                media: { payload: noiseFrame.toString('base64') },
-              }));
-            }, NOISE_INTERVAL_MS);
-            logger.info('stream', 'Background noise loop started', { sessionId, volume: noiseSettings.backgroundNoiseVolume });
-          }
           break;
         }
 
@@ -1269,28 +1244,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         const errMsg = err instanceof Error ? err.message : String(err);
         logger.error('stream', 'Failed to end call via Twilio API', { sessionId, error: errMsg });
       }
-    } else if (name === 'send_dtmf') {
-      // Send DTMF tones through the media stream to navigate IVR menus
-      const digits = args.digits || '';
-      logger.info('stream', 'Sending DTMF tones', { sessionId, digits });
-
-      if (!isValidDtmf(digits)) {
-        logger.warn('stream', 'Invalid DTMF digits', { sessionId, digits });
-        if (!useDeepSeek) {
-          sendFunctionOutput(call_id, { status: 'error', reason: 'Invalid DTMF digits' });
-        }
-      } else {
-        // Generate DTMF audio and inject into the Twilio media stream
-        const chunks = generateDtmfAudio(digits);
-        for (const payload of chunks) {
-          sendAudioToTwilio(payload);
-        }
-        logger.info('stream', 'DTMF tones sent', { sessionId, digits, chunks: chunks.length });
-        if (!useDeepSeek) {
-          sendFunctionOutput(call_id, { status: 'sent', digits });
-        }
-        if (analytics) analytics.addTag('ivr_navigation');
-      }
     } else if (name === 'send_scheduling_text') {
       // Send a text with Zoom scheduling link to the prospect
       const prospectName = args.prospect_name || leadData.first_name || 'there';
@@ -1558,9 +1511,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   function sendAudioToTwilio(base64Audio: string): void {
     if (twilioWs.readyState !== WebSocket.OPEN) return;
 
-    // Track last TTS audio time so noise interval pauses during speech
-    lastTtsAudioAt = Date.now();
-
     let payload = base64Audio;
 
     // Inject background noise if enabled
@@ -1633,10 +1583,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     if (silenceCheckInterval) {
       clearInterval(silenceCheckInterval);
       silenceCheckInterval = null;
-    }
-    if (noiseInterval) {
-      clearInterval(noiseInterval);
-      noiseInterval = null;
     }
     if (openaiWs) {
       openaiWs.close();

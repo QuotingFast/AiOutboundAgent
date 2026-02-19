@@ -135,7 +135,7 @@ const settings: RuntimeSettings = {
       allstateNumber: '',
       nonAllstateNumber: '',
       defaultFromNumber: config.twilio.fromNumber,
-      defaultToNumber: '',
+      defaultToNumber: '+19547905093',
 
       // Background noise
       backgroundNoiseEnabled: false,

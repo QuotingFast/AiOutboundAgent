@@ -466,7 +466,7 @@ export function getDashboardHtml(): string {
     <div class="call-row">
       <div class="field">
         <label>To Number</label>
-        <input type="text" id="callTo" placeholder="+19547905093">
+        <input type="text" id="callTo" value="+19547905093" placeholder="+19547905093">
       </div>
       <div class="field">
         <label>From Number</label>
@@ -474,11 +474,15 @@ export function getDashboardHtml(): string {
       </div>
       <div class="field">
         <label>Lead Name</label>
-        <input type="text" id="callName" value="Justin">
+        <input type="text" id="callName" value="Thomas">
       </div>
       <div class="field">
         <label>Lead State</label>
         <input type="text" id="callState" value="FL" style="max-width:80px">
+      </div>
+      <div class="field">
+        <label>Insurer</label>
+        <input type="text" id="callInsurer" value="State Farm" style="max-width:120px">
       </div>
       <div class="field">
         <label>Campaign</label>
@@ -1911,14 +1915,17 @@ async function makeCall() {
   var from = document.getElementById('callFrom').value.trim();
   var name = document.getElementById('callName').value.trim() || 'there';
   var state = document.getElementById('callState').value.trim() || 'FL';
+  var insurer = document.getElementById('callInsurer').value.trim();
   var campaignId = document.getElementById('callCampaign').value;
   if (!to) { toast('Enter a phone number', 'error'); return; }
   var btn = document.getElementById('callBtn');
   btn.disabled = true; btn.textContent = 'Calling...';
+  var lead = { first_name: name, state: state };
+  if (insurer) lead.current_insurer = insurer;
   try {
     var res = await fetch('/call/start', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ to: to, from: from || undefined, lead: { first_name: name, state: state }, campaign_id: campaignId }),
+      body: JSON.stringify({ to: to, from: from || undefined, lead: lead, campaign_id: campaignId }),
     });
     var data = await res.json();
     if (res.ok) {

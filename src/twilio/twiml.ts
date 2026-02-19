@@ -33,7 +33,7 @@ export function buildTransferTwiml(targetNumber: string, bridgePhrase: string): 
 </Response>`;
 }
 
-function escapeXml(str: string): string {
+export function escapeXml(str: string): string {
   return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

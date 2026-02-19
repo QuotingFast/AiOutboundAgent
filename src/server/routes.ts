@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { startOutboundCall, StartCallParams, sendSms } from '../twilio/client';
-import { buildMediaStreamTwiml, buildTransferTwiml } from '../twilio/twiml';
+import { startOutboundCall, StartCallParams, sendSms, endCall } from '../twilio/client';
+import { buildMediaStreamTwiml, buildTransferTwiml, escapeXml } from '../twilio/twiml';
 import { registerPendingSession } from '../audio/stream';
 import { TransferConfig, buildSystemPrompt } from '../agent/prompts';
 import { getSettings, updateSettings, recordCall, getCallHistory } from '../config/runtime';
@@ -243,8 +243,10 @@ router.post('/call/start', async (req: Request, res: Response) => {
 router.post('/twilio/voice', (req: Request, res: Response) => {
   const callSid = req.body?.CallSid || 'unknown';
   const toPhone = req.body?.To || '';
-  const lead = req.query.lead ? JSON.parse(req.query.lead as string) : null;
-  const transfer = req.query.transfer ? JSON.parse(req.query.transfer as string) : null;
+  let lead = null;
+  let transfer = null;
+  try { if (req.query.lead) lead = JSON.parse(req.query.lead as string); } catch {}
+  try { if (req.query.transfer) transfer = JSON.parse(req.query.transfer as string); } catch {}
 
   logger.info('routes', 'Voice webhook hit', { callSid, toPhone });
 
@@ -345,8 +347,8 @@ router.post('/twilio/incoming', (req: Request, res: Response) => {
   <Connect>
     <Stream url="${wsUrl}">
       <Parameter name="direction" value="inbound" />
-      <Parameter name="callerNumber" value="${callerNumber}" />
-      <Parameter name="campaignId" value="${ctx.campaignId}" />
+      <Parameter name="callerNumber" value="${escapeXml(callerNumber)}" />
+      <Parameter name="campaignId" value="${escapeXml(ctx.campaignId)}" />
     </Stream>
   </Connect>
 </Response>`);
@@ -473,8 +475,8 @@ router.get('/api/default-prompt', (_req: Request, res: Response) => {
 
 // ── Voice Preview Endpoints ─────────────────────────────────────────
 
+// Reuse voicePreviewCache for OpenAI and elPreviewCache for ElevenLabs (keyed by voiceId)
 const elPreviewCache = new Map<string, Buffer>();
-const EL_PREVIEW_TEXT = "Hey there! This is a quick preview of how I sound. Pretty natural, right?";
 
 router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
   const voice = req.params.voice.toLowerCase();
@@ -563,7 +565,7 @@ router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
           'Accept': 'audio/mpeg',
         },
         body: JSON.stringify({
-          text: EL_PREVIEW_TEXT,
+          text: PREVIEW_TEXT,
           model_id: 'eleven_turbo_v2_5',
           voice_settings: { stability: 0.5, similarity_boost: 0.75 },
         }),
@@ -666,7 +668,7 @@ router.get('/api/elevenlabs-voice-preview/:voiceId', async (req: Request, res: R
         'Accept': 'audio/mpeg',
       },
       body: JSON.stringify({
-        text: EL_PREVIEW_TEXT,
+        text: PREVIEW_TEXT,
         model_id: 'eleven_turbo_v2_5',
         voice_settings: { stability: 0.5, similarity_boost: 0.75 },
       }),
@@ -1546,7 +1548,7 @@ router.post('/twilio/amd-status', (req: Request, res: Response) => {
     if (settings.amdAction === 'hangup') {
       logger.info('routes', 'AMD detected machine, hanging up', { callSid });
       // End the call
-      import('../twilio/client').then(({ endCall }) => endCall(callSid)).catch(() => {});
+      endCall(callSid).catch(() => {});
     } else if (settings.amdAction === 'leave_message') {
       logger.info('routes', 'AMD detected machine, will leave message via stream', { callSid });
       // The stream handler will detect AMD and handle the message

@@ -1440,8 +1440,8 @@ export function getDashboardHtml(): string {
       <div>
         <label>Realtime Model</label>
         <select id="realtimeModel" onchange="updateVoiceAvailability()">
-          <option value="gpt-4o-realtime-preview">gpt-4o-realtime-preview</option>
-          <option value="gpt-4o-mini-realtime-preview">gpt-4o-mini-realtime-preview</option>
+          <option value="gpt-realtime">gpt-realtime</option>
+          <option value="gpt-realtime-mini">gpt-realtime-mini</option>
         </select>
       </div>
       <div>
@@ -1749,10 +1749,10 @@ var NUMBER_FIELDS = [
   'maxCallDurationSec','callDurationWarnPct','silenceTimeoutSec','maxCallsPerPhonePerDay','autoRetryMaxAttempts'
 ];
 var MODEL_VOICES = {
-  'gpt-4o-realtime-preview': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'],
-  'gpt-4o-mini-realtime-preview': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'],
+  'gpt-realtime': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar'],
+  'gpt-realtime-mini': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar'],
 };
-var ALL_VOICES = ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'];
+var ALL_VOICES = ['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar'];
 
 function getCompatibleVoices() {
   var model = document.getElementById('realtimeModel').value;

@@ -295,7 +295,7 @@ export function seedCampaigns(): void {
     companyName: 'Affordable Auto Rates',
     temperature: 0.8,
     maxResponseTokens: 275,
-    realtimeModel: 'gpt-4o-realtime-preview',
+    realtimeModel: 'gpt-realtime',
     systemPrompt: buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}' }),
     inboundPrompt: '',
     greetingText: 'Hey {{first_name}}, this is Alex over at Affordable Auto Rates — you had looked into an auto insurance quote not too long ago, right?',
@@ -385,7 +385,7 @@ export function seedCampaigns(): void {
     companyName: 'Quoting Fast',
     temperature: 0.7,
     maxResponseTokens: 300,
-    realtimeModel: 'gpt-4o-realtime-preview',
+    realtimeModel: 'gpt-realtime',
     systemPrompt: `YOU ARE Jordan — a confident, professional business development representative for Quoting Fast.
 You are calling insurance agencies to promote Quoting Fast's lead generation services.
 You sound 100% human: professional but approachable, like a knowledgeable colleague in the insurance industry.

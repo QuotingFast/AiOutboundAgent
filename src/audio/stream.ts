@@ -1272,6 +1272,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             twilioSid: result.sid,
             leadName: prospectName,
             triggerReason: 'zoom_scheduling',
+            campaignId: activeCampaign?.id,
           });
           addLeadNote(targetPhone, `Zoom scheduling text sent during call`);
 

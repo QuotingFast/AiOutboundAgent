@@ -15,6 +15,7 @@ export interface SmsLogEntry {
   triggerReason?: string;    // e.g. 'missed_call', 'callback_reminder', 'post_transfer', 'manual'
   twilioSid?: string;
   leadName?: string;
+  campaignId?: string;
   timestamp: string;
   error?: string;
 }

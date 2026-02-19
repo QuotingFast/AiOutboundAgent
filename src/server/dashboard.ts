@@ -2456,19 +2456,42 @@ function importLeadsCSV(input) {
 }
 async function loadCallbacks() {
   try {
-    var res = await fetch('/api/callbacks');
-    var cbs = await res.json();
+    var results = await Promise.all([
+      fetch('/api/callbacks'),
+      fetch('/api/campaign-callbacks')
+    ]);
+    var legacyCbs = await results[0].json();
+    var campCbData = await results[1].json();
+    var campCbs = (campCbData.callbacks || campCbData || []).map(function(c) {
+      return {
+        id: c.id,
+        phone: c.phone,
+        leadName: c.leadId || 'Campaign Callback',
+        scheduledAt: c.requestedDatetimeUtc || c.requestedLocalDatetime,
+        status: c.status === 'scheduled' ? 'pending' : c.status === 'processing' ? 'dialing' : c.status,
+        attempts: c.attempts,
+        maxAttempts: c.maxAttempts,
+        result: c.result,
+        campaignId: c.campaignId,
+        source: 'campaign'
+      };
+    });
+    var cbs = (legacyCbs || []).concat(campCbs);
+    cbs.sort(function(a, b) { return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(); });
     var el = document.getElementById('callbacksList');
     if (!cbs.length) { el.innerHTML = '<div class="empty-state">No callbacks scheduled</div>'; return; }
-    var html = '<table class="data-table"><tr><th>Phone</th><th>Name</th><th>Scheduled</th><th>Status</th><th>Attempts</th><th>Action</th></tr>';
+    var html = '<table class="data-table"><tr><th>Phone</th><th>Name</th><th>Scheduled</th><th>Status</th><th>Attempts</th><th>Source</th><th>Action</th></tr>';
     for (var i = 0; i < cbs.length; i++) {
       var cb = cbs[i];
       var sb = cb.status === 'completed' ? 'badge-green' : cb.status === 'failed' ? 'badge-red' : cb.status === 'dialing' ? 'badge-orange' : 'badge-blue';
+      var srcLabel = cb.source === 'campaign' ? '<span class="badge badge-purple" style="font-size:10px">' + (cb.campaignId || 'campaign') + '</span>' : '<span class="badge badge-gray" style="font-size:10px">legacy</span>';
+      var cancelBtn = (cb.status === 'pending') ? '<button class="btn btn-secondary btn-sm" onclick="cancelCb(\\'' + cb.id + '\\'' + (cb.source === 'campaign' ? ',true' : '') + ')">Cancel</button>' : (cb.result || '--');
       html += '<tr><td style="font-family:monospace">' + cb.phone + '</td><td>' + cb.leadName + '</td>'
         + '<td>' + new Date(cb.scheduledAt).toLocaleString() + '</td>'
         + '<td><span class="badge ' + sb + '">' + cb.status + '</span></td>'
         + '<td>' + cb.attempts + '/' + cb.maxAttempts + '</td>'
-        + '<td>' + (cb.status === 'pending' ? '<button class="btn btn-secondary btn-sm" onclick="cancelCb(\\'' + cb.id + '\\')">Cancel</button>' : (cb.result || '--')) + '</td></tr>';
+        + '<td>' + srcLabel + '</td>'
+        + '<td>' + cancelBtn + '</td></tr>';
     }
     el.innerHTML = html + '</table>';
   } catch (e) { document.getElementById('callbacksList').innerHTML = '<div class="empty-state">Failed</div>'; }
@@ -2489,9 +2512,10 @@ async function scheduleNewCallback() {
     else toast('Failed', 'error');
   } catch (e) { toast('Failed', 'error'); }
 }
-async function cancelCb(id) {
+async function cancelCb(id, isCampaign) {
   try {
-    await fetch('/api/callbacks/' + id, { method: 'DELETE' });
+    var url = isCampaign ? '/api/campaign-callbacks/' + id : '/api/callbacks/' + id;
+    await fetch(url, { method: 'DELETE' });
     toast('Cancelled', 'success');
     loadCallbacks();
   } catch (e) { toast('Failed', 'error'); }
@@ -2587,11 +2611,14 @@ async function loadCampaignStats() {
     var r = await Promise.all([
       fetch('/api/analytics/history'),
       fetch('/api/callbacks'),
+      fetch('/api/campaign-callbacks'),
       fetch('/api/sms/log?limit=200')
     ]);
     var analytics = await r[0].json();
-    var callbacks = await r[1].json();
-    var smsLogs = await r[2].json();
+    var legacyCallbacks = await r[1].json();
+    var campCbData = await r[2].json();
+    var campCallbacks = (campCbData.callbacks || campCbData || []);
+    var smsLogs = await r[3].json();
     var today = new Date().toDateString();
     // Count calls per campaign from analytics (today only)
     var consumerCalls = 0, consumerTransfers = 0, agencyCalls = 0, agencyMeetings = 0;
@@ -2605,9 +2632,13 @@ async function loadCampaignStats() {
       else if (isAgency) { agencyCalls++; if (a.outcome === 'transferred') agencyMeetings++; }
       else { consumerCalls++; if (a.outcome === 'transferred') consumerTransfers++; }
     });
-    // Count callbacks per campaign
+    // Count callbacks per campaign (legacy + campaign system)
     var consumerCallbacks = 0, agencyCallbacks = 0;
-    (callbacks || []).forEach(function(cb) {
+    (legacyCallbacks || []).forEach(function(cb) {
+      if (cb.campaignId === 'campaign-agency-dev') agencyCallbacks++;
+      else consumerCallbacks++;
+    });
+    campCallbacks.forEach(function(cb) {
       if (cb.campaignId === 'campaign-agency-dev') agencyCallbacks++;
       else consumerCallbacks++;
     });

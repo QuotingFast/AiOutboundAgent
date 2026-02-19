@@ -1649,6 +1649,7 @@ router.post('/api/sms/send', async (req: Request, res: Response) => {
       templateId,
       leadName,
       triggerReason: 'manual',
+      campaignId: campaign_id,
     });
 
     try {
@@ -1730,7 +1731,7 @@ router.delete('/api/sms/templates/:id', (req: Request, res: Response) => {
  */
 router.post('/api/sms/send-template', async (req: Request, res: Response) => {
   try {
-    const { phone, templateId, variables } = req.body;
+    const { phone, templateId, variables, campaign_id } = req.body;
     if (!phone || !templateId) {
       res.status(400).json({ error: 'Missing phone or templateId' });
       return;
@@ -1766,6 +1767,7 @@ router.post('/api/sms/send-template', async (req: Request, res: Response) => {
       body,
       templateId,
       triggerReason: tpl.category,
+      campaignId: campaign_id,
     });
 
     const result = await sendSms(phone, body);
@@ -1913,7 +1915,7 @@ router.get('/api/leads/:phone/detail', (req: Request, res: Response) => {
 router.post('/api/leads/:phone/sms', async (req: Request, res: Response) => {
   try {
     const phone = req.params.phone;
-    const { body } = req.body;
+    const { body, campaign_id } = req.body;
     if (!body) { res.status(400).json({ error: 'Missing body' }); return; }
 
     const settings = getSettings();
@@ -1930,6 +1932,7 @@ router.post('/api/leads/:phone/sms', async (req: Request, res: Response) => {
       body,
       leadName: lead?.name,
       triggerReason: 'manual',
+      campaignId: campaign_id,
     });
 
     const result = await sendSms(phone, body);

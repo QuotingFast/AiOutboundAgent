@@ -1079,6 +1079,7 @@ export function getDashboardHtml(): string {
           <select id="dsElevenlabsModelId">
             <option value="eleven_flash_v2_5">Flash v2.5 (fastest)</option>
             <option value="eleven_turbo_v2_5">Turbo v2.5</option>
+            <option value="eleven_v3_conversational">v3 Conversational (most expressive)</option>
             <option value="eleven_multilingual_v2">Multilingual v2</option>
           </select>
         </div>
@@ -1413,6 +1414,7 @@ export function getDashboardHtml(): string {
           <select id="elevenlabsModelId">
             <option value="eleven_flash_v2_5">Flash v2.5 (fastest)</option>
             <option value="eleven_turbo_v2_5">Turbo v2.5</option>
+            <option value="eleven_v3_conversational">v3 Conversational (most expressive)</option>
             <option value="eleven_multilingual_v2">Multilingual v2</option>
           </select>
         </div>

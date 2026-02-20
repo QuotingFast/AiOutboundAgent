@@ -1,12 +1,19 @@
 import { logger } from '../utils/logger';
+import { scheduleSave, loadData } from '../db/persistence';
 
 // ── Do Not Call (DNC) list ──────────────────────────────────────────
 
 const dncSet = new Set<string>();
+const DNC_KEY = 'dnc_list';
+
+function persistDnc(): void {
+  scheduleSave(DNC_KEY, () => Array.from(dncSet));
+}
 
 export function addToDnc(phone: string): void {
   const normalized = normalizePhone(phone);
   dncSet.add(normalized);
+  persistDnc();
   auditLog('dnc_add', { phone: normalized });
   logger.info('compliance', 'Added to DNC', { phone: normalized });
 }
@@ -14,6 +21,7 @@ export function addToDnc(phone: string): void {
 export function removeFromDnc(phone: string): void {
   const normalized = normalizePhone(phone);
   dncSet.delete(normalized);
+  persistDnc();
   auditLog('dnc_remove', { phone: normalized });
   logger.info('compliance', 'Removed from DNC', { phone: normalized });
 }
@@ -101,10 +109,16 @@ export interface ConsentRecord {
 }
 
 const consentStore = new Map<string, ConsentRecord>();
+const CONSENT_KEY = 'consent_records';
+
+function persistConsent(): void {
+  scheduleSave(CONSENT_KEY, () => Object.fromEntries(consentStore));
+}
 
 export function recordConsent(record: ConsentRecord): void {
   const normalized = normalizePhone(record.phone);
   consentStore.set(normalized, { ...record, phone: normalized });
+  persistConsent();
   auditLog('consent_recorded', { phone: normalized, type: record.consentType, source: record.source });
 }
 
@@ -194,6 +208,7 @@ export interface AuditEntry {
 }
 
 const auditEntries: AuditEntry[] = [];
+const MAX_AUDIT_ENTRIES = 10000;
 let auditSequence = 0;
 
 function simpleHash(input: string): string {
@@ -222,6 +237,9 @@ export function auditLog(action: string, data: Record<string, unknown>): void {
   };
 
   auditEntries.push(entry);
+  if (auditEntries.length > MAX_AUDIT_ENTRIES) {
+    auditEntries.splice(0, auditEntries.length - MAX_AUDIT_ENTRIES);
+  }
   logger.debug('audit', action, data);
 }
 
@@ -300,4 +318,22 @@ export function handleAutoDnc(phone: string, transcript: string): boolean {
     return true;
   }
   return false;
+}
+
+// ── Persistence ───────────────────────────────────────────────────
+
+export function loadComplianceFromDisk(): void {
+  const savedDnc = loadData<string[]>(DNC_KEY);
+  if (savedDnc) {
+    for (const phone of savedDnc) dncSet.add(phone);
+    logger.info('compliance', `Loaded ${dncSet.size} DNC entries from disk`);
+  }
+
+  const savedConsent = loadData<Record<string, ConsentRecord>>(CONSENT_KEY);
+  if (savedConsent) {
+    for (const [key, value] of Object.entries(savedConsent)) {
+      consentStore.set(key, value);
+    }
+    logger.info('compliance', `Loaded ${consentStore.size} consent records from disk`);
+  }
 }

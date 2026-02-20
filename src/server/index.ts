@@ -25,6 +25,7 @@ import {
 import { loadLeadsFromDisk } from '../memory';
 import { flushAll } from '../db/persistence';
 import { loadAnalyticsFromDisk } from '../analytics';
+import { loadComplianceFromDisk } from '../compliance';
 
 export function createServer(): http.Server {
   const app = express();
@@ -67,6 +68,7 @@ export function startServer(): void {
   loadCampaignStoreFromDisk();
   loadRecordingsFromDisk();
   loadAnalyticsFromDisk();
+  loadComplianceFromDisk();
   logger.info('server', 'Persisted data loaded');
 
   // Seed default campaigns (skips if campaigns already loaded from disk)

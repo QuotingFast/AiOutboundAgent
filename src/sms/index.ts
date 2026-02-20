@@ -31,6 +31,7 @@ export interface SmsTemplate {
 // ── Store ──
 
 const smsLog: SmsLogEntry[] = [];
+const MAX_SMS_LOG = 5000;
 const smsTemplates: SmsTemplate[] = [];
 
 // Initialize default templates
@@ -84,6 +85,9 @@ export function logSms(entry: Omit<SmsLogEntry, 'id' | 'timestamp'>): SmsLogEntr
     timestamp: new Date().toISOString(),
   };
   smsLog.push(full);
+  if (smsLog.length > MAX_SMS_LOG) {
+    smsLog.splice(0, smsLog.length - MAX_SMS_LOG);
+  }
   logger.info('sms', `SMS logged: ${full.direction} to ${full.phone}`, { id: full.id, status: full.status });
   return full;
 }

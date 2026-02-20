@@ -195,16 +195,24 @@ export function findNearestCompliantTime(
     });
     const localHour = parseInt(formatter.format(date), 10);
 
+    // Calculate the UTC offset by comparing local hour to UTC hour
+    // This avoids the bug of mixing local hours with UTC adjustments
+    const utcHour = date.getUTCHours();
+    const offset = localHour - utcHour; // local = UTC + offset
+
     if (localHour < windowStart) {
-      // Move forward to windowStart
-      date.setUTCHours(date.getUTCHours() + (windowStart - localHour));
+      // Move forward to windowStart in local time
+      const hoursToAdd = windowStart - localHour;
+      date.setTime(date.getTime() + hoursToAdd * 3600_000);
+      date.setUTCMinutes(0, 0, 0);
     } else if (localHour >= windowEnd) {
-      // Move to next day at windowStart
-      date.setUTCDate(date.getUTCDate() + 1);
-      date.setUTCHours(date.getUTCHours() - localHour + windowStart);
+      // Move to next day at windowStart in local time
+      const hoursToAdd = (24 - localHour) + windowStart;
+      date.setTime(date.getTime() + hoursToAdd * 3600_000);
+      date.setUTCMinutes(0, 0, 0);
     }
   } catch {
-    // Default: push to next day 9am UTC
+    // Default: push to next day 14:00 UTC (~9am Eastern)
     date.setUTCDate(date.getUTCDate() + 1);
     date.setUTCHours(14, 0, 0, 0);
   }
@@ -344,16 +352,28 @@ async function processDueCallbacks(): Promise<void> {
         const tz = cb.requestedTimezone || 'America/New_York';
         const now = new Date().toISOString();
         if (!isWithinTcpaWindow(now, tz, campaign.callbackRules.tcpaWindowStart, campaign.callbackRules.tcpaWindowEnd)) {
-          // Not within calling window — reschedule
+          // Not within calling window — reschedule but count the attempt
           const nextTime = findNearestCompliantTime(now, tz, campaign.callbackRules.tcpaWindowStart, campaign.callbackRules.tcpaWindowEnd);
-          updateScheduledCallback(cb.id, {
-            requestedDatetimeUtc: nextTime,
-            result: 'rescheduled_outside_tcpa_window',
-          });
-          logger.info('scheduled-callbacks', 'Callback rescheduled: outside TCPA window', {
-            id: cb.id,
-            nextTime,
-          });
+          const newAttempts = cb.attempts + 1;
+          if (newAttempts < cb.maxAttempts) {
+            updateScheduledCallback(cb.id, {
+              attempts: newAttempts,
+              requestedDatetimeUtc: nextTime,
+              result: 'rescheduled_outside_tcpa_window',
+            });
+            logger.info('scheduled-callbacks', 'Callback rescheduled: outside TCPA window', {
+              id: cb.id,
+              nextTime,
+              attempt: newAttempts,
+            });
+          } else {
+            updateScheduledCallback(cb.id, {
+              attempts: newAttempts,
+              status: 'failed',
+              result: 'max_attempts_exhausted_tcpa_constraint',
+            });
+            logger.warn('scheduled-callbacks', 'Callback failed: max attempts with TCPA constraint', { id: cb.id });
+          }
           continue;
         }
       }

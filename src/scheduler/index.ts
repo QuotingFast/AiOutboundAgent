@@ -37,6 +37,7 @@ type DialFn = (phone: string, leadName: string, state?: string) => Promise<boole
 
 const callbacks: ScheduledCallback[] = [];
 const retries: RetryEntry[] = [];
+const MAX_COMPLETED_ITEMS = 500;
 let dialFunction: DialFn | null = null;
 let timerHandle: ReturnType<typeof setInterval> | null = null;
 let running = false;
@@ -243,6 +244,27 @@ async function processDueItems(): Promise<void> {
           logger.error('scheduler', 'Notification error', { error: String(notifErr) })
         );
       }
+    }
+  }
+
+  // Prune old completed/failed entries to prevent unbounded growth
+  const terminalStatuses = new Set(['completed', 'failed', 'cancelled']);
+  const completedCallbacks = callbacks.filter(c => terminalStatuses.has(c.status));
+  if (completedCallbacks.length > MAX_COMPLETED_ITEMS) {
+    const toRemove = completedCallbacks.slice(0, completedCallbacks.length - MAX_COMPLETED_ITEMS);
+    for (const item of toRemove) {
+      const idx = callbacks.indexOf(item);
+      if (idx >= 0) callbacks.splice(idx, 1);
+    }
+  }
+
+  const terminalRetryStatuses = new Set(['completed', 'exhausted']);
+  const completedRetries = retries.filter(r => terminalRetryStatuses.has(r.status));
+  if (completedRetries.length > MAX_COMPLETED_ITEMS) {
+    const toRemove = completedRetries.slice(0, completedRetries.length - MAX_COMPLETED_ITEMS);
+    for (const item of toRemove) {
+      const idx = retries.indexOf(item);
+      if (idx >= 0) retries.splice(idx, 1);
     }
   }
 

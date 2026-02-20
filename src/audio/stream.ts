@@ -1513,8 +1513,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         const audioBuffer = Buffer.from(base64Audio, 'base64');
         const mixed = mixNoiseIntoAudio(audioBuffer, s.backgroundNoiseVolume);
         payload = mixed.toString('base64');
-      } catch {
-        // On any error, send original audio
+      } catch (err) {
+        logger.warn('stream', 'Noise mixing failed, using original audio', { sessionId, error: String(err) });
       }
     }
 
@@ -1534,7 +1534,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
         // Force end after 10s grace period
         setTimeout(async () => {
-          try { await endCall(callSid); } catch {}
+          try { await endCall(callSid); } catch (err) {
+            logger.warn('stream', 'Force end-call failed', { sessionId, callSid, error: String(err) });
+          }
         }, 10_000);
       } else if (!durationWarningFired && elapsedSec >= warnThreshold) {
         durationWarningFired = true;
@@ -1568,7 +1570,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   function emitTranscript(role: string, text: string): void {
     const listener = liveTranscriptListeners.get(callSid);
     if (listener) {
-      listener({ role, text, timestamp: Date.now() });
+      try {
+        listener({ role, text, timestamp: Date.now() });
+      } catch (err) {
+        logger.error('stream', 'Transcript listener error', { sessionId, error: String(err) });
+      }
     }
   }
 

@@ -93,11 +93,17 @@ export function createOrUpdateLead(phone: string, data: Partial<LeadMemory>): Le
   return newLead;
 }
 
+const MAX_CALL_HISTORY_PER_LEAD = 200;
+const MAX_NOTES_PER_LEAD = 100;
+
 export function recordCallToLead(phone: string, summary: LeadCallSummary): LeadMemory {
   const normalized = normalizePhone(phone);
   const lead = leadStore.get(normalized) || createOrUpdateLead(phone, {});
 
   lead.callHistory.push(summary);
+  if (lead.callHistory.length > MAX_CALL_HISTORY_PER_LEAD) {
+    lead.callHistory = lead.callHistory.slice(-MAX_CALL_HISTORY_PER_LEAD);
+  }
   lead.totalCalls++;
   lead.lastContactedAt = new Date().toISOString();
 
@@ -123,6 +129,9 @@ export function addLeadNote(phone: string, note: string): void {
   const lead = leadStore.get(normalizePhone(phone));
   if (lead) {
     lead.notes.push(`[${new Date().toISOString()}] ${note}`);
+    if (lead.notes.length > MAX_NOTES_PER_LEAD) {
+      lead.notes = lead.notes.slice(-MAX_NOTES_PER_LEAD);
+    }
     persistLeads();
   }
 }

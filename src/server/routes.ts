@@ -260,8 +260,12 @@ router.post('/twilio/voice', (req: Request, res: Response) => {
   const toPhone = req.body?.To || '';
   let lead = null;
   let transfer = null;
-  try { if (req.query.lead) lead = JSON.parse(req.query.lead as string); } catch {}
-  try { if (req.query.transfer) transfer = JSON.parse(req.query.transfer as string); } catch {}
+  try { if (req.query.lead) lead = JSON.parse(req.query.lead as string); } catch (err) {
+    logger.warn('routes', 'Failed to parse lead from query params', { callSid, error: String(err) });
+  }
+  try { if (req.query.transfer) transfer = JSON.parse(req.query.transfer as string); } catch (err) {
+    logger.warn('routes', 'Failed to parse transfer from query params', { callSid, error: String(err) });
+  }
 
   logger.info('routes', 'Voice webhook hit', { callSid, toPhone });
 
@@ -850,7 +854,7 @@ router.get('/api/compliance/recording-disclosure', (req: Request, res: Response)
 });
 
 router.get('/api/compliance/audit-log', (req: Request, res: Response) => {
-  const limit = parseInt(req.query.limit as string) || 50;
+  const limit = parseInt(req.query.limit as string, 10) || 50;
   res.json({ entries: getAuditLog(limit), total: getAuditLogCount() });
 });
 
@@ -986,8 +990,8 @@ router.get('/api/leads/search', (req: Request, res: Response) => {
     dateFrom: req.query.dateFrom as string,
     dateTo: req.query.dateTo as string,
     source: req.query.source as string,
-    page: req.query.page ? parseInt(req.query.page as string) : undefined,
-    limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+    page: req.query.page ? parseInt(req.query.page as string, 10) : undefined,
+    limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
   });
   res.json(result);
 });
@@ -1151,8 +1155,8 @@ router.post('/api/security/pii-check', (req: Request, res: Response) => {
 });
 
 router.get('/api/security/rate-limit/:key', (req: Request, res: Response) => {
-  const maxReq = parseInt(req.query.max as string) || 60;
-  const windowMs = parseInt(req.query.window as string) || 60000;
+  const maxReq = parseInt(req.query.max as string, 10) || 60;
+  const windowMs = parseInt(req.query.window as string, 10) || 60000;
   const result = checkRateLimit(req.params.key, maxReq, windowMs);
   res.json(result);
 });
@@ -1682,7 +1686,7 @@ router.post('/api/sms/send', async (req: Request, res: Response) => {
 router.get('/api/sms/log', (req: Request, res: Response) => {
   const phone = req.query.phone as string | undefined;
   const direction = req.query.direction as 'inbound' | 'outbound' | undefined;
-  const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
   res.json(getSmsLog({ phone, direction, limit }));
 });
 
@@ -1832,7 +1836,7 @@ router.get('/api/callbacks/upcoming', (_req: Request, res: Response) => {
  * GET /api/callbacks/past
  */
 router.get('/api/callbacks/past', (req: Request, res: Response) => {
-  const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
   res.json(getPastCallbacks(limit));
 });
 

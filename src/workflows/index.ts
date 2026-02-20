@@ -252,9 +252,18 @@ export async function sendSMS(to: string, body: string, from?: string): Promise<
 export function scheduleSMS(sms: SMSFollowUp): void {
   pendingSMS.push(sms);
   setTimeout(async () => {
-    await sendSMS(sms.to, sms.body);
-    const idx = pendingSMS.indexOf(sms);
-    if (idx >= 0) pendingSMS.splice(idx, 1);
+    try {
+      await sendSMS(sms.to, sms.body);
+    } catch (err) {
+      logger.error('workflows', 'Scheduled SMS send error', {
+        to: sms.to,
+        trigger: sms.trigger,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      const idx = pendingSMS.indexOf(sms);
+      if (idx >= 0) pendingSMS.splice(idx, 1);
+    }
   }, sms.delayMs);
   logger.info('workflows', 'SMS scheduled', { to: sms.to, trigger: sms.trigger, delayMs: sms.delayMs });
 }

@@ -90,12 +90,13 @@ export function assignVariant(testId: string): ABTestVariant | undefined {
   if (!test || !test.active || test.variants.length === 0) return undefined;
 
   // Weighted random selection
-  const rand = Math.random() * 100;
+  const totalWeight = test.variants.reduce((sum, v) => sum + v.weight, 0);
+  const rand = Math.random() * totalWeight;
   let cumulative = 0;
 
   for (const variant of test.variants) {
     cumulative += variant.weight;
-    if (rand <= cumulative) {
+    if (rand < cumulative) {
       test.results.totalAssignments++;
       test.results.variantStats[variant.id].assignments++;
       logger.debug('ab-test', 'Variant assigned', {

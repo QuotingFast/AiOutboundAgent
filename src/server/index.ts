@@ -24,6 +24,7 @@ import {
 } from '../campaign/scheduled-callbacks';
 import { loadLeadsFromDisk } from '../memory';
 import { flushAll } from '../db/persistence';
+import { loadAnalyticsFromDisk } from '../analytics';
 
 export function createServer(): http.Server {
   const app = express();
@@ -65,6 +66,7 @@ export function startServer(): void {
   loadLeadsFromDisk();
   loadCampaignStoreFromDisk();
   loadRecordingsFromDisk();
+  loadAnalyticsFromDisk();
   logger.info('server', 'Persisted data loaded');
 
   // Seed default campaigns (skips if campaigns already loaded from disk)

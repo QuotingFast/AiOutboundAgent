@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger';
+import { scheduleSave, loadData } from '../db/persistence';
 
 // ── Per-call analytics ──────────────────────────────────────────────
 
@@ -317,6 +318,20 @@ const analyticsStore: CallAnalyticsData[] = [];
 const MAX_STORED = 100;
 const activeAnalytics = new Map<string, CallAnalytics>();
 
+const ANALYTICS_KEY = 'analytics';
+
+function persistAnalytics(): void {
+  scheduleSave(ANALYTICS_KEY, () => analyticsStore);
+}
+
+export function loadAnalyticsFromDisk(): void {
+  const saved = loadData<CallAnalyticsData[]>(ANALYTICS_KEY);
+  if (saved) {
+    analyticsStore.push(...saved);
+    logger.info('analytics', `Loaded ${saved.length} analytics records from disk`);
+  }
+}
+
 export function createCallAnalytics(callSid: string): CallAnalytics {
   const a = new CallAnalytics(callSid);
   activeAnalytics.set(callSid, a);
@@ -334,6 +349,7 @@ export function finalizeCallAnalytics(callSid: string): CallAnalyticsData | unde
   analyticsStore.unshift(data);
   if (analyticsStore.length > MAX_STORED) analyticsStore.length = MAX_STORED;
   activeAnalytics.delete(callSid);
+  persistAnalytics();
   return data;
 }
 

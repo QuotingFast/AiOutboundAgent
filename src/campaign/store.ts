@@ -4,6 +4,7 @@
 // All data is campaign-scoped. No global defaults for user-facing behavior.
 
 import { logger } from '../utils/logger';
+import { loadData, scheduleSave } from '../db/persistence';
 import { buildSystemPrompt } from '../agent/prompts';
 import {
   CampaignConfig,
@@ -48,6 +49,56 @@ const MAX_ENFORCEMENT_LOG = 1000;
 const MAX_OUTBOUND_RECORDS = 5000;
 const MAX_SCHEDULED_CALLBACKS = 2000;
 
+// ── Persistence Helpers ─────────────────────────────────────────────
+
+const CAMPAIGNS_KEY = 'campaigns';
+const OUTBOUND_RECORDS_KEY = 'outbound_call_records';
+const SCHEDULED_CALLBACKS_KEY = 'scheduled_callbacks';
+const DID_MAPPINGS_KEY = 'did_mappings';
+
+function persistCampaigns(): void {
+  scheduleSave(CAMPAIGNS_KEY, () => Object.fromEntries(campaigns));
+}
+function persistOutboundRecords(): void {
+  scheduleSave(OUTBOUND_RECORDS_KEY, () => outboundCallRecords);
+}
+function persistScheduledCallbacks(): void {
+  scheduleSave(SCHEDULED_CALLBACKS_KEY, () => scheduledCallbacks);
+}
+function persistDidMappings(): void {
+  scheduleSave(DID_MAPPINGS_KEY, () => Object.fromEntries(didMappings));
+}
+
+export function loadCampaignStoreFromDisk(): void {
+  const campaignData = loadData<Record<string, CampaignConfig>>(CAMPAIGNS_KEY);
+  if (campaignData) {
+    for (const [key, value] of Object.entries(campaignData)) {
+      campaigns.set(key, value);
+    }
+    logger.info('campaign-store', `Loaded ${campaigns.size} campaigns from disk`);
+  }
+
+  const records = loadData<OutboundCallRecord[]>(OUTBOUND_RECORDS_KEY);
+  if (records) {
+    outboundCallRecords.push(...records);
+    logger.info('campaign-store', `Loaded ${outboundCallRecords.length} outbound call records from disk`);
+  }
+
+  const callbacks = loadData<CampaignScheduledCallback[]>(SCHEDULED_CALLBACKS_KEY);
+  if (callbacks) {
+    scheduledCallbacks.push(...callbacks);
+    logger.info('campaign-store', `Loaded ${scheduledCallbacks.length} scheduled callbacks from disk`);
+  }
+
+  const dids = loadData<Record<string, DidMapping>>(DID_MAPPINGS_KEY);
+  if (dids) {
+    for (const [key, value] of Object.entries(dids)) {
+      didMappings.set(key, value);
+    }
+    logger.info('campaign-store', `Loaded ${didMappings.size} DID mappings from disk`);
+  }
+}
+
 // ── Feature Flags ──────────────────────────────────────────────────
 
 export function getFeatureFlags(): CampaignFeatureFlags {
@@ -89,6 +140,7 @@ export function createCampaign(config: CampaignConfig): CampaignConfig {
   if (!campaignAiProfiles.has(config.id)) {
     campaignAiProfiles.set(config.id, [config.aiProfile]);
   }
+  persistCampaigns();
   logger.info('campaign-store', 'Campaign created', { id: config.id, type: config.type, name: config.name });
   return config;
 }
@@ -98,18 +150,22 @@ export function updateCampaign(id: string, updates: Partial<CampaignConfig>): Ca
   if (!existing) return undefined;
   const updated = { ...existing, ...updates, id: existing.id, updatedAt: new Date().toISOString() };
   campaigns.set(id, updated);
+  persistCampaigns();
   logger.info('campaign-store', 'Campaign updated', { id });
   return updated;
 }
 
 export function deleteCampaign(id: string): boolean {
-  return campaigns.delete(id);
+  const result = campaigns.delete(id);
+  if (result) persistCampaigns();
+  return result;
 }
 
 // ── DID Mappings ───────────────────────────────────────────────────
 
 export function setDidMapping(did: string, campaignId: string): void {
   didMappings.set(normalizePhone(did), { did: normalizePhone(did), campaignId });
+  persistDidMappings();
 }
 
 export function getDidMapping(did: string): DidMapping | undefined {
@@ -121,7 +177,9 @@ export function getAllDidMappings(): DidMapping[] {
 }
 
 export function removeDidMapping(did: string): boolean {
-  return didMappings.delete(normalizePhone(did));
+  const result = didMappings.delete(normalizePhone(did));
+  if (result) persistDidMappings();
+  return result;
 }
 
 // ── Outbound Call Records ──────────────────────────────────────────
@@ -131,6 +189,7 @@ export function recordOutboundCall(record: OutboundCallRecord): void {
   if (outboundCallRecords.length > MAX_OUTBOUND_RECORDS) {
     outboundCallRecords.length = MAX_OUTBOUND_RECORDS;
   }
+  persistOutboundRecords();
 }
 
 export function getOutboundCallRecords(): OutboundCallRecord[] {
@@ -157,6 +216,7 @@ export function createScheduledCallback(cb: CampaignScheduledCallback): Campaign
   if (scheduledCallbacks.length > MAX_SCHEDULED_CALLBACKS) {
     scheduledCallbacks.length = MAX_SCHEDULED_CALLBACKS;
   }
+  persistScheduledCallbacks();
   logger.info('campaign-store', 'Scheduled callback created', { id: cb.id, campaignId: cb.campaignId, phone: cb.phone });
   return cb;
 }
@@ -179,6 +239,7 @@ export function updateScheduledCallback(id: string, updates: Partial<CampaignSch
   const cb = scheduledCallbacks.find(c => c.id === id);
   if (!cb) return undefined;
   Object.assign(cb, updates, { updatedAt: new Date().toISOString() });
+  persistScheduledCallbacks();
   return cb;
 }
 
@@ -187,6 +248,7 @@ export function cancelScheduledCallback(id: string): boolean {
   if (cb && cb.status === 'scheduled') {
     cb.status = 'canceled';
     cb.updatedAt = new Date().toISOString();
+    persistScheduledCallbacks();
     return true;
   }
   return false;

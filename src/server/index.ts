@@ -1,14 +1,14 @@
 import express from 'express';
 import http from 'http';
 import WebSocket from 'ws';
-import { router } from './routes';
+import { router, loadRecordingsFromDisk } from './routes';
 import { handleMediaStream } from '../audio/stream';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { startScheduler, setDialFunction } from '../scheduler';
 import { startOutboundCall } from '../twilio/client';
 import { registerPendingSession } from '../audio/stream';
-import { recordCall } from '../config/runtime';
+import { recordCall, loadRuntimeFromDisk } from '../config/runtime';
 import { campaignRouter } from '../campaign/routes';
 import { resolveCampaignMiddleware } from '../campaign/middleware';
 import {
@@ -16,11 +16,14 @@ import {
   isFeatureFlagEnabled,
   recordOutboundCall,
   getCampaign,
+  loadCampaignStoreFromDisk,
 } from '../campaign/store';
 import {
   setCampaignDialFunction,
   startScheduledCallbackWorker,
 } from '../campaign/scheduled-callbacks';
+import { loadLeadsFromDisk } from '../memory';
+import { flushAll } from '../db/persistence';
 
 export function createServer(): http.Server {
   const app = express();
@@ -56,8 +59,26 @@ export function createServer(): http.Server {
 }
 
 export function startServer(): void {
-  // Seed default campaigns
+  // Load persisted data from disk before anything else
+  logger.info('server', 'Loading persisted data from disk...');
+  loadRuntimeFromDisk();
+  loadLeadsFromDisk();
+  loadCampaignStoreFromDisk();
+  loadRecordingsFromDisk();
+  logger.info('server', 'Persisted data loaded');
+
+  // Seed default campaigns (skips if campaigns already loaded from disk)
   seedCampaigns();
+
+  // Graceful shutdown: flush all pending writes to disk
+  const shutdownHandler = (signal: string) => {
+    logger.info('server', `Received ${signal}, flushing data to disk...`);
+    flushAll();
+    logger.info('server', 'Data flushed. Exiting.');
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => shutdownHandler('SIGTERM'));
+  process.on('SIGINT', () => shutdownHandler('SIGINT'));
 
   const server = createServer();
 

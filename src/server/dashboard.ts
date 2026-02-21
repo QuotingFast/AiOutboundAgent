@@ -1418,17 +1418,42 @@ export function getDashboardHtml(): string {
         <div>
           <label>Stability (0.0 - 1.0)</label>
           <div class="range-wrap">
-            <input type="range" id="elevenlabsStability" min="0" max="1" step="0.05" value="0.62">
-            <span class="range-val" id="elevenlabsStabilityVal">0.62</span>
+            <input type="range" id="elevenlabsStability" min="0" max="1" step="0.05" value="0.60">
+            <span class="range-val" id="elevenlabsStabilityVal">0.60</span>
           </div>
         </div>
         <div>
           <label>Similarity Boost (0.0 - 1.0)</label>
           <div class="range-wrap">
-            <input type="range" id="elevenlabsSimilarityBoost" min="0" max="1" step="0.05" value="0.82">
-            <span class="range-val" id="elevenlabsSimilarityBoostVal">0.82</span>
+            <input type="range" id="elevenlabsSimilarityBoost" min="0" max="1" step="0.05" value="0.80">
+            <span class="range-val" id="elevenlabsSimilarityBoostVal">0.80</span>
           </div>
         </div>
+      </div>
+      <div class="el-row">
+        <div>
+          <label>Style (0.0 - 0.5)</label>
+          <div class="range-wrap">
+            <input type="range" id="elevenlabsStyle" min="0" max="0.5" step="0.01" value="0.05">
+            <span class="range-val" id="elevenlabsStyleVal">0.05</span>
+          </div>
+        </div>
+        <div>
+          <label>Speed (0.7 - 1.2)</label>
+          <div class="range-wrap">
+            <input type="range" id="elevenlabsSpeed" min="0.7" max="1.2" step="0.01" value="1.00">
+            <span class="range-val" id="elevenlabsSpeedVal">1.00</span>
+          </div>
+        </div>
+      </div>
+      <div class="el-row" style="margin-top:8px">
+        <div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="elevenlabsUseSpeakerBoost" checked>
+            Speaker Boost
+          </label>
+        </div>
+        <div></div>
       </div>
     </div>
   </div>
@@ -1733,19 +1758,19 @@ var SETTINGS_FIELDS = [
   'voiceProvider','voice','realtimeModel','temperature','vadThreshold','silenceDurationMs',
   'prefixPaddingMs','bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
   'agentName','companyName','systemPromptOverride','inboundPromptOverride','allstateNumber','nonAllstateNumber',
-  'elevenlabsVoiceId','elevenlabsModelId','elevenlabsStability','elevenlabsSimilarityBoost',
+  'elevenlabsVoiceId','elevenlabsModelId','elevenlabsStability','elevenlabsSimilarityBoost','elevenlabsStyle','elevenlabsSpeed',
   'deepseekModel','backgroundNoiseVolume','amdAction','maxCallDurationSec','callDurationWarnPct','silenceTimeoutSec',
   'maxCallsPerPhonePerDay','autoRetryMaxAttempts'
 ];
 var CHECKBOX_FIELDS = [
-  'backgroundNoiseEnabled','amdEnabled','smsEnabled','autoSmsOnMissedCall',
+  'elevenlabsUseSpeakerBoost','backgroundNoiseEnabled','amdEnabled','smsEnabled','autoSmsOnMissedCall',
   'autoSmsOnCallback','autoSmsOnTransfer','autoSmsOnTextRequest','tcpaOverride',
   'autoDncEnabled','autoRetryEnabled'
 ];
 var NUMBER_FIELDS = [
   'temperature','vadThreshold','silenceDurationMs','prefixPaddingMs',
   'bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
-  'elevenlabsStability','elevenlabsSimilarityBoost','backgroundNoiseVolume',
+  'elevenlabsStability','elevenlabsSimilarityBoost','elevenlabsStyle','elevenlabsSpeed','backgroundNoiseVolume',
   'maxCallDurationSec','callDurationWarnPct','silenceTimeoutSec','maxCallsPerPhonePerDay','autoRetryMaxAttempts'
 ];
 var MODEL_VOICES = {

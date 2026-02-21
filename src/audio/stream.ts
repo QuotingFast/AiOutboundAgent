@@ -2,6 +2,7 @@ import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config';
 import { getSettings } from '../config/runtime';
+import { getVoicePreset } from '../config/voice-presets';
 import { buildSystemPrompt, buildInboundSystemPrompt, buildInboundGreetingText, getRealtimeTools, LeadData, TransferConfig } from '../agent/prompts';
 import { executeWarmTransfer } from '../twilio/transfer';
 import { endCall, startCallRecording, sendSms } from '../twilio/client';
@@ -516,8 +517,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     const campaignVoice = activeCampaign?.voiceConfig;
     const effectiveVoiceId = campaignVoice?.elevenlabsVoiceId || s.elevenlabsVoiceId;
     const effectiveModelId = campaignVoice?.elevenlabsModelId || s.elevenlabsModelId || 'eleven_turbo_v2_5';
-    const effectiveStability = campaignVoice?.elevenlabsStability ?? s.elevenlabsStability;
-    const effectiveSimilarityBoost = campaignVoice?.elevenlabsSimilarityBoost ?? s.elevenlabsSimilarityBoost;
+    // Resolve per-voice preset, then allow campaign/runtime overrides
+    const preset = getVoicePreset(effectiveVoiceId);
+    const effectiveStability = campaignVoice?.elevenlabsStability ?? s.elevenlabsStability ?? preset.stability;
+    const effectiveSimilarityBoost = campaignVoice?.elevenlabsSimilarityBoost ?? s.elevenlabsSimilarityBoost ?? preset.similarityBoost;
+    const effectiveStyle = campaignVoice?.elevenlabsStyle ?? s.elevenlabsStyle ?? preset.style;
+    const effectiveUseSpeakerBoost = campaignVoice?.elevenlabsUseSpeakerBoost ?? s.elevenlabsUseSpeakerBoost ?? preset.useSpeakerBoost;
+    const effectiveSpeed = campaignVoice?.elevenlabsSpeed ?? s.elevenlabsSpeed ?? preset.speed;
 
     if (!config.elevenlabs.apiKey || !effectiveVoiceId) {
       logger.error('stream', 'ElevenLabs MISSING config', {
@@ -550,6 +556,12 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         voice_settings: {
           stability: effectiveStability,
           similarity_boost: effectiveSimilarityBoost,
+          style: effectiveStyle,
+          use_speaker_boost: effectiveUseSpeakerBoost,
+        },
+        generation_config: {
+          chunk_length_schedule: [120, 160, 250, 290],
+          ...(effectiveSpeed !== 1.0 ? { speed: effectiveSpeed } : {}),
         },
         xi_api_key: config.elevenlabs.apiKey,
       }));

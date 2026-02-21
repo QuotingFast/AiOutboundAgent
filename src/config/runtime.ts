@@ -15,6 +15,9 @@ export interface RuntimeSettings {
       elevenlabsModelId: string;
       elevenlabsStability: number;
       elevenlabsSimilarityBoost: number;
+      elevenlabsStyle: number;
+      elevenlabsUseSpeakerBoost: boolean;
+      elevenlabsSpeed: number;
 
   // DeepSeek settings
   deepseekModel: string;
@@ -117,8 +120,11 @@ const settings: RuntimeSettings = {
       temperature: 0.8,
       elevenlabsVoiceId: config.elevenlabs.voiceId,
       elevenlabsModelId: 'eleven_turbo_v2_5',
-      elevenlabsStability: 0.62,
-      elevenlabsSimilarityBoost: 0.82,
+      elevenlabsStability: 0.60,
+      elevenlabsSimilarityBoost: 0.80,
+      elevenlabsStyle: 0.05,
+      elevenlabsUseSpeakerBoost: true,
+      elevenlabsSpeed: 1.00,
       deepseekModel: config.deepseek.model || 'deepseek-chat',
       vadThreshold: 0.9,
       silenceDurationMs: 950,

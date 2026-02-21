@@ -70,6 +70,9 @@ export interface CampaignVoiceConfig {
   elevenlabsModelId: string;
   elevenlabsStability: number;
   elevenlabsSimilarityBoost: number;
+  elevenlabsStyle: number;
+  elevenlabsUseSpeakerBoost: boolean;
+  elevenlabsSpeed: number;
   deepseekModel: string;
 }
 

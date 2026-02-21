@@ -72,6 +72,7 @@ import {
   enforceInboundCall,
   enforceSmsSend,
 } from '../campaign/middleware';
+import { getVoicePreset } from '../config/voice-presets';
 import {
   resolveCallbackCampaign,
   buildFallbackIvrTwiml,
@@ -573,6 +574,7 @@ router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
         return;
       }
 
+      const preset = getVoicePreset(voiceId);
       const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
         method: 'POST',
         headers: {
@@ -583,7 +585,12 @@ router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
         body: JSON.stringify({
           text: PREVIEW_TEXT,
           model_id: 'eleven_turbo_v2_5',
-          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+          voice_settings: {
+            stability: preset.stability,
+            similarity_boost: preset.similarity_boost,
+            style: preset.style,
+            use_speaker_boost: preset.use_speaker_boost,
+          },
         }),
       });
 
@@ -676,6 +683,7 @@ router.get('/api/elevenlabs-voice-preview/:voiceId', async (req: Request, res: R
       return;
     }
 
+    const preset = getVoicePreset(voiceId);
     const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: 'POST',
       headers: {
@@ -686,7 +694,12 @@ router.get('/api/elevenlabs-voice-preview/:voiceId', async (req: Request, res: R
       body: JSON.stringify({
         text: PREVIEW_TEXT,
         model_id: 'eleven_turbo_v2_5',
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        voice_settings: {
+          stability: preset.stability,
+          similarity_boost: preset.similarity_boost,
+          style: preset.style,
+          use_speaker_boost: preset.use_speaker_boost,
+        },
       }),
     });
 

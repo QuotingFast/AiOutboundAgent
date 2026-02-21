@@ -26,6 +26,7 @@ import {
 } from '../scheduler';
 import { getCampaign } from '../campaign/store';
 import { CampaignConfig } from '../campaign/types';
+import { getVoicePreset } from '../config/voice-presets';
 
 // Map of callSid -> session data for passing lead/transfer info
 const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig; toPhone?: string; campaignId?: string }>();
@@ -516,8 +517,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     const campaignVoice = activeCampaign?.voiceConfig;
     const effectiveVoiceId = campaignVoice?.elevenlabsVoiceId || s.elevenlabsVoiceId;
     const effectiveModelId = campaignVoice?.elevenlabsModelId || s.elevenlabsModelId || 'eleven_turbo_v2_5';
-    const effectiveStability = campaignVoice?.elevenlabsStability ?? s.elevenlabsStability;
-    const effectiveSimilarityBoost = campaignVoice?.elevenlabsSimilarityBoost ?? s.elevenlabsSimilarityBoost;
+
+    // Resolve per-voice tuned preset, then allow campaign/runtime overrides
+    const voicePreset = getVoicePreset(effectiveVoiceId);
+    const effectiveStability = campaignVoice?.elevenlabsStability ?? s.elevenlabsStability ?? voicePreset.stability;
+    const effectiveSimilarityBoost = campaignVoice?.elevenlabsSimilarityBoost ?? s.elevenlabsSimilarityBoost ?? voicePreset.similarity_boost;
+    const effectiveStyle = campaignVoice?.elevenlabsStyle ?? s.elevenlabsStyle ?? voicePreset.style;
+    const effectiveUseSpeakerBoost = campaignVoice?.elevenlabsUseSpeakerBoost ?? s.elevenlabsUseSpeakerBoost ?? voicePreset.use_speaker_boost;
+    const effectiveSpeed = campaignVoice?.elevenlabsSpeed ?? s.elevenlabsSpeed ?? voicePreset.speed;
 
     if (!config.elevenlabs.apiKey || !effectiveVoiceId) {
       logger.error('stream', 'ElevenLabs MISSING config', {
@@ -530,7 +537,15 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     }
 
     const voiceId = effectiveVoiceId;
-    logger.info('stream', 'ElevenLabs connecting', { sessionId, voiceId, campaignId: activeCampaign?.id || 'none' });
+    logger.info('stream', 'ElevenLabs connecting', {
+      sessionId, voiceId,
+      stability: effectiveStability,
+      similarity: effectiveSimilarityBoost,
+      style: effectiveStyle,
+      speakerBoost: effectiveUseSpeakerBoost,
+      speed: effectiveSpeed,
+      campaignId: activeCampaign?.id || 'none',
+    });
     const modelId = effectiveModelId;
     const url = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=${modelId}&output_format=ulaw_8000`;
 
@@ -550,6 +565,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         voice_settings: {
           stability: effectiveStability,
           similarity_boost: effectiveSimilarityBoost,
+          style: effectiveStyle,
+          use_speaker_boost: effectiveUseSpeakerBoost,
+        },
+        generation_config: {
+          chunk_length_schedule: [120, 160, 250, 290],
         },
         xi_api_key: config.elevenlabs.apiKey,
       }));

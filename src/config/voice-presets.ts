@@ -11,10 +11,12 @@ export interface VoicePreset {
 }
 
 // Default fallback for unknown voices
+// Based on community research: stability 0.4-0.7 for natural conversation,
+// similarity moderate (not maxed to avoid artifacts), speed ~0.95-1.05 for realism.
 const DEFAULT_PRESET: VoicePreset = {
-  stability: 0.60,
-  similarityBoost: 0.80,
-  style: 0.05,
+  stability: 0.50,
+  similarityBoost: 0.78,
+  style: 0.06,
   useSpeakerBoost: true,
   speed: 1.00,
 };
@@ -36,9 +38,10 @@ const VOICE_PRESETS: Record<string, VoicePreset> = {
   '56AoDkrOh6qfVPDXZ7Pt': { stability: 0.60, similarityBoost: 0.82, style: 0.04, useSpeakerBoost: true, speed: 0.99 },  // Cassidy
 
   // ── Natural Male ───────────────────────────────────────────────
-  // Confident but natural variation
-  cjVigY5qzO86Huf0OWal: { stability: 0.58, similarityBoost: 0.82, style: 0.05, useSpeakerBoost: true, speed: 1.00 },  // Eric
-  iP95p4xoKVk53GoZ742B: { stability: 0.55, similarityBoost: 0.80, style: 0.06, useSpeakerBoost: true, speed: 1.01 },  // Chris
+  // Confident but natural variation — lower stability (0.45-0.55) for more expressive,
+  // human-like delivery per community research on phone agent voices.
+  cjVigY5qzO86Huf0OWal: { stability: 0.50, similarityBoost: 0.78, style: 0.07, useSpeakerBoost: true, speed: 1.00 },  // Eric — warm conversational outbound agent
+  iP95p4xoKVk53GoZ742B: { stability: 0.48, similarityBoost: 0.78, style: 0.08, useSpeakerBoost: true, speed: 1.01 },  // Chris — confident energy for agency dev
   bIHbv24MWmeRgasZH58o: { stability: 0.57, similarityBoost: 0.81, style: 0.05, useSpeakerBoost: true, speed: 1.00 },  // Will
   nPczCjzI2devNBz1zQrb: { stability: 0.59, similarityBoost: 0.82, style: 0.04, useSpeakerBoost: true, speed: 0.99 },  // Brian
   TX3LPaxmHKxFdv7VOQHJ: { stability: 0.56, similarityBoost: 0.80, style: 0.06, useSpeakerBoost: true, speed: 1.02 },  // Liam
@@ -66,8 +69,9 @@ const VOICE_PRESETS: Record<string, VoicePreset> = {
   c4TutCiAuWP4vwb1xebb: { stability: 0.48, similarityBoost: 0.78, style: 0.12, useSpeakerBoost: true, speed: 0.96 },  // Annie-Beth
 
   // ── Southern Male ──────────────────────────────────────────────
-  // Maximum character expression with slow pacing
-  '8kvxG72xUMYnIFhZYwWj': { stability: 0.47, similarityBoost: 0.77, style: 0.14, useSpeakerBoost: true, speed: 0.93 },  // Billy Bob
+  // Maximum character expression with slow pacing.
+  // Community research: stability 0.35-0.50 for max expressiveness. Southern drawl needs low stability + high style.
+  '8kvxG72xUMYnIFhZYwWj': { stability: 0.40, similarityBoost: 0.75, style: 0.16, useSpeakerBoost: true, speed: 0.92 },  // Billy Bob — max southern character
   Bj9UqZbhQsanLzgalpEG: { stability: 0.50, similarityBoost: 0.78, style: 0.12, useSpeakerBoost: true, speed: 0.94 },  // Austin
   DwEFbvGTcJhAk9eY9m0f: { stability: 0.52, similarityBoost: 0.79, style: 0.10, useSpeakerBoost: true, speed: 0.95 },  // Southern Mike
 
@@ -87,7 +91,8 @@ const VOICE_PRESETS: Record<string, VoicePreset> = {
   f5HLTX707KIM4SzJYzSz: { stability: 0.55, similarityBoost: 0.80, style: 0.06, useSpeakerBoost: true, speed: 1.01 },  // Hey Its Brad
 
   // ── Steve — conversational, warm, not stiff ────────────────────
-  jn34bTlmmOgOJU9XfPuy: { stability: 0.54, similarityBoost: 0.81, style: 0.08, useSpeakerBoost: true, speed: 0.98 },  // Steve
+  // Dropped stability further per research: 0.4-0.6 range for expressive natural delivery
+  jn34bTlmmOgOJU9XfPuy: { stability: 0.45, similarityBoost: 0.78, style: 0.10, useSpeakerBoost: true, speed: 0.97 },  // Steve
 
   // ── Energetic / Young ──────────────────────────────────────────
   // Slightly faster with more style for energy

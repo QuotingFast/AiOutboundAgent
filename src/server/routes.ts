@@ -1465,6 +1465,13 @@ async function handleWeblead(req: Request, res: Response) {
                                   }
                             }
 
+                            // Build vehicles array for lead data
+                            const leadVehicles = vehicles.map((v: any) => ({
+                              year: v.year || '',
+                              make: v.make || '',
+                              model: v.model || '',
+                            }));
+
                             const cr = await startOutboundCall({
                                         to: phone,
                                         from: fromNumber,
@@ -1472,6 +1479,7 @@ async function handleWeblead(req: Request, res: Response) {
                                                       first_name: firstName,
                                                       state,
                                                       current_insurer: currentInsurer,
+                                                      vehicles: leadVehicles,
                                         },
                             });
 
@@ -1479,6 +1487,7 @@ async function handleWeblead(req: Request, res: Response) {
                                         first_name: firstName,
                                         state,
                                         current_insurer: currentInsurer,
+                                        vehicles: leadVehicles,
                             }, undefined, phone);
 
                             recordCall(cr.callSid, phone, firstName);

@@ -377,13 +377,13 @@ export const VOICE_PRESETS: Record<string, VoicePreset> = {
     speed: 1.00,
   },
 
-  // Steve — straightforward, clear male
+  // Steve — warm, conversational male (tuned for natural phone delivery)
   'jn34bTlmmOgOJU9XfPuy': {
-    stability: 0.64,
-    similarity_boost: 0.84,
-    style: 0.03,
+    stability: 0.54,
+    similarity_boost: 0.81,
+    style: 0.08,
     use_speaker_boost: true,
-    speed: 1.00,
+    speed: 0.98,
   },
 
   // Mark Natural — organic, conversational male

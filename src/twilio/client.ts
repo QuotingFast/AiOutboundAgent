@@ -1,18 +1,14 @@
 import Twilio from 'twilio';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { LeadData } from '../agent/prompts';
 
 const twilioClient = Twilio(config.twilio.accountSid, config.twilio.authToken);
 
 export interface StartCallParams {
   to: string;
   from: string;
-  lead: {
-    first_name: string;
-    state?: string;
-    current_insurer?: string;
-    insured?: boolean;
-  };
+  lead: LeadData;
   transfer?: {
     mode: 'warm' | 'cold';
     target_number: string;

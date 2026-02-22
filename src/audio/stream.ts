@@ -310,6 +310,16 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     const effectiveAgentName = campaignProfile?.agentName || s.agentName;
     const effectiveCompanyName = campaignProfile?.companyName || s.companyName;
 
+    // Build vehicle template strings from lead data
+    const vList = leadData.vehicles || [];
+    const firstVehicle = vList[0];
+    const vehicleYear = firstVehicle?.year || '';
+    const vehicleModel = firstVehicle?.model || '';
+    const vehicleMake = firstVehicle?.make || '';
+    const allVehiclesStr = vList.length > 0
+      ? vList.map(v => [v.year, v.model].filter(Boolean).join(' ')).join(' and ')
+      : '';
+
     let instructions: string;
     if (campaignProfile?.systemPrompt && callDirection === 'outbound') {
       // Campaign has its own system prompt — use it with variable substitution
@@ -319,7 +329,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         .replace(/\{\{current_insurer\}\}/g, leadData.current_insurer || 'unknown')
         .replace(/\{\{agent_name\}\}/g, effectiveAgentName)
         .replace(/\{\{company_name\}\}/g, effectiveCompanyName)
-        .replace(/\{\{agency_name\}\}/g, leadData.first_name);
+        .replace(/\{\{agency_name\}\}/g, leadData.first_name)
+        .replace(/\{\{vehicle_year\}\}/g, vehicleYear)
+        .replace(/\{\{vehicle_model\}\}/g, vehicleModel)
+        .replace(/\{\{vehicle_make\}\}/g, vehicleMake)
+        .replace(/\{\{all_vehicles\}\}/g, allVehiclesStr);
     } else if (campaignProfile?.inboundPrompt && callDirection === 'inbound') {
       // Campaign has its own inbound prompt
       instructions = campaignProfile.inboundPrompt
@@ -459,6 +473,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     const effectiveAgentName = campaignProfile?.agentName || s.agentName;
     const effectiveCompanyName = campaignProfile?.companyName || s.companyName;
 
+    // Build vehicle strings for greeting substitution
+    const gVehicles = leadData.vehicles || [];
+    const gFirstVehicle = gVehicles[0];
+    const vehicleYear = gFirstVehicle?.year || '';
+    const vehicleModel = gFirstVehicle?.model || '';
+    const vehicleMake = gFirstVehicle?.make || '';
+
     logger.info('stream', 'Triggering greeting', { sessionId, direction: callDirection, lead: leadData.first_name, campaignId: activeCampaign?.id || 'none' });
     responseRequestedAt = Date.now();
 
@@ -479,7 +500,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       if (campaignProfile?.greetingText) {
         const greetingText = campaignProfile.greetingText
           .replace(/\{\{first_name\}\}/g, leadData.first_name)
-          .replace(/\{\{agency_name\}\}/g, leadData.first_name);
+          .replace(/\{\{agency_name\}\}/g, leadData.first_name)
+          .replace(/\{\{vehicle_year\}\}/g, vehicleYear)
+          .replace(/\{\{vehicle_model\}\}/g, vehicleModel)
+          .replace(/\{\{vehicle_make\}\}/g, vehicleMake);
         greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "${greetingText}"]`;
       } else {
         greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "Hey ${leadData.first_name}, this is ${effectiveAgentName} over at ${effectiveCompanyName} — you had looked into an auto insurance quote not too long ago, right?"]`;

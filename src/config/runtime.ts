@@ -132,7 +132,7 @@ const settings: RuntimeSettings = {
       bargeInDebounceMs: 350,
       echoSuppressionMs: 200,
       maxResponseTokens: 275,
-      agentName: 'Alex',
+      agentName: 'Steve',
       companyName: 'Affordable Auto Rates',
       systemPromptOverride: '',
       inboundPromptOverride: '',

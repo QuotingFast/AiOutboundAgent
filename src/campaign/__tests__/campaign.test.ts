@@ -102,7 +102,7 @@ describe('Campaign Store', () => {
     assert(campaign !== undefined, 'Consumer campaign exists');
     assertEqual(campaign!.type, 'consumer_auto_insurance', 'Consumer campaign type');
     assertEqual(campaign!.active, true, 'Consumer campaign active');
-    assertEqual(campaign!.aiProfile.agentName, 'Alex', 'Consumer agent name');
+    assertEqual(campaign!.aiProfile.agentName, 'Steve', 'Consumer agent name');
     assertEqual(campaign!.aiProfile.companyName, 'Affordable Auto Rates', 'Consumer company name');
   });
 

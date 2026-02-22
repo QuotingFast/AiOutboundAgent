@@ -389,7 +389,7 @@ export function getDashboardHtml(): string {
     <div style="margin-bottom:20px">
       <h3 style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:8px">AI Agent Profile</h3>
       <div class="grid">
-        <div><label>Agent Name</label><input type="text" id="campAgentName" placeholder="Alex"></div>
+        <div><label>Agent Name</label><input type="text" id="campAgentName" placeholder="Steve"></div>
         <div><label>Company Name</label><input type="text" id="campCompanyName" placeholder="Affordable Auto Rates"></div>
       </div>
       <div style="margin-top:12px"><label>System Prompt</label><textarea id="campSystemPrompt" style="min-height:120px"></textarea></div>
@@ -1519,7 +1519,7 @@ export function getDashboardHtml(): string {
     <div class="grid">
       <div>
         <label>Agent Name</label>
-        <input type="text" id="agentName" value="Alex">
+        <input type="text" id="agentName" value="Steve">
       </div>
       <div>
         <label>Company Name</label>

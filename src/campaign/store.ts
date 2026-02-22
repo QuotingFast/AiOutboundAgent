@@ -5,7 +5,7 @@
 
 import { logger } from '../utils/logger';
 import { loadData, scheduleSave } from '../db/persistence';
-import { buildSystemPrompt } from '../agent/prompts';
+
 import {
   CampaignConfig,
   CampaignContext,
@@ -353,15 +353,15 @@ export function seedCampaigns(): void {
   const consumerAiProfile: CampaignAIProfile = {
     id: 'ai-profile-consumer-default',
     campaignId: 'campaign-consumer-auto',
-    agentName: 'Alex',
+    agentName: 'Steve',
     companyName: 'Affordable Auto Rates',
     temperature: 0.8,
     maxResponseTokens: 275,
     realtimeModel: 'gpt-4o-realtime-preview',
-    systemPrompt: buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}', vehicles: [{ year: '{{vehicle_year}}', model: '{{vehicle_model}}' }] }),
+    systemPrompt: '', // Empty — built dynamically at call time via buildSystemPrompt() with real lead data
     inboundPrompt: '',
-    greetingText: 'Hey {{first_name}}, this is Alex over at Affordable Auto Rates — I\'m calling about the auto insurance quote you requested online for your {{vehicle_year}} {{vehicle_model}}.',
-    inboundGreetingText: 'Thanks for calling Affordable Auto Rates, this is Alex. How can I help you today?',
+    greetingText: 'Hey {{first_name}}, this is Steve over at Affordable Auto Rates — I\'m calling about the auto insurance quote you requested online for your {{vehicle_year}} {{vehicle_model}}.',
+    inboundGreetingText: 'Thanks for calling Affordable Auto Rates, this is Steve. How can I help you today?',
     tools: [],
   };
 
@@ -374,9 +374,9 @@ export function seedCampaigns(): void {
     updatedAt: now,
     aiProfile: consumerAiProfile,
     voiceConfig: {
-      voiceProvider: 'elevenlabs',
+      voiceProvider: 'deepseek',
       openaiVoice: 'coral',
-      elevenlabsVoiceId: 'cjVigY5qzO86Huf0OWal', // eric
+      elevenlabsVoiceId: 'jn34bTlmmOgOJU9XfPuy', // steve — friendly, easygoing
       elevenlabsModelId: 'eleven_turbo_v2_5',
       elevenlabsStability: 0.50,
       elevenlabsSimilarityBoost: 0.78,
@@ -692,7 +692,7 @@ One question at a time. Short replies. Natural delivery. No markdown or formatti
     {
       id: 'consumer-email-followup',
       name: 'Consumer Email Follow-up',
-      body: 'Hi {{first_name}},\n\nWe tried reaching you about the auto insurance quote you requested. We found some competitive rates in {{state}} that might save you money.\n\nGive us a call back when you have a moment, or reply to this email.\n\nBest,\nAlex\nAffordable Auto Rates',
+      body: 'Hi {{first_name}},\n\nWe tried reaching you about the auto insurance quote you requested. We found some competitive rates in {{state}} that might save you money.\n\nGive us a call back when you have a moment, or reply to this email.\n\nBest,\nSteve\nAffordable Auto Rates',
       category: 'custom',
       active: true,
       createdAt: now,

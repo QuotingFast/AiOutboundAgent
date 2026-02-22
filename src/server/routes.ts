@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { startOutboundCall, StartCallParams, sendSms, endCall } from '../twilio/client';
+import { startOutboundCall, StartCallParams, sendSms, endCall, fetchRecentRecordings } from '../twilio/client';
 import { buildMediaStreamTwiml, buildTransferTwiml, escapeXml } from '../twilio/twiml';
 import { registerPendingSession } from '../audio/stream';
 import { TransferConfig, buildSystemPrompt } from '../agent/prompts';
@@ -126,6 +126,34 @@ export function getRecordingByCallSid(callSid: string): CallRecording | undefine
 
 export function getRecordingBySid(recordingSid: string): CallRecording | undefined {
   return recordingStore.find(r => r.recordingSid === recordingSid);
+}
+
+/**
+ * Sync recordings from Twilio's API, backfilling any that were missed
+ * (e.g. due to server downtime, callback failures, or container restarts).
+ */
+export async function syncRecordingsFromTwilio(): Promise<{ synced: number; total: number }> {
+  const remote = await fetchRecentRecordings(100);
+  const existingSids = new Set(recordingStore.map(r => r.recordingSid));
+  let synced = 0;
+
+  for (const rec of remote) {
+    if (!existingSids.has(rec.recordingSid)) {
+      recordingStore.unshift(rec);
+      synced++;
+    }
+  }
+
+  if (recordingStore.length > MAX_RECORDINGS) {
+    recordingStore.length = MAX_RECORDINGS;
+  }
+
+  if (synced > 0) {
+    persistRecordings();
+    logger.info('routes', `Synced ${synced} recordings from Twilio`, { total: recordingStore.length });
+  }
+
+  return { synced, total: recordingStore.length };
 }
 
 // In-memory cache for voice preview audio (voice -> mp3 Buffer)
@@ -764,6 +792,22 @@ router.get('/api/recordings/:callSid', (req: Request, res: Response) => {
     return;
   }
   res.json(recording);
+});
+
+/**
+ * POST /api/recordings/sync
+ * Manually trigger a sync of recordings from Twilio's API.
+ * Backfills any recordings missed due to callback failures or server downtime.
+ */
+router.post('/api/recordings/sync', async (_req: Request, res: Response) => {
+  try {
+    const result = await syncRecordingsFromTwilio();
+    res.json({ success: true, ...result });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error('routes', 'Manual recording sync failed', { error: msg });
+    res.status(500).json({ error: msg });
+  }
 });
 
 // Proxy endpoint to serve recording audio (Twilio requires auth)

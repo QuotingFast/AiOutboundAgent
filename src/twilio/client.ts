@@ -124,4 +124,40 @@ export async function sendSms(to: string, body: string, from?: string): Promise<
   return { sid: message.sid, status: message.status };
 }
 
+// ── Recording Sync ──
+
+export interface TwilioRecordingSummary {
+  recordingSid: string;
+  callSid: string;
+  recordingUrl: string;
+  durationSec: number;
+  channels: number;
+  source: string;
+  timestamp: string;
+}
+
+/**
+ * Fetch recent recordings from Twilio's API.
+ * Used to backfill any recordings missed due to callback failures or restarts.
+ */
+export async function fetchRecentRecordings(limit = 50): Promise<TwilioRecordingSummary[]> {
+  try {
+    const recordings = await twilioClient.recordings.list({ limit });
+    return recordings.map(r => ({
+      recordingSid: r.sid,
+      callSid: r.callSid,
+      recordingUrl: `https://api.twilio.com/2010-04-01/Accounts/${config.twilio.accountSid}/Recordings/${r.sid}`,
+      durationSec: parseInt(String(r.duration || '0'), 10),
+      channels: parseInt(String(r.channels || '1'), 10),
+      source: r.source || 'unknown',
+      timestamp: r.dateCreated ? r.dateCreated.toISOString() : new Date().toISOString(),
+    }));
+  } catch (err) {
+    logger.error('twilio-client', 'Failed to fetch recordings from Twilio', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
+}
+
 export { twilioClient };

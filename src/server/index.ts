@@ -1,7 +1,7 @@
 import express from 'express';
 import http from 'http';
 import WebSocket from 'ws';
-import { router, loadRecordingsFromDisk } from './routes';
+import { router, loadRecordingsFromDisk, syncRecordingsFromTwilio } from './routes';
 import { handleMediaStream } from '../audio/stream';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -101,6 +101,15 @@ export function startServer(): void {
     logger.info('server', `  Health:     GET  ${config.baseUrl}/health`);
     logger.info('server', `  SMS In:     POST ${config.baseUrl}/twilio/sms-incoming`);
     logger.info('server', `  Campaigns:  GET  ${config.baseUrl}/api/campaigns`);
+
+    // Backfill any recordings missed while server was down
+    syncRecordingsFromTwilio().then(({ synced, total }) => {
+      if (synced > 0) {
+        logger.info('server', `Recording sync complete: ${synced} new, ${total} total`);
+      }
+    }).catch(err => {
+      logger.error('server', 'Recording sync failed on startup', { error: String(err) });
+    });
 
     // Start callback/retry scheduler (legacy)
     setDialFunction(async (phone: string, leadName: string, state?: string) => {

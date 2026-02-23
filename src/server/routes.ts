@@ -523,7 +523,11 @@ router.get('/api/calls', (_req: Request, res: Response) => {
 });
 
 router.get('/api/default-prompt', (_req: Request, res: Response) => {
-  const prompt = buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}' });
+  const s = getSettings();
+  const prompt = buildSystemPrompt(
+    { first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}', vehicles: [{ year: '{{vehicle_year}}', model: '{{vehicle_model}}' }] },
+    { agentName: s.agentName, companyName: s.companyName },
+  );
   res.json({ prompt });
 });
 

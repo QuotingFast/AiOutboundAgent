@@ -374,8 +374,11 @@ export function getDashboardHtml(): string {
       <h1 class="page-title" id="pageTitle">Campaigns</h1>
     </div>
     <div class="topbar-right">
+      <button id="pauseBtn" class="btn btn-sm" onclick="togglePause()" style="background:var(--orange);color:#fff;border:none;font-weight:600;padding:6px 14px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:6px;font-size:13px;box-shadow:0 2px 8px rgba(245,158,11,0.3);transition:all 0.2s">
+        <span id="pauseIcon">&#9646;&#9646;</span> <span id="pauseLabel">Pause All</span>
+      </button>
       <div class="topbar-status">
-        <span class="status-dot"></span> Connected
+        <span class="status-dot" id="statusDot"></span> <span id="statusLabel">Connected</span>
       </div>
     </div>
   </header>
@@ -1917,6 +1920,23 @@ export function getDashboardHtml(): string {
         <span style="font-size:11px;color:var(--text2)">Default: 6 PM</span>
       </div>
     </div>
+    <h3 style="margin-top:16px;margin-bottom:8px">Auto-Processing</h3>
+    <div class="grid">
+      <div>
+        <label>Auto-Dial Web Leads</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="webleadAutoDialEnabled" style="width:auto">
+          <span style="font-size:13px;color:var(--text2)">Automatically call new web leads when they arrive (off by default)</span>
+        </div>
+      </div>
+      <div>
+        <label>Master Pause</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="autoProcessingPaused" style="width:auto">
+          <span style="font-size:13px;color:var(--text2)">Halt all automatic dialing (callbacks, retries, weblead auto-dial)</span>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Transfer Numbers -->
@@ -2035,8 +2055,12 @@ function refreshActiveTab(name) {
   if (name === 'leads') { loadLeads(); loadCallbacks(); }
   if (name === 'sms') { loadSmsLog(); loadSmsTemplates(); loadSmsStats(); }
 }
-// Auto-refresh: poll the active tab every 15 seconds
+// Auto-refresh: poll the active tab every 15 seconds & sync pause state
 setInterval(function() {
+  // Always keep topbar pause button in sync
+  fetch('/api/settings').then(function(r) { return r.json(); }).then(function(s) {
+    if (typeof syncPauseButton === 'function') syncPauseButton(!!s.autoProcessingPaused);
+  }).catch(function() {});
   // Don't poll settings (no need) or while user might be editing
   if (activeTab === 'settings') return;
   refreshActiveTab();
@@ -2055,7 +2079,8 @@ var SETTINGS_FIELDS = [
 var CHECKBOX_FIELDS = [
   'elevenlabsUseSpeakerBoost','backgroundNoiseEnabled','amdEnabled','smsEnabled','autoSmsOnMissedCall',
   'autoSmsOnCallback','autoSmsOnTransfer','autoSmsOnTextRequest','tcpaOverride',
-  'autoDncEnabled','autoRetryEnabled','qualityAlertsEnabled','dailyReportEnabled'
+  'autoDncEnabled','autoRetryEnabled','qualityAlertsEnabled','dailyReportEnabled',
+  'webleadAutoDialEnabled','autoProcessingPaused'
 ];
 var NUMBER_FIELDS = [
   'temperature','vadThreshold','silenceDurationMs','prefixPaddingMs',
@@ -2165,6 +2190,8 @@ async function loadSettings() {
       var cbEl = document.getElementById(CHECKBOX_FIELDS[ci]);
       if (cbEl) cbEl.checked = !!s[CHECKBOX_FIELDS[ci]];
     }
+    // Sync topbar pause button with settings
+    syncPauseButton(!!s.autoProcessingPaused);
     updatePromptCounter();
     toast('Settings loaded', 'success');
   } catch (e) { toast('Failed to load settings', 'error'); }
@@ -2530,6 +2557,45 @@ async function sendDailyReport() {
     if (res.ok) toast('Report sent' + (data.sent ? '' : ' (email not configured)'), data.sent ? 'success' : 'info');
     else toast(data.error || 'Failed', 'error');
   } catch (e) { toast('Failed to send report', 'error'); }
+}
+
+// ── Master Pause / Resume ──
+var isPaused = false;
+function syncPauseButton(paused) {
+  isPaused = !!paused;
+  var btn = document.getElementById('pauseBtn');
+  var icon = document.getElementById('pauseIcon');
+  var label = document.getElementById('pauseLabel');
+  var dot = document.getElementById('statusDot');
+  var statusLabel = document.getElementById('statusLabel');
+  var pauseCheckbox = document.getElementById('autoProcessingPaused');
+  if (isPaused) {
+    btn.style.background = 'var(--green)';
+    btn.style.boxShadow = '0 2px 8px rgba(34,197,94,0.3)';
+    icon.innerHTML = '&#9654;';
+    label.textContent = 'Resume';
+    dot.style.background = 'var(--orange)';
+    dot.style.boxShadow = '0 0 8px rgba(245,158,11,0.5)';
+    statusLabel.textContent = 'Paused';
+    if (pauseCheckbox) pauseCheckbox.checked = true;
+  } else {
+    btn.style.background = 'var(--orange)';
+    btn.style.boxShadow = '0 2px 8px rgba(245,158,11,0.3)';
+    icon.innerHTML = '&#9646;&#9646;';
+    label.textContent = 'Pause All';
+    dot.style.background = 'var(--green)';
+    dot.style.boxShadow = '0 0 8px rgba(34,197,94,0.5)';
+    statusLabel.textContent = 'Connected';
+    if (pauseCheckbox) pauseCheckbox.checked = false;
+  }
+}
+async function togglePause() {
+  try {
+    var res = await fetch('/api/settings/toggle-pause', { method: 'POST' });
+    var data = await res.json();
+    syncPauseButton(data.paused);
+    toast(data.paused ? 'All auto-processing paused' : 'Auto-processing resumed', data.paused ? 'info' : 'success');
+  } catch (e) { toast('Failed to toggle pause', 'error'); }
 }
 async function loadAnalytics() {
   try {

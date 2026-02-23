@@ -48,6 +48,9 @@ export interface RuntimeSettings {
   // Whether weblead auto-dial is enabled
   webleadAutoDialEnabled?: boolean;
 
+  // Master pause — halts all automatic dialing (callbacks, retries, weblead auto-dial)
+  autoProcessingPaused: boolean;
+
   // TCPA time-of-day override (bypass 8am-9pm restriction when true)
   tcpaOverride: boolean;
 
@@ -150,7 +153,8 @@ const settings: RuntimeSettings = {
       systemPromptOverride: '',
       inboundPromptOverride: '',
       inboundEnabled: true,
-      webleadAutoDialEnabled: true,
+      webleadAutoDialEnabled: false,
+      autoProcessingPaused: false,
       tcpaOverride: false,
       allstateNumber: '',
       nonAllstateNumber: '',

@@ -510,6 +510,14 @@ router.put('/api/settings', (req: Request, res: Response) => {
   res.json(updated);
 });
 
+// Toggle auto-processing pause (master pause button)
+router.post('/api/settings/toggle-pause', (_req: Request, res: Response) => {
+  const current = getSettings();
+  const updated = updateSettings({ autoProcessingPaused: !current.autoProcessingPaused });
+  logger.info('routes', `Auto-processing ${updated.autoProcessingPaused ? 'PAUSED' : 'RESUMED'}`);
+  res.json({ paused: updated.autoProcessingPaused });
+});
+
 router.get('/api/calls', (_req: Request, res: Response) => {
   res.json(getCallHistory());
 });
@@ -1525,8 +1533,19 @@ async function handleWeblead(req: Request, res: Response) {
 
           // Check settings for auto-dial
           const settings = getSettings();
-          const autoDialEnabled = settings.webleadAutoDialEnabled !== false; // default true
+          const autoDialEnabled = settings.webleadAutoDialEnabled === true; // default false — must opt-in
           const fromNumber = settings.defaultFromNumber || config.twilio?.fromNumber || '';
+
+          // Skip auto-dial if master pause is active
+          if (settings.autoProcessingPaused) {
+                logger.info('routes', 'Weblead auto-dial skipped: auto-processing is paused', { phone });
+                res.json({
+                      success: true, phone, name: fullName, state,
+                      call: null, autoDialed: false, reason: 'paused',
+                      campaignId: resolvedCampaignId, campaignResolved, formData: formDataSummary,
+                });
+                return;
+          }
 
           if (autoDialEnabled && fromNumber) {
                   // Check concurrency before auto-dialing

@@ -182,6 +182,14 @@ export function getRetries(filter?: { status?: string }): RetryEntry[] {
 
 async function processDueItems(): Promise<void> {
   if (!dialFunction || running) return;
+
+  // Respect global pause — skip all auto-processing
+  const settings = getSettings();
+  if (settings.autoProcessingPaused) {
+    logger.info('scheduler', 'Auto-processing is paused, skipping tick');
+    return;
+  }
+
   running = true;
 
   const now = Date.now();

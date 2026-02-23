@@ -21,6 +21,8 @@ import {
   notifySchedulingEmailSent,
   notifyCallbackScheduled,
   sendProspectEmail,
+  notifyHighFrustration,
+  notifyHighLatency,
 } from '../notifications';
 import {
   scheduleCallback as scheduleCallbackTimer,
@@ -1662,6 +1664,21 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         // Run post-call workflow (async, don't block cleanup)
         runPostCallWorkflow(analyticsData, callerNumber, leadData.first_name, s.agentName, s.companyName)
           .catch(err => logger.error('stream', 'Post-call workflow error', { error: String(err) }));
+
+        // Quality alerts (async, don't block cleanup)
+        if (s.qualityAlertsEnabled) {
+          const frustrated = (analyticsData.sentiment || []).filter(
+            (se: { sentiment: string }) => se.sentiment === 'frustrated'
+          );
+          if (frustrated.length >= 2) {
+            notifyHighFrustration(callerNumber, leadData.first_name || 'Unknown', callSid)
+              .catch(err => logger.error('stream', 'Frustration alert error', { error: String(err) }));
+          }
+          if (analyticsData.avgLatencyMs > (s.latencyAlertThresholdMs || 2000)) {
+            notifyHighLatency(callerNumber, leadData.first_name || 'Unknown', callSid, analyticsData.avgLatencyMs)
+              .catch(err => logger.error('stream', 'Latency alert error', { error: String(err) }));
+          }
+        }
       }
 
       removeSession(callSid);

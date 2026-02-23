@@ -91,6 +91,19 @@ export interface RuntimeSettings {
 
   // Auto-DNC on verbal request
   autoDncEnabled: boolean;
+
+  // Retry delays (in minutes)
+  retryDelay1Min: number;  // Default: 30 minutes
+  retryDelay2Min: number;  // Default: 120 minutes (2 hours)
+  retryDelay3Min: number;  // Default: 1440 minutes (24 hours)
+
+  // Quality alerts
+  qualityAlertsEnabled: boolean;
+  latencyAlertThresholdMs: number;  // Default: 2000
+
+  // Daily report
+  dailyReportEnabled: boolean;
+  dailyReportHour: number;  // 0-23, default: 18 (6PM)
 }
 
 export interface CallRecord {
@@ -176,6 +189,19 @@ const settings: RuntimeSettings = {
 
       // Auto-DNC
       autoDncEnabled: true,
+
+      // Retry delays (minutes)
+      retryDelay1Min: 30,
+      retryDelay2Min: 120,
+      retryDelay3Min: 1440,
+
+      // Quality alerts
+      qualityAlertsEnabled: true,
+      latencyAlertThresholdMs: 2000,
+
+      // Daily report
+      dailyReportEnabled: false,
+      dailyReportHour: 18,
 };
 
 // Keep last 20 calls

@@ -1,5 +1,7 @@
 import { logger } from '../utils/logger';
 import { notifyCallbackExecuting, notifyCallbackFailed } from '../notifications';
+import { loadData, scheduleSave } from '../db/persistence';
+import { getSettings } from '../config/runtime';
 
 // ── Callback Scheduler ─────────────────────────────────────────────
 // Checks every 30 seconds for scheduled callbacks that are due and
@@ -41,8 +43,15 @@ let dialFunction: DialFn | null = null;
 let timerHandle: ReturnType<typeof setInterval> | null = null;
 let running = false;
 
-// Retry delays: 30 min, 2 hours, next day (24h)
-const RETRY_DELAYS_MS = [30 * 60_000, 2 * 3600_000, 24 * 3600_000];
+// Retry delays: configurable from runtime settings (in minutes -> ms)
+function getRetryDelaysMs(): number[] {
+  const s = getSettings();
+  return [
+    (s.retryDelay1Min || 30) * 60_000,
+    (s.retryDelay2Min || 120) * 60_000,
+    (s.retryDelay3Min || 1440) * 60_000,
+  ];
+}
 
 // ── Registration ──
 
@@ -74,6 +83,7 @@ export function scheduleCallback(opts: {
   };
   callbacks.push(cb);
   logger.info('scheduler', 'Callback scheduled', { id: cb.id, phone: cb.phone, scheduledAt: cb.scheduledAt });
+  persistCallbacks();
   return cb;
 }
 
@@ -81,9 +91,27 @@ export function cancelCallback(id: string): boolean {
   const cb = callbacks.find(c => c.id === id);
   if (cb && cb.status === 'pending') {
     cb.status = 'cancelled';
+    persistCallbacks();
     return true;
   }
   return false;
+}
+
+export function rescheduleCallback(id: string, newScheduledAt: string): ScheduledCallback | null {
+  const cb = callbacks.find(c => c.id === id);
+  if (!cb || (cb.status !== 'pending' && cb.status !== 'failed')) return null;
+  cb.scheduledAt = newScheduledAt;
+  cb.status = 'pending';
+  cb.attempts = 0;
+  cb.result = undefined;
+  logger.info('scheduler', 'Callback rescheduled', { id, newScheduledAt });
+  persistCallbacks();
+  return cb;
+}
+
+function persistCallbacks(): void {
+  scheduleSave('scheduled_callbacks', () => callbacks);
+  scheduleSave('scheduled_retries', () => retries);
 }
 
 export function getCallbacks(filter?: { status?: string }): ScheduledCallback[] {
@@ -122,7 +150,7 @@ export function scheduleRetry(opts: {
     }
     existing.retryCount++;
     existing.lastResult = opts.lastResult;
-    const delayMs = RETRY_DELAYS_MS[Math.min(existing.retryCount - 1, RETRY_DELAYS_MS.length - 1)];
+    const delayMs = getRetryDelaysMs()[Math.min(existing.retryCount - 1, getRetryDelaysMs().length - 1)];
     existing.nextRetryAt = new Date(Date.now() + delayMs).toISOString();
     logger.info('scheduler', 'Retry rescheduled', { id: existing.id, retryCount: existing.retryCount, nextRetryAt: existing.nextRetryAt });
     return existing;
@@ -135,7 +163,7 @@ export function scheduleRetry(opts: {
     state: opts.state,
     retryCount: 1,
     maxRetries: 3,
-    nextRetryAt: new Date(Date.now() + RETRY_DELAYS_MS[0]).toISOString(),
+    nextRetryAt: new Date(Date.now() + getRetryDelaysMs()[0]).toISOString(),
     createdAt: new Date().toISOString(),
     status: 'pending',
     lastResult: opts.lastResult,
@@ -219,7 +247,7 @@ async function processDueItems(): Promise<void> {
         retry.lastResult = 'connected';
       } else if (retry.retryCount < retry.maxRetries) {
         retry.retryCount++;
-        const delayMs = RETRY_DELAYS_MS[Math.min(retry.retryCount - 1, RETRY_DELAYS_MS.length - 1)];
+        const delayMs = getRetryDelaysMs()[Math.min(retry.retryCount - 1, getRetryDelaysMs().length - 1)];
         retry.nextRetryAt = new Date(Date.now() + delayMs).toISOString();
         retry.status = 'pending';
         retry.lastResult = 'no_answer';
@@ -234,7 +262,7 @@ async function processDueItems(): Promise<void> {
       retry.lastResult = err instanceof Error ? err.message : String(err);
       if (retry.retryCount < retry.maxRetries) {
         retry.retryCount++;
-        const delayMs = RETRY_DELAYS_MS[Math.min(retry.retryCount - 1, RETRY_DELAYS_MS.length - 1)];
+        const delayMs = getRetryDelaysMs()[Math.min(retry.retryCount - 1, getRetryDelaysMs().length - 1)];
         retry.nextRetryAt = new Date(Date.now() + delayMs).toISOString();
         retry.status = 'pending';
       } else {
@@ -247,12 +275,26 @@ async function processDueItems(): Promise<void> {
   }
 
   running = false;
+  persistCallbacks();
 }
 
 // ── Lifecycle ──
 
 export function startScheduler(): void {
   if (timerHandle) return;
+  // Restore persisted callbacks and retries
+  const savedCallbacks = loadData<ScheduledCallback[]>('scheduled_callbacks');
+  if (savedCallbacks?.length) {
+    const pending = savedCallbacks.filter(c => c.status === 'pending' || c.status === 'dialing');
+    pending.forEach(c => { c.status = 'pending'; callbacks.push(c); });
+    logger.info('scheduler', `Restored ${pending.length} pending callbacks from disk`);
+  }
+  const savedRetries = loadData<RetryEntry[]>('scheduled_retries');
+  if (savedRetries?.length) {
+    const pending = savedRetries.filter(r => r.status === 'pending' || r.status === 'dialing');
+    pending.forEach(r => { r.status = 'pending'; retries.push(r); });
+    logger.info('scheduler', `Restored ${pending.length} pending retries from disk`);
+  }
   logger.info('scheduler', 'Scheduler started (30s interval)');
   timerHandle = setInterval(() => {
     processDueItems().catch(err => {

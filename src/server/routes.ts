@@ -1098,6 +1098,25 @@ router.post('/api/leads/:phone/callback', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+router.post('/api/leads/:phone/tags', (req: Request, res: Response) => {
+  const { tag } = req.body;
+  if (!tag) {
+    res.status(400).json({ error: 'Missing tag' });
+    return;
+  }
+  addLeadTag(req.params.phone, tag);
+  res.json({ success: true });
+});
+
+router.delete('/api/leads/:phone/tags/:tag', (req: Request, res: Response) => {
+  const { phone, tag } = req.params;
+  const lead = getLeadMemory(phone);
+  if (lead && lead.tags) {
+    lead.tags = lead.tags.filter(t => t !== tag);
+  }
+  res.json({ success: true });
+});
+
 // ── Prompt Management Endpoints ─────────────────────────────────────
 
 router.get('/api/prompts', (_req: Request, res: Response) => {

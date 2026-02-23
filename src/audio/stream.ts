@@ -1064,9 +1064,16 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           bargeInTimer = null;
           logger.debug('stream', 'Speech stopped before debounce — ignored', { sessionId });
         }
-        responseRequestedAt = Date.now(); // Mark when user stopped = when we expect response
-        firstAudioAt = 0;
-        audioChunkCount = 0;
+
+        // Natural response delay: humans pause 300-800ms before responding.
+        // This prevents the uncanny instant-response effect that reveals AI.
+        {
+          const humanDelayMs = 300 + Math.floor(Math.random() * 500);
+          logger.debug('stream', 'Adding human response delay', { sessionId, delayMs: humanDelayMs });
+          responseRequestedAt = Date.now() + humanDelayMs; // Adjust baseline for latency tracking
+          firstAudioAt = 0;
+          audioChunkCount = 0;
+        }
         break;
 
       case 'response.done':

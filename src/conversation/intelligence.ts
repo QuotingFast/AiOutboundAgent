@@ -33,6 +33,9 @@ export interface ConversationContext {
   questionAsked: boolean; // one-question-at-a-time enforcement
   lastAgentText: string;
   lastUserText: string;
+  callerEnergy: CallerEnergy;
+  consecutiveNegativeSentiments: number;
+  frustrationEscalated: boolean;
 }
 
 export interface RebuttalRecord {
@@ -57,11 +60,28 @@ export interface SentimentRecord {
   timestamp: number;
 }
 
-// ── Filler words ────────────────────────────────────────────────────
+// ── Filler words (context-aware) ────────────────────────────────────
 
-const CONFIRMATION_FILLERS = ['Got it.', 'Perfect.', 'Okay.', 'For sure.', 'Gotcha.', 'Sounds good.'];
-const TRANSITION_FILLERS = ['So,', 'Alright,', 'Okay so,', 'Cool,'];
-const EMPATHY_FILLERS = ['Yeah, totally.', 'I hear you.', 'That makes sense.', 'Absolutely.'];
+const CONFIRMATION_FILLERS = ['Got it.', 'Perfect.', 'Okay.', 'For sure.', 'Gotcha.', 'Sounds good.', 'Nice.', 'Cool.'];
+const TRANSITION_FILLERS = ['So,', 'Alright,', 'Okay so,', 'Cool,', 'Alright so,'];
+const EMPATHY_FILLERS = ['Yeah, totally.', 'I hear you.', 'That makes sense.', 'Absolutely.', 'No, I totally get that.', 'Yeah, that\'s fair.'];
+const EXCITEMENT_FILLERS = ['Oh nice!', 'That\'s awesome.', 'Love it.', 'Sweet!', 'Oh cool!'];
+const THINKING_FILLERS = ['So basically,', 'Hmm, let me think...', 'Good question,', 'Yeah so,'];
+const DE_ESCALATION_FILLERS = ['Hey, I totally understand.', 'No worries at all.', 'I hear you, and I respect that.', 'That\'s completely fair.'];
+
+// ── Caller energy tracking ──────────────────────────────────────────
+
+export type CallerEnergy = 'high' | 'medium' | 'low';
+
+function estimateCallerEnergy(text: string): CallerEnergy {
+  const wordCount = text.split(/\s+/).length;
+  const hasExclamation = text.includes('!');
+  const hasMultipleSentences = (text.match(/[.!?]+/g) || []).length > 1;
+
+  if (wordCount > 20 || hasExclamation || hasMultipleSentences) return 'high';
+  if (wordCount < 5) return 'low';
+  return 'medium';
+}
 
 function randomFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -123,15 +143,27 @@ export function detectIntent(text: string): { intent: DetectedIntent; confidence
 export function analyzeSentiment(text: string): { sentiment: SentimentRecord['sentiment']; confidence: number } {
   const cleaned = text.toLowerCase();
 
-  const negativeWords = ['no', 'not', 'don\'t', 'won\'t', 'can\'t', 'stop', 'hate', 'terrible', 'horrible', 'bad', 'scam', 'annoying', 'waste'];
-  const frustratedWords = ['frustrated', 'angry', 'pissed', 'ridiculous', 'damn', 'hell', 'stupid', 'leave me alone'];
-  const positiveWords = ['yes', 'great', 'awesome', 'perfect', 'sure', 'love', 'sounds good', 'thank', 'please', 'definitely', 'absolutely', 'wonderful'];
+  const negativeWords = ['no', 'not', 'don\'t', 'won\'t', 'can\'t', 'stop', 'hate', 'terrible', 'horrible', 'bad', 'scam', 'annoying', 'waste', 'never', 'worst', 'sucks', 'awful', 'useless', 'pointless', 'bother'];
+  const frustratedWords = ['frustrated', 'angry', 'pissed', 'ridiculous', 'damn', 'hell', 'stupid', 'leave me alone', 'sick of', 'tired of', 'fed up', 'give me a break', 'unbelievable', 'are you kidding', 'seriously', 'what the'];
+  const positiveWords = ['yes', 'great', 'awesome', 'perfect', 'sure', 'love', 'sounds good', 'thank', 'please', 'definitely', 'absolutely', 'wonderful', 'excellent', 'fantastic', 'amazing', 'helpful', 'appreciate', 'sweet', 'nice', 'cool', 'that works', 'let\'s do it', 'go ahead', 'interested'];
+
+  // Detect sarcasm indicators: positive words + negative context markers
+  const sarcasmMarkers = ['yeah right', 'oh sure', 'oh great', 'yeah okay', 'oh wonderful', 'oh perfect'];
+  const hasSarcasm = sarcasmMarkers.some(m => cleaned.includes(m));
 
   const frustrated = frustratedWords.filter(w => cleaned.includes(w)).length;
   if (frustrated > 0) return { sentiment: 'frustrated', confidence: Math.min(0.5 + frustrated * 0.2, 0.95) };
 
+  // Short dismissive responses indicate negative sentiment
+  const shortDismissals = ['whatever', 'fine', 'uh huh', 'mmm', 'k', 'okay bye'];
+  const isDismissive = shortDismissals.some(d => cleaned.trim() === d || cleaned.trim() === d + '.');
+  if (isDismissive) return { sentiment: 'negative', confidence: 0.6 };
+
   const negative = negativeWords.filter(w => cleaned.includes(w)).length;
   const positive = positiveWords.filter(w => cleaned.includes(w)).length;
+
+  // Sarcasm flips positive to negative
+  if (hasSarcasm) return { sentiment: 'negative', confidence: 0.7 };
 
   if (negative > positive + 1) return { sentiment: 'negative', confidence: Math.min(0.4 + negative * 0.15, 0.9) };
   if (positive > negative + 1) return { sentiment: 'positive', confidence: Math.min(0.4 + positive * 0.15, 0.9) };
@@ -164,6 +196,9 @@ export class ConversationIntelligence {
       questionAsked: false,
       lastAgentText: '',
       lastUserText: '',
+      callerEnergy: 'medium',
+      consecutiveNegativeSentiments: 0,
+      frustrationEscalated: false,
     };
   }
 
@@ -200,14 +235,39 @@ export class ConversationIntelligence {
     const warnings: string[] = [];
     let fillerSuggestion: string | undefined;
 
+    // Track caller energy level for adaptive pacing
+    this.ctx.callerEnergy = estimateCallerEnergy(text);
+
+    // Track consecutive negative sentiments for frustration escalation
+    if (sentiment === 'negative' || sentiment === 'frustrated') {
+      this.ctx.consecutiveNegativeSentiments++;
+    } else {
+      this.ctx.consecutiveNegativeSentiments = 0;
+    }
+
+    // Frustration escalation: flag when 2+ consecutive negative sentiments
+    if (this.ctx.consecutiveNegativeSentiments >= 2 && !this.ctx.frustrationEscalated) {
+      this.ctx.frustrationEscalated = true;
+      this.ctx.flags.add('frustration_escalated');
+      warnings.push('Caller showing sustained frustration. De-escalate: slow down, acknowledge feelings, offer to end or callback.');
+    }
+
     // State transitions based on intent
     const suggestedState = this.transitionState(intent, text, warnings);
 
-    // Filler suggestions
-    if (intent === 'agreement' || intent === 'confirm_identity') {
-      fillerSuggestion = randomFrom(CONFIRMATION_FILLERS);
-    } else if (sentiment === 'negative' || intent === 'objection') {
+    // Context-aware filler suggestions
+    if (this.ctx.frustrationEscalated || sentiment === 'frustrated') {
+      fillerSuggestion = randomFrom(DE_ESCALATION_FILLERS);
+    } else if (intent === 'agreement' || intent === 'confirm_identity') {
+      fillerSuggestion = this.ctx.callerEnergy === 'high' ? randomFrom(EXCITEMENT_FILLERS) : randomFrom(CONFIRMATION_FILLERS);
+    } else if (intent === 'objection') {
       fillerSuggestion = randomFrom(EMPATHY_FILLERS);
+    } else if (intent === 'question') {
+      fillerSuggestion = randomFrom(THINKING_FILLERS);
+    } else if (sentiment === 'negative') {
+      fillerSuggestion = randomFrom(EMPATHY_FILLERS);
+    } else if (sentiment === 'positive') {
+      fillerSuggestion = randomFrom(EXCITEMENT_FILLERS);
     }
 
     // Track objections
@@ -381,4 +441,7 @@ export class ConversationIntelligence {
   isQuestionAsked(): boolean { return this.ctx.questionAsked; }
   getFlags(): string[] { return Array.from(this.ctx.flags); }
   getCurrentInsurer(): string | undefined { return this.ctx.currentInsurer; }
+  getCallerEnergy(): CallerEnergy { return this.ctx.callerEnergy; }
+  isFrustrationEscalated(): boolean { return this.ctx.frustrationEscalated; }
+  getConsecutiveNegativeSentiments(): number { return this.ctx.consecutiveNegativeSentiments; }
 }

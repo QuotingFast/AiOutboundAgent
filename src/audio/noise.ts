@@ -50,7 +50,7 @@ class PRNG {
 
 let officeNoiseBuffer: Buffer | null = null;
 const SAMPLE_RATE = 8000;
-const BUFFER_DURATION_SEC = 10; // 10-second loopable buffer
+const BUFFER_DURATION_SEC = 30; // 30-second loopable buffer (longer = harder to detect repetition)
 const BUFFER_LENGTH = SAMPLE_RATE * BUFFER_DURATION_SEC;
 
 function generateOfficeNoiseBuffer(): Buffer {
@@ -69,32 +69,51 @@ function generateOfficeNoiseBuffer(): Buffer {
     linear[i] += i > 0 ? linear[i - 1] * 0.02 + noise * 0.08 : noise * 0.08;
   }
 
-  // Layer 3: Sparse keyboard clicks (short bursts of noise at random intervals)
+  // Layer 3: Sparse keyboard clicks (exponential distribution for natural irregularity)
   let nextClick = Math.floor(rng.next() * SAMPLE_RATE * 2);
   while (nextClick < BUFFER_LENGTH) {
     const clickLen = 40 + Math.floor(rng.next() * 30); // 5-9ms click
-    const clickAmp = 200 + rng.next() * 300;
+    const clickAmp = 150 + rng.next() * 350; // Vary amplitude more
     for (let j = 0; j < clickLen && nextClick + j < BUFFER_LENGTH; j++) {
       const envelope = 1 - j / clickLen; // decay
       linear[nextClick + j] += rng.nextGaussian() * clickAmp * envelope;
     }
-    nextClick += Math.floor(SAMPLE_RATE * (0.8 + rng.next() * 4)); // 0.8-4.8s between clicks
+    // Exponential distribution: more short gaps, occasional long gaps (natural typing pattern)
+    const lambda = 0.4; // Average ~2.5 seconds between clicks
+    const expInterval = -Math.log(1 - rng.next() + 0.001) / lambda;
+    nextClick += Math.floor(SAMPLE_RATE * Math.min(expInterval, 8)); // Cap at 8s
   }
 
-  // Layer 4: Muffled phone ring (distant, very quiet, every ~8 seconds)
-  const ringInterval = SAMPLE_RATE * 8;
-  for (let ringStart = Math.floor(rng.next() * SAMPLE_RATE * 3); ringStart < BUFFER_LENGTH; ringStart += ringInterval + Math.floor(rng.next() * SAMPLE_RATE * 4)) {
+  // Layer 4: Muffled phone ring (distant, very quiet, more varied intervals)
+  const ringInterval = SAMPLE_RATE * 12;
+  for (let ringStart = Math.floor(rng.next() * SAMPLE_RATE * 5); ringStart < BUFFER_LENGTH; ringStart += ringInterval + Math.floor(rng.next() * SAMPLE_RATE * 10)) {
     const ringDur = Math.floor(SAMPLE_RATE * 0.4); // 400ms ring
     for (let j = 0; j < ringDur && ringStart + j < BUFFER_LENGTH; j++) {
       const t = j / SAMPLE_RATE;
       // Two-tone phone ring, muffled (low amplitude, filtered)
       const tone = Math.sin(2 * Math.PI * 440 * t) + Math.sin(2 * Math.PI * 480 * t);
       const envelope = Math.sin(Math.PI * j / ringDur); // fade in/out
-      linear[ringStart + j] += tone * 60 * envelope;
+      linear[ringStart + j] += tone * 50 * envelope;
     }
   }
 
-  // Layer 5: Broadband very-low-level room tone
+  // Layer 5: Paper rustling / mouse movement (very sparse, subtle)
+  let nextRustle = Math.floor(rng.next() * SAMPLE_RATE * 8);
+  while (nextRustle < BUFFER_LENGTH) {
+    const rustleLen = 80 + Math.floor(rng.next() * 120); // 10-25ms rustle
+    const rustleAmp = 80 + rng.next() * 120;
+    for (let j = 0; j < rustleLen && nextRustle + j < BUFFER_LENGTH; j++) {
+      // Filtered noise with fast attack, slow decay
+      const envelope = j < rustleLen * 0.2
+        ? j / (rustleLen * 0.2)
+        : 1 - ((j - rustleLen * 0.2) / (rustleLen * 0.8));
+      linear[nextRustle + j] += rng.nextGaussian() * rustleAmp * envelope * 0.5;
+    }
+    // Very sparse: 15-30 seconds between rustles
+    nextRustle += Math.floor(SAMPLE_RATE * (15 + rng.next() * 15));
+  }
+
+  // Layer 6: Broadband very-low-level room tone
   for (let i = 0; i < BUFFER_LENGTH; i++) {
     linear[i] += rng.nextGaussian() * 20;
   }

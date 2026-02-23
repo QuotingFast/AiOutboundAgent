@@ -1131,6 +1131,24 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         const userText = event.transcript || '';
         logger.info('stream', 'User said', { sessionId, transcript: redactPII(userText) });
 
+        // Guard: if transcript is empty or just noise/punctuation, cancel any auto-response
+        // OpenAI's VAD can false-trigger on line noise, producing empty transcripts
+        const cleanedText = userText.replace(/[^a-zA-Z0-9]/g, '').trim();
+        if (!cleanedText) {
+          logger.info('stream', 'Empty/noise transcript — suppressing response', { sessionId, rawTranscript: userText });
+          if (!useDeepSeek && openaiWs?.readyState === WebSocket.OPEN) {
+            openaiWs.send(JSON.stringify({ type: 'response.cancel' }));
+          }
+          if (useElevenLabs && elevenLabsWs) {
+            elevenLabsWs.close();
+            elevenLabsWs = null;
+            elevenLabsPendingText = [];
+          }
+          sendClearToTwilio();
+          responseIsPlaying = false;
+          break;
+        }
+
         // Process through conversation intelligence
         if (conversation && userText) {
           const result = conversation.processUserTurn(userText);

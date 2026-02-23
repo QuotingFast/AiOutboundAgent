@@ -8,6 +8,7 @@ export function getDashboardHtml(): string {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <title>Quoting Fast AI</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
   :root {
     --primary: #2563eb;
@@ -89,7 +90,8 @@ export function getDashboardHtml(): string {
   .page-title { font-size: 22px; font-weight: 800; color: var(--text); letter-spacing: -0.02em; }
   .topbar-right { display: flex; align-items: center; gap: 10px; }
   .topbar-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); padding: 7px 14px; background: rgba(255,255,255,0.6); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-  .status-dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; display: inline-block; box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+  .status-dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; display: inline-block; box-shadow: 0 0 8px rgba(34,197,94,0.5); animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; box-shadow: 0 0 8px rgba(34,197,94,0.5); } 50% { opacity: 0.6; box-shadow: 0 0 16px rgba(34,197,94,0.8); } }
   /* ── Tab content ── */
   .tab-content { display: none; }
   .tab-content.active { display: block; }
@@ -141,13 +143,28 @@ export function getDashboardHtml(): string {
   .call-row { display: flex; gap: 12px; align-items: flex-end; }
   .call-row .field { flex: 1; }
   .toast {
-    position: fixed; bottom: 24px; right: 24px; padding: 14px 24px; border-radius: 12px;
+    position: fixed; bottom: 24px; right: 24px; padding: 14px 48px 14px 24px; border-radius: 12px;
     font-size: 14px; font-weight: 600; color: white; z-index: 9999; opacity: 0;
     transform: translateY(10px); transition: all 0.3s; box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    max-width: 420px;
   }
   .toast.show { opacity: 1; transform: translateY(0); }
   .toast.success { background: var(--green); }
   .toast.error { background: var(--red); }
+  .toast.warning { background: var(--orange); }
+  .toast.info { background: var(--primary); }
+  .toast-dismiss {
+    position: absolute; top: 50%; right: 12px; transform: translateY(-50%); background: none; border: none;
+    color: rgba(255,255,255,0.7); cursor: pointer; font-size: 18px; line-height: 1; padding: 4px;
+  }
+  .toast-dismiss:hover { color: white; }
+  .last-updated { font-size: 11px; color: var(--text2); font-style: italic; }
+  /* Table responsive scroll on mobile */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* Search/filter bar */
+  .filter-bar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+  .filter-bar input, .filter-bar select { max-width: 200px; padding: 8px 12px; font-size: 13px; }
+  .filter-bar .filter-label { font-size: 11px; color: var(--text2); font-weight: 600; text-transform: uppercase; }
   .call-log {
     font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px;
     background: rgba(255,255,255,0.6); border: 1.5px solid rgba(0,0,0,0.06); border-radius: var(--radius-sm);
@@ -255,10 +272,15 @@ export function getDashboardHtml(): string {
   @media (max-width: 640px) {
     .grid, .grid-3, .grid-4, .el-settings .el-row { grid-template-columns: 1fr; }
     .call-row { flex-direction: column; }
-    .voice-grid { grid-template-columns: 1fr 1fr; }
+    .voice-grid { grid-template-columns: 1fr; }
     main { padding: 16px 10px; }
     .provider-toggle { flex-direction: column; }
     .topbar { padding: 0 16px; }
+    .btn { min-height: 44px; }
+    .data-table { min-width: 600px; }
+    .table-scroll { margin: 0 -12px; padding: 0 12px; }
+    .filter-bar { flex-direction: column; }
+    .filter-bar input, .filter-bar select { max-width: 100%; }
   }
 </style>
 </head>
@@ -496,7 +518,11 @@ export function getDashboardHtml(): string {
 
   <div class="card">
     <h2><span class="icon">&#128203;</span> Recent Calls <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadCallHistory()">Refresh</button></h2>
-    <div id="callHistory" style="font-size:13px;color:var(--text2)">Loading...</div>
+    <div class="filter-bar">
+      <input type="text" id="callSearch" placeholder="Search by phone or name..." onkeydown="if(event.key==='Enter')filterCallHistory()">
+      <button class="btn btn-sm btn-secondary" onclick="filterCallHistory()">Search</button>
+    </div>
+    <div class="table-scroll" id="callHistory" style="font-size:13px;color:var(--text2)">Loading...</div>
   </div>
 </div>
 
@@ -504,7 +530,17 @@ export function getDashboardHtml(): string {
 <div class="tab-content" id="tab-recordings">
   <div class="card">
     <h2><span class="icon">&#127908;</span> Call Recordings <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadRecordings()">Refresh</button></h2>
-    <div id="recordingsTable"><div class="empty-state">Loading...</div></div>
+    <div class="filter-bar">
+      <input type="text" id="recSearch" placeholder="Search by phone or name..." onkeydown="if(event.key==='Enter')filterRecordings()">
+      <select id="recDisposition" onchange="filterRecordings()">
+        <option value="">All Dispositions</option>
+        <option value="transferred">Transferred</option>
+        <option value="ended">Ended</option>
+        <option value="not_interested">Not Interested</option>
+      </select>
+      <button class="btn btn-sm btn-secondary" onclick="filterRecordings()">Filter</button>
+    </div>
+    <div class="table-scroll" id="recordingsTable"><div class="empty-state">Loading...</div></div>
   </div>
 </div>
 
@@ -530,9 +566,46 @@ export function getDashboardHtml(): string {
     </div>
   </div>
 
+  <!-- Charts Section -->
+  <div class="grid">
+    <div class="card">
+      <h2><span class="icon">&#128202;</span> Outcomes Breakdown</h2>
+      <div style="max-width:280px;margin:0 auto"><canvas id="outcomeChart"></canvas></div>
+    </div>
+    <div class="card">
+      <h2><span class="icon">&#128200;</span> Call Volume (Last 14 Days)</h2>
+      <canvas id="volumeChart" style="max-height:260px"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h2><span class="icon">&#9203;</span> Latency Trend</h2>
+    <canvas id="latencyChart" style="max-height:200px"></canvas>
+  </div>
+
+  <!-- KPIs -->
+  <div class="card">
+    <h2><span class="icon">&#127942;</span> Key Performance Indicators</h2>
+    <div class="grid-4" id="analyticsKpis">
+      <div class="stat-card"><div class="stat-value" id="kpiCostPerTransfer">$--</div><div class="stat-label">Cost / Transfer</div></div>
+      <div class="stat-card"><div class="stat-value" id="kpiAvgDuration">--</div><div class="stat-label">Avg Duration</div></div>
+      <div class="stat-card"><div class="stat-value" id="kpiAvgScore">--</div><div class="stat-label">Avg Score</div></div>
+      <div class="stat-card"><div class="stat-value" id="kpiPeakHour">--</div><div class="stat-label">Peak Hour</div></div>
+    </div>
+  </div>
+
   <div class="card">
     <h2><span class="icon">&#128196;</span> Call Analytics <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadAnalytics()">Refresh</button></h2>
-    <div id="analyticsTable"><div class="empty-state">Loading...</div></div>
+    <div class="filter-bar">
+      <input type="text" id="analyticsSearch" placeholder="Search by phone, SID..." onkeydown="if(event.key==='Enter')filterAnalytics()">
+      <select id="analyticsOutcomeFilter" onchange="filterAnalytics()">
+        <option value="">All Outcomes</option>
+        <option value="transferred">Transferred</option>
+        <option value="ended">Ended</option>
+        <option value="dropped">Dropped</option>
+      </select>
+      <button class="btn btn-sm btn-secondary" onclick="filterAnalytics()">Filter</button>
+    </div>
+    <div class="table-scroll" id="analyticsTable"><div class="empty-state">Loading...</div></div>
   </div>
 </div>
 
@@ -1729,7 +1802,9 @@ overlayEl.addEventListener('click', function() { sidebarEl.classList.remove('ope
 var TAB_TITLES = { campaigns:'Campaigns', calls:'Calls', recordings:'Recordings', analytics:'Analytics', monitoring:'Monitoring', compliance:'Compliance', leads:'Leads', sms:'SMS', settings:'Settings' };
 
 // ── Tabs ──
+var activeTab = 'campaigns';
 function switchTab(name) {
+  activeTab = name;
   document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
   document.querySelectorAll('.sidebar .nav-item').forEach(function(el) { el.classList.remove('active'); });
   var tab = document.getElementById('tab-' + name);
@@ -1744,7 +1819,12 @@ function switchTab(name) {
   sidebarEl.classList.remove('open');
   overlayEl.classList.remove('show');
   // Load tab data
+  refreshActiveTab(name);
+}
+function refreshActiveTab(name) {
+  name = name || activeTab;
   if (name === 'campaigns') { loadCampaignConfig(currentCampaignId); loadCampaignStats(); }
+  if (name === 'calls') loadCallHistory();
   if (name === 'recordings') loadRecordings();
   if (name === 'analytics') loadAnalytics();
   if (name === 'monitoring') loadMonitoring();
@@ -1752,6 +1832,12 @@ function switchTab(name) {
   if (name === 'leads') { loadLeads(); loadCallbacks(); }
   if (name === 'sms') { loadSmsLog(); loadSmsTemplates(); loadSmsStats(); }
 }
+// Auto-refresh: poll the active tab every 15 seconds
+setInterval(function() {
+  // Don't poll settings (no need) or while user might be editing
+  if (activeTab === 'settings') return;
+  refreshActiveTab();
+}, 15000);
 
 // ── Settings ──
 var SETTINGS_FIELDS = [
@@ -1803,11 +1889,19 @@ function updateVoiceAvailability() {
   });
   if (needsSwitch) { selectVoice(allowed[0]); toast('Voice switched to ' + allowed[0], 'error'); }
 }
+var toastTimer = null;
 function toast(msg, type) {
   var el = document.getElementById('toast');
-  el.textContent = msg;
+  if (toastTimer) clearTimeout(toastTimer);
+  var duration = type === 'error' ? 8000 : type === 'warning' ? 5000 : 3000;
+  el.innerHTML = msg + '<button class="toast-dismiss" onclick="dismissToast()">&times;</button>';
   el.className = 'toast ' + type + ' show';
-  setTimeout(function() { el.classList.remove('show'); }, 3000);
+  toastTimer = setTimeout(function() { el.classList.remove('show'); }, duration);
+}
+function dismissToast() {
+  var el = document.getElementById('toast');
+  if (toastTimer) clearTimeout(toastTimer);
+  el.classList.remove('show');
 }
 function formatPhone(phone) {
   if (!phone) return '--';
@@ -2007,71 +2101,110 @@ function copyWebhookUrl() {
   }
 }
 
+var callHistoryCache = [];
 async function loadCallHistory() {
   try {
     var res = await fetch('/api/calls');
     var calls = await res.json();
+    callHistoryCache = calls || [];
     var recRes = await fetch('/api/recordings');
     var recData = await recRes.json();
     var recs = recData.recordings || [];
     var recMap = {};
     for (var r = 0; r < recs.length; r++) { recMap[recs[r].callSid] = recs[r]; }
-    var el = document.getElementById('callHistory');
-    if (!calls.length) { el.innerHTML = '<div class="empty-state">No calls yet</div>'; return; }
-    var totalCost = 0;
-    var html = '<table class="data-table"><tr><th>Time</th><th>To</th><th>Lead</th><th>Provider</th><th>Voice</th><th>Agent</th><th>Duration</th><th>Est. Cost</th></tr>';
-    for (var i = 0; i < calls.length; i++) {
-      var c = calls[i]; var t = new Date(c.timestamp).toLocaleString(); var s = c.settings;
-      var rec = recMap[c.callSid];
-      var dur = rec ? rec.durationSec : 0;
-      var durStr = dur ? dur + 's' : '--';
-      var cost = dur ? (dur / 60) * 0.014 : 0;
-      totalCost += cost;
-      var costStr = cost > 0 ? '$' + cost.toFixed(3) : '--';
-      html += '<tr><td style="font-size:11px">' + t + '</td><td style="font-family:monospace;font-size:11px">' + formatPhone(c.to) + '</td><td>' + c.leadName + '</td>'
-        + '<td>' + (s.voiceProvider || 'openai') + '</td><td style="color:var(--accent)">' + resolveVoiceName(s.voice) + '</td><td>' + s.agentName + '</td>'
-        + '<td>' + durStr + '</td><td style="color:#4ade80">' + costStr + '</td></tr>';
-    }
-    html += '</table>';
-    if (totalCost > 0) html += '<div style="margin-top:8px;font-size:12px;color:var(--text2)">Twilio telecom cost: <span style="color:#4ade80;font-weight:600">$' + totalCost.toFixed(3) + '</span></div>';
-    el.innerHTML = html;
+    window._callRecMap = recMap;
+    filterCallHistory();
   } catch (e) { document.getElementById('callHistory').innerHTML = '<span class="err">Failed</span>'; }
+}
+function filterCallHistory() {
+  var search = (document.getElementById('callSearch').value || '').trim().toLowerCase();
+  var recMap = window._callRecMap || {};
+  var filtered = callHistoryCache.filter(function(c) {
+    if (!search) return true;
+    return (c.to || '').toLowerCase().indexOf(search) > -1 || (c.leadName || '').toLowerCase().indexOf(search) > -1;
+  });
+  var el = document.getElementById('callHistory');
+  if (!filtered.length) { el.innerHTML = '<div class="empty-state">No calls found</div>'; return; }
+  var totalCost = 0;
+  var html = '<table class="data-table"><tr><th>Time</th><th>To</th><th>Lead</th><th>Provider</th><th>Voice</th><th>Agent</th><th>Duration</th><th>Est. Cost</th><th>Actions</th></tr>';
+  for (var i = 0; i < Math.min(filtered.length, 50); i++) {
+    var c = filtered[i]; var t = new Date(c.timestamp).toLocaleString(); var s = c.settings;
+    var rec = recMap[c.callSid];
+    var dur = rec ? rec.durationSec : 0;
+    var durStr = dur ? dur + 's' : '--';
+    var cost = dur ? (dur / 60) * 0.014 : 0;
+    totalCost += cost;
+    var costStr = cost > 0 ? '$' + cost.toFixed(3) : '--';
+    html += '<tr><td style="font-size:11px">' + t + '</td><td style="font-family:monospace;font-size:11px">' + formatPhone(c.to) + '</td><td>' + c.leadName + '</td>'
+      + '<td>' + (s.voiceProvider || 'openai') + '</td><td style="color:var(--accent)">' + resolveVoiceName(s.voice) + '</td><td>' + s.agentName + '</td>'
+      + '<td>' + durStr + '</td><td style="color:#4ade80">' + costStr + '</td>'
+      + '<td style="white-space:nowrap"><button class="btn btn-sm btn-secondary" onclick="retryCall(\\'' + c.to + '\\',\\'' + (c.leadName||'').replace(/'/g,'') + '\\',\\'' + (c.leadState||'') + '\\')" title="Retry">Retry</button>'
+      + ' <button class="btn btn-sm btn-secondary" onclick="quickSms(\\'' + c.to + '\\')" title="SMS">SMS</button></td></tr>';
+  }
+  html += '</table>';
+  if (totalCost > 0) html += '<div style="margin-top:8px;font-size:12px;color:var(--text2)">Twilio telecom cost: <span style="color:#4ade80;font-weight:600">$' + totalCost.toFixed(3) + '</span> (' + filtered.length + ' calls)</div>';
+  el.innerHTML = html;
+}
+function retryCall(to, name, state) {
+  document.getElementById('callTo').value = to;
+  document.getElementById('callName').value = name;
+  document.getElementById('callState').value = state || 'FL';
+  switchTab('calls');
+  document.getElementById('callTo').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  toast('Ready to retry — click Call', 'info');
+}
+function quickSms(phone) {
+  document.getElementById('smsPhone').value = phone;
+  switchTab('sms');
+  toast('Compose SMS for ' + phone, 'info');
 }
 
 // ── Recordings ──
+var recordingsCache = [];
 async function loadRecordings() {
   try {
     var res = await fetch('/api/recordings/enriched');
     var data = await res.json();
-    var el = document.getElementById('recordingsTable');
-    var recordings = data.recordings || [];
-    if (!recordings.length) { el.innerHTML = '<div class="empty-state">No recordings yet.<br><span style="font-size:12px;color:var(--text2)">Ensure RECORDING_ENABLED=true in your settings and the Twilio recording-status webhook is configured at: <code>' + location.origin + '/twilio/recording-status</code></span></div>'; return; }
-    var totalCost = 0;
-    var html = '<table class="data-table"><tr><th>Time</th><th>Phone</th><th>Lead</th><th>Disposition</th><th>Duration</th><th>Source</th><th>Est. Cost</th><th>Play</th></tr>';
-    for (var i = 0; i < recordings.length; i++) {
-      var r = recordings[i];
-      var t = new Date(r.timestamp).toLocaleString();
-      var dur = r.durationSec + 's';
-      var cost = (r.durationSec / 60) * 0.014;
-      totalCost += cost;
-      var costStr = '$' + cost.toFixed(3);
-      var playUrl = r.callSid ? '/api/recordings/' + r.callSid + '/audio' : '';
-      var db = r.disposition === 'transferred' ? 'badge-green' : r.disposition === 'not_interested' ? 'badge-red' : 'badge-gray';
-      html += '<tr>'
-        + '<td style="font-size:11px">' + t + '</td>'
-        + '<td style="font-family:monospace;font-size:11px">' + formatPhone(r.phone) + '</td>'
-        + '<td>' + (r.leadName || '--') + '</td>'
-        + '<td><span class="badge ' + db + '">' + (r.disposition || '--') + '</span></td>'
-        + '<td>' + dur + '</td>'
-        + '<td>' + r.source + '</td>'
-        + '<td style="color:#4ade80">' + costStr + '</td>'
-        + '<td>' + (playUrl ? '<audio controls preload="none" style="height:30px;max-width:200px"><source src="' + playUrl + '" type="audio/mpeg"></audio>' : '--') + '</td>'
-        + '</tr>';
-    }
-    html += '</table>';
-    html += '<div style="margin-top:8px;font-size:12px;color:var(--text2)">Total Twilio cost: <span style="color:#4ade80;font-weight:600">$' + totalCost.toFixed(3) + '</span> (' + recordings.length + ' recordings)</div>';
-    el.innerHTML = html;
+    recordingsCache = data.recordings || [];
+    filterRecordings();
   } catch (e) { document.getElementById('recordingsTable').innerHTML = '<span class="err">Failed to load recordings</span>'; }
+}
+function filterRecordings() {
+  var search = (document.getElementById('recSearch').value || '').trim().toLowerCase();
+  var dispFilter = document.getElementById('recDisposition').value;
+  var recordings = recordingsCache.filter(function(r) {
+    if (dispFilter && r.disposition !== dispFilter) return false;
+    if (search && (r.phone||'').toLowerCase().indexOf(search) === -1 && (r.leadName||'').toLowerCase().indexOf(search) === -1) return false;
+    return true;
+  });
+  var el = document.getElementById('recordingsTable');
+  if (!recordings.length) { el.innerHTML = '<div class="empty-state">' + (recordingsCache.length ? 'No matching recordings' : 'No recordings yet.<br><span style="font-size:12px;color:var(--text2)">Ensure RECORDING_ENABLED=true in your settings and the Twilio recording-status webhook is configured at: <code>' + location.origin + '/twilio/recording-status</code></span>') + '</div>'; return; }
+  var totalCost = 0;
+  var html = '<table class="data-table"><tr><th>Time</th><th>Phone</th><th>Lead</th><th>Disposition</th><th>Duration</th><th>Source</th><th>Est. Cost</th><th>Play</th><th>Download</th></tr>';
+  for (var i = 0; i < recordings.length; i++) {
+    var r = recordings[i];
+    var t = new Date(r.timestamp).toLocaleString();
+    var dur = r.durationSec + 's';
+    var cost = (r.durationSec / 60) * 0.014;
+    totalCost += cost;
+    var costStr = '$' + cost.toFixed(3);
+    var playUrl = r.callSid ? '/api/recordings/' + r.callSid + '/audio' : '';
+    var db = r.disposition === 'transferred' ? 'badge-green' : r.disposition === 'not_interested' ? 'badge-red' : 'badge-gray';
+    html += '<tr>'
+      + '<td style="font-size:11px">' + t + '</td>'
+      + '<td style="font-family:monospace;font-size:11px">' + formatPhone(r.phone) + '</td>'
+      + '<td>' + (r.leadName || '--') + '</td>'
+      + '<td><span class="badge ' + db + '">' + (r.disposition || '--') + '</span></td>'
+      + '<td>' + dur + '</td>'
+      + '<td>' + r.source + '</td>'
+      + '<td style="color:#4ade80">' + costStr + '</td>'
+      + '<td>' + (playUrl ? '<audio controls preload="none" style="height:30px;max-width:200px"><source src="' + playUrl + '" type="audio/mpeg"></audio>' : '--') + '</td>'
+      + '<td>' + (playUrl ? '<a href="' + playUrl + '" download class="btn btn-sm btn-secondary" style="padding:4px 8px">DL</a>' : '--') + '</td>'
+      + '</tr>';
+  }
+  html += '</table>';
+  html += '<div style="margin-top:8px;font-size:12px;color:var(--text2)">Total Twilio cost: <span style="color:#4ade80;font-weight:600">$' + totalCost.toFixed(3) + '</span> (' + recordings.length + ' recordings)</div>';
+  el.innerHTML = html;
 }
 
 // ── Voice ──
@@ -2153,11 +2286,17 @@ async function previewElVoice(voiceId, btn) {
 }
 
 // ── Analytics ──
+var analyticsHistoryCache = [];
+var outcomeChartInstance = null;
+var volumeChartInstance = null;
+var latencyChartInstance = null;
+
 async function loadAnalytics() {
   try {
     var r = await Promise.all([fetch('/api/analytics/summary'), fetch('/api/analytics/history')]);
     var summary = await r[0].json();
     var history = await r[1].json();
+    analyticsHistoryCache = history || [];
     document.getElementById('analyticsSummary').innerHTML =
       '<div class="stat-card"><div class="stat-value">' + summary.totalCalls + '</div><div class="stat-label">Total Calls</div></div>'
       + '<div class="stat-card green"><div class="stat-value">' + summary.transferRate + '%</div><div class="stat-label">Transfer Rate</div></div>'
@@ -2169,26 +2308,193 @@ async function loadAnalytics() {
       + '<div class="stat-card"><div class="stat-value">' + (o.ended||0) + '</div><div class="stat-label">Ended</div></div>'
       + '<div class="stat-card red"><div class="stat-value">' + (o.dropped||0) + '</div><div class="stat-label">Dropped</div></div>'
       + '<div class="stat-card cyan"><div class="stat-value">' + summary.avgScore + '</div><div class="stat-label">Avg Score</div></div>';
-    var tEl = document.getElementById('analyticsTable');
-    if (!history.length) { tEl.innerHTML = '<div class="empty-state">No analytics yet</div>'; return; }
-    var html = '<table class="data-table"><tr><th>Call SID</th><th>Duration</th><th>Turns</th><th>Latency</th><th>Outcome</th><th>Score</th><th>Cost</th><th>Tags</th></tr>';
-    for (var i = 0; i < Math.min(history.length, 50); i++) {
-      var a = history[i];
-      var dur = a.durationMs ? Math.round(a.durationMs/1000) + 's' : '--';
-      var ob = a.outcome === 'transferred' ? 'badge-green' : a.outcome === 'dropped' ? 'badge-red' : 'badge-gray';
-      var tags = (a.tags||[]).slice(0,3).map(function(t){return '<span class="badge badge-blue">' + t + '</span>';}).join(' ');
-      html += '<tr><td style="color:var(--accent);font-family:monospace;font-size:11px">' + a.callSid.substring(0,16) + '</td>'
-        + '<td>' + dur + '</td><td>' + a.turnCount + '</td><td>' + a.avgLatencyMs + 'ms</td>'
-        + '<td><span class="badge ' + ob + '">' + a.outcome + '</span></td>'
-        + '<td>' + (a.score != null ? a.score : '--') + '</td><td>$' + (a.costEstimate ? a.costEstimate.estimatedCostUsd : '--') + '</td><td>' + (tags||'--') + '</td></tr>';
-    }
-    tEl.innerHTML = html + '</table>';
-    // Update analytics badge with dropped call count
+
+    // KPIs
+    var transfers = (o.transferred || 0);
+    var totalCost = parseFloat(summary.totalCostUsd) || 0;
+    document.getElementById('kpiCostPerTransfer').textContent = transfers > 0 ? '$' + (totalCost / transfers).toFixed(2) : 'N/A';
+    var totalDur = 0, durCount = 0, totalScore = 0, scoreCount = 0;
+    var hourCounts = {};
+    history.forEach(function(a) {
+      if (a.durationMs) { totalDur += a.durationMs; durCount++; }
+      if (a.score != null) { totalScore += a.score; scoreCount++; }
+      if (a.startTime && a.outcome === 'transferred') {
+        var h = new Date(a.startTime).getHours();
+        hourCounts[h] = (hourCounts[h] || 0) + 1;
+      }
+    });
+    document.getElementById('kpiAvgDuration').textContent = durCount > 0 ? Math.round(totalDur / durCount / 1000) + 's' : '--';
+    document.getElementById('kpiAvgScore').textContent = scoreCount > 0 ? (totalScore / scoreCount).toFixed(1) : '--';
+    var peakHour = '--';
+    var maxH = 0;
+    for (var h in hourCounts) { if (hourCounts[h] > maxH) { maxH = hourCounts[h]; peakHour = parseInt(h) > 12 ? (parseInt(h)-12)+'PM' : parseInt(h)+'AM'; } }
+    document.getElementById('kpiPeakHour').textContent = peakHour;
+
+    // Render charts
+    renderOutcomeChart(o);
+    renderVolumeChart(history);
+    renderLatencyChart(history);
+
+    // Render filtered table
+    filterAnalytics();
+
+    // Update badge
     var badgeEl = document.getElementById('analyticsBadge');
-    var dropped = (summary.outcomes || {}).dropped || 0;
+    var dropped = (o.dropped || 0);
     if (dropped > 0) { badgeEl.textContent = dropped; badgeEl.style.display = ''; badgeEl.title = dropped + ' dropped call(s)'; }
     else { badgeEl.style.display = 'none'; }
   } catch (e) { document.getElementById('analyticsTable').innerHTML = '<div class="empty-state">Failed to load</div>'; }
+}
+
+function filterAnalytics() {
+  var search = (document.getElementById('analyticsSearch').value || '').trim().toLowerCase();
+  var outcomeFilter = document.getElementById('analyticsOutcomeFilter').value;
+  var filtered = analyticsHistoryCache.filter(function(a) {
+    if (outcomeFilter && a.outcome !== outcomeFilter) return false;
+    if (search && a.callSid.toLowerCase().indexOf(search) === -1 && (a.leadName || '').toLowerCase().indexOf(search) === -1) return false;
+    return true;
+  });
+  var tEl = document.getElementById('analyticsTable');
+  if (!filtered.length) { tEl.innerHTML = '<div class="empty-state">No matching calls</div>'; return; }
+  var html = '<table class="data-table"><tr><th>Call SID</th><th>Duration</th><th>Turns</th><th>Latency</th><th>Outcome</th><th>Score</th><th>Cost</th><th>Tags</th></tr>';
+  for (var i = 0; i < Math.min(filtered.length, 50); i++) {
+    var a = filtered[i];
+    var dur = a.durationMs ? Math.round(a.durationMs/1000) + 's' : '--';
+    var ob = a.outcome === 'transferred' ? 'badge-green' : a.outcome === 'dropped' ? 'badge-red' : 'badge-gray';
+    var tags = (a.tags||[]).slice(0,3).map(function(t){return '<span class="badge badge-blue">' + t + '</span>';}).join(' ');
+    html += '<tr style="cursor:pointer" onclick="showTranscript(\\'' + a.callSid + '\\')">'
+      + '<td style="color:var(--accent);font-family:monospace;font-size:11px" title="Click to view transcript">' + a.callSid.substring(0,16) + '</td>'
+      + '<td>' + dur + '</td><td>' + a.turnCount + '</td><td>' + a.avgLatencyMs + 'ms</td>'
+      + '<td><span class="badge ' + ob + '">' + a.outcome + '</span></td>'
+      + '<td>' + (a.score != null ? a.score : '--') + '</td><td>$' + (a.costEstimate ? a.costEstimate.estimatedCostUsd : '--') + '</td><td>' + (tags||'--') + '</td></tr>';
+  }
+  tEl.innerHTML = html + '</table>';
+}
+
+function renderOutcomeChart(outcomes) {
+  if (typeof Chart === 'undefined') return;
+  var ctx = document.getElementById('outcomeChart');
+  if (!ctx) return;
+  if (outcomeChartInstance) outcomeChartInstance.destroy();
+  outcomeChartInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Transferred', 'Ended', 'Dropped'],
+      datasets: [{ data: [outcomes.transferred||0, outcomes.ended||0, outcomes.dropped||0], backgroundColor: ['#22c55e','#6b7280','#ef4444'], borderWidth: 0 }]
+    },
+    options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 12 }, padding: 16 } } } }
+  });
+}
+
+function renderVolumeChart(history) {
+  if (typeof Chart === 'undefined') return;
+  var ctx = document.getElementById('volumeChart');
+  if (!ctx) return;
+  if (volumeChartInstance) volumeChartInstance.destroy();
+  // Group by day for last 14 days
+  var dayCounts = {};
+  var now = new Date();
+  for (var d = 13; d >= 0; d--) {
+    var dt = new Date(now); dt.setDate(dt.getDate() - d);
+    dayCounts[dt.toISOString().split('T')[0]] = 0;
+  }
+  (history || []).forEach(function(a) {
+    if (a.startTime) {
+      var day = new Date(a.startTime).toISOString().split('T')[0];
+      if (dayCounts.hasOwnProperty(day)) dayCounts[day]++;
+    }
+  });
+  var labels = Object.keys(dayCounts).map(function(d) { var parts = d.split('-'); return parseInt(parts[1]) + '/' + parseInt(parts[2]); });
+  volumeChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: labels, datasets: [{ label: 'Calls', data: Object.values(dayCounts), backgroundColor: 'rgba(37,99,235,0.6)', borderRadius: 6 }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { family: 'Inter', size: 11 } } }, x: { ticks: { font: { family: 'Inter', size: 11 } } } } }
+  });
+}
+
+function renderLatencyChart(history) {
+  if (typeof Chart === 'undefined') return;
+  var ctx = document.getElementById('latencyChart');
+  if (!ctx) return;
+  if (latencyChartInstance) latencyChartInstance.destroy();
+  // Group by day for last 14 days
+  var dayLatency = {};
+  var dayCounts = {};
+  var now = new Date();
+  for (var d = 13; d >= 0; d--) {
+    var dt = new Date(now); dt.setDate(dt.getDate() - d);
+    var key = dt.toISOString().split('T')[0];
+    dayLatency[key] = 0;
+    dayCounts[key] = 0;
+  }
+  (history || []).forEach(function(a) {
+    if (a.startTime && a.avgLatencyMs) {
+      var day = new Date(a.startTime).toISOString().split('T')[0];
+      if (dayLatency.hasOwnProperty(day)) { dayLatency[day] += a.avgLatencyMs; dayCounts[day]++; }
+    }
+  });
+  var labels = Object.keys(dayLatency).map(function(d) { var parts = d.split('-'); return parseInt(parts[1]) + '/' + parseInt(parts[2]); });
+  var data = Object.keys(dayLatency).map(function(d) { return dayCounts[d] > 0 ? Math.round(dayLatency[d] / dayCounts[d]) : null; });
+  latencyChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: { labels: labels, datasets: [{ label: 'Avg Latency (ms)', data: data, borderColor: '#2bbcb3', backgroundColor: 'rgba(43,188,179,0.1)', tension: 0.3, fill: true, pointRadius: 4, pointBackgroundColor: '#2bbcb3', spanGaps: true }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { font: { family: 'Inter', size: 11 } } }, x: { ticks: { font: { family: 'Inter', size: 11 } } } } }
+  });
+}
+
+async function showTranscript(callSid) {
+  try {
+    var res = await fetch('/api/analytics/' + callSid);
+    if (!res.ok) { toast('Transcript not available', 'error'); return; }
+    var data = await res.json();
+    var html = '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(30,42,58,0.4);backdrop-filter:blur(4px);z-index:1000;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">';
+    html += '<div style="background:var(--surface);border-radius:16px;padding:28px;max-width:700px;width:90%;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.15)">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2>Call Transcript</h2><button class="btn btn-secondary btn-sm" onclick="this.closest(\\'div[style*=fixed]\\').remove()">Close</button></div>';
+    // Summary stats
+    var dur = data.durationMs ? Math.round(data.durationMs/1000) + 's' : '--';
+    html += '<div class="stat-grid" style="margin-bottom:16px;grid-template-columns:repeat(4,1fr)">';
+    html += '<div class="stat-card"><div class="stat-value" style="font-size:18px">' + dur + '</div><div class="stat-label">Duration</div></div>';
+    html += '<div class="stat-card"><div class="stat-value" style="font-size:18px">' + (data.outcome || '--') + '</div><div class="stat-label">Outcome</div></div>';
+    html += '<div class="stat-card"><div class="stat-value" style="font-size:18px">' + (data.score || '--') + '</div><div class="stat-label">Score</div></div>';
+    html += '<div class="stat-card"><div class="stat-value" style="font-size:18px">' + (data.avgLatencyMs || '--') + 'ms</div><div class="stat-label">Latency</div></div>';
+    html += '</div>';
+    // Recording playback
+    if (data.callSid) {
+      html += '<div style="margin-bottom:16px"><audio controls preload="none" style="width:100%;height:36px"><source src="/api/recordings/' + data.callSid + '/audio" type="audio/mpeg"></audio></div>';
+    }
+    // Transcript
+    var transcript = data.transcript || [];
+    if (transcript.length) {
+      html += '<div style="border:1px solid var(--border);border-radius:12px;padding:16px;max-height:400px;overflow-y:auto">';
+      for (var i = 0; i < transcript.length; i++) {
+        var msg = transcript[i];
+        var isAgent = msg.role === 'agent' || msg.role === 'assistant';
+        var align = isAgent ? 'flex-start' : 'flex-end';
+        var bg = isAgent ? 'rgba(37,99,235,0.08)' : 'rgba(34,197,94,0.08)';
+        var label = isAgent ? 'Agent' : 'Caller';
+        html += '<div style="display:flex;justify-content:' + align + ';margin-bottom:8px">';
+        html += '<div style="max-width:80%;padding:10px 14px;border-radius:12px;background:' + bg + ';font-size:13px">';
+        html += '<div style="font-size:10px;font-weight:700;color:var(--text2);margin-bottom:4px">' + label + '</div>';
+        html += '<div>' + (msg.text || msg.content || '') + '</div>';
+        html += '</div></div>';
+      }
+      html += '</div>';
+    } else {
+      html += '<div class="empty-state">No transcript data available for this call</div>';
+    }
+    // Sentiment history
+    if (data.sentimentHistory && data.sentimentHistory.length) {
+      html += '<h3 style="margin-top:16px;margin-bottom:8px">Sentiment Trajectory</h3>';
+      html += '<div style="display:flex;gap:4px;flex-wrap:wrap">';
+      data.sentimentHistory.forEach(function(s) {
+        var color = s.sentiment === 'positive' ? '#22c55e' : s.sentiment === 'negative' ? '#ef4444' : s.sentiment === 'frustrated' ? '#dc2626' : '#6b7280';
+        html += '<div style="width:12px;height:12px;border-radius:50%;background:' + color + '" title="Turn ' + s.turn + ': ' + s.sentiment + '"></div>';
+      });
+      html += '</div>';
+    }
+    html += '</div></div>';
+    document.body.insertAdjacentHTML('beforeend', html);
+  } catch (e) { toast('Failed to load transcript', 'error'); }
 }
 
 // ── Monitoring ──
@@ -2352,7 +2658,15 @@ async function showLeadDetail(phone) {
     html += '<div class="stat-card"><div class="stat-value">' + d.phone + '</div><div class="stat-label">Phone</div></div>';
     html += '<div class="stat-card"><div class="stat-value">' + (d.state||'--') + '</div><div class="stat-label">State</div></div>';
     html += '<div class="stat-card"><div class="stat-value">' + d.score + '</div><div class="stat-label">Score</div></div>';
-    html += '<div class="stat-card"><div class="stat-value">' + d.disposition + '</div><div class="stat-label">Disposition</div></div>';
+    html += '<div class="stat-card"><div class="stat-value"><select id="leadDisp" onchange="updateLeadDisposition(\\'' + d.phone + '\\',this.value)" style="font-size:14px;font-weight:700;padding:4px 8px;border-radius:8px;border:1px solid var(--border)">';
+    var dispositions = ['new','contacted','interested','transferred','not_interested','callback','dnc'];
+    dispositions.forEach(function(dp) { html += '<option value="' + dp + '"' + (dp === d.disposition ? ' selected' : '') + '>' + dp + '</option>'; });
+    html += '</select></div><div class="stat-label">Disposition</div></div>';
+    html += '</div>';
+    // Quick actions
+    html += '<div style="display:flex;gap:8px;margin-bottom:16px">';
+    html += '<button class="btn btn-sm btn-green" onclick="retryCall(\\'' + d.phone + '\\',\\'' + (d.name||'').replace(/'/g,'') + '\\',\\'' + (d.state||'') + '\\');this.closest(\\'div[style*=fixed]\\').remove()">Call</button>';
+    html += '<button class="btn btn-sm btn-primary" onclick="quickSms(\\'' + d.phone + '\\');this.closest(\\'div[style*=fixed]\\').remove()">Send SMS</button>';
     html += '</div>';
     // Call History
     if (d.callHistory && d.callHistory.length) {
@@ -2445,17 +2759,26 @@ async function showLeadDetail(phone) {
       html += '</div>';
     }
     // Notes
+    html += '<h3 style="margin-bottom:8px">Notes</h3>';
     if (d.notes && d.notes.length) {
-      html += '<h3 style="margin-bottom:8px">Notes</h3><div style="font-size:12px;color:var(--text2);margin-bottom:16px">';
+      html += '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">';
       for (var k = 0; k < d.notes.length; k++) { html += '<div style="padding:4px 0;border-bottom:1px solid var(--border)">' + d.notes[k] + '</div>'; }
       html += '</div>';
+    } else {
+      html += '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">No notes yet</div>';
     }
+    // Add note form
+    html += '<div style="display:flex;gap:8px;margin-bottom:16px"><input type="text" id="newLeadNote" placeholder="Add a note..." style="flex:1;font-size:13px;padding:8px 12px"><button class="btn btn-sm btn-primary" onclick="addLeadNote(\\'' + d.phone + '\\')">Add Note</button></div>';
     // Tags
+    html += '<h3 style="margin-bottom:8px">Tags</h3>';
+    html += '<div style="margin-bottom:8px">';
     if (d.tags && d.tags.length) {
-      html += '<div style="margin-bottom:12px">';
-      for (var ti = 0; ti < d.tags.length; ti++) { html += '<span class="badge badge-blue" style="margin-right:4px">' + d.tags[ti] + '</span>'; }
-      html += '</div>';
+      for (var ti = 0; ti < d.tags.length; ti++) {
+        html += '<span class="badge badge-blue" style="margin-right:4px">' + d.tags[ti] + ' <button onclick="removeLeadTag(\\'' + d.phone + '\\',\\'' + d.tags[ti] + '\\')" style="background:none;border:none;color:inherit;cursor:pointer;font-size:14px;padding:0 2px">&times;</button></span>';
+      }
     }
+    html += '</div>';
+    html += '<div style="display:flex;gap:8px;margin-bottom:12px"><input type="text" id="newLeadTag" placeholder="Add tag..." style="max-width:150px;font-size:13px;padding:8px 12px"><button class="btn btn-sm btn-secondary" onclick="addLeadTag(\\'' + d.phone + '\\')">Add Tag</button></div>';
     html += '</div></div>';
     document.body.insertAdjacentHTML('beforeend', html);
   } catch (e) { toast('Failed to load lead detail', 'error'); }
@@ -2463,6 +2786,40 @@ async function showLeadDetail(phone) {
 function exportLeads() {
   window.open('/api/leads/export', '_blank');
   toast('Downloading CSV...', 'success');
+}
+async function updateLeadDisposition(phone, disposition) {
+  try {
+    var res = await fetch('/api/leads/' + encodeURIComponent(phone) + '/disposition', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ disposition: disposition }) });
+    if (res.ok) { toast('Disposition updated to ' + disposition, 'success'); loadLeads(); }
+    else toast('Failed to update', 'error');
+  } catch (e) { toast('Failed', 'error'); }
+}
+async function addLeadNote(phone) {
+  var noteEl = document.getElementById('newLeadNote');
+  var note = noteEl.value.trim();
+  if (!note) { toast('Enter a note', 'error'); return; }
+  try {
+    var res = await fetch('/api/leads/' + encodeURIComponent(phone) + '/note', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ note: note }) });
+    if (res.ok) { noteEl.value = ''; toast('Note added', 'success'); showLeadDetail(phone); }
+    else toast('Failed', 'error');
+  } catch (e) { toast('Failed', 'error'); }
+}
+async function addLeadTag(phone) {
+  var tagEl = document.getElementById('newLeadTag');
+  var tag = tagEl.value.trim();
+  if (!tag) { toast('Enter a tag', 'error'); return; }
+  try {
+    var res = await fetch('/api/leads/' + encodeURIComponent(phone) + '/tags', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ tag: tag }) });
+    if (res.ok) { tagEl.value = ''; toast('Tag added', 'success'); showLeadDetail(phone); loadLeads(); }
+    else toast('Failed', 'error');
+  } catch (e) { toast('Failed', 'error'); }
+}
+async function removeLeadTag(phone, tag) {
+  try {
+    var res = await fetch('/api/leads/' + encodeURIComponent(phone) + '/tags/' + encodeURIComponent(tag), { method: 'DELETE' });
+    if (res.ok) { toast('Tag removed', 'success'); showLeadDetail(phone); loadLeads(); }
+    else toast('Failed', 'error');
+  } catch (e) { toast('Failed', 'error'); }
 }
 function importLeadsCSV(input) {
   var file = input.files[0];

@@ -412,6 +412,44 @@ export function buildLeadContext(phone: string): string {
     lines.push(`- Recent notes: ${recentNotes.join(' | ')}`);
   }
 
+  // Include weblead form data if available (vehicles, coverage, etc.)
+  const cf = lead.customFields as Record<string, any>;
+  if (cf && Object.keys(cf).length > 0) {
+    const webDataLines: string[] = [];
+    // Vehicles
+    if (cf.vehicles && Array.isArray(cf.vehicles) && cf.vehicles.length > 0) {
+      const vehDescriptions = cf.vehicles.map((v: any) => [v.year, v.make, v.model].filter(Boolean).join(' ')).filter(Boolean);
+      if (vehDescriptions.length > 0) {
+        webDataLines.push(`- Vehicles on quote: ${vehDescriptions.join(', ')}`);
+      }
+    }
+    // Current policy
+    if (cf.currentPolicy) {
+      if (cf.currentPolicy.insurer) webDataLines.push(`- Current insurer (from form): ${cf.currentPolicy.insurer}`);
+      if (cf.currentPolicy.coverageType) webDataLines.push(`- Current coverage type: ${cf.currentPolicy.coverageType}`);
+      if (cf.currentPolicy.expirationDate) webDataLines.push(`- Policy expiration: ${cf.currentPolicy.expirationDate}`);
+    }
+    // Requested policy
+    if (cf.requestedPolicy && cf.requestedPolicy.coverageType) {
+      webDataLines.push(`- Looking for: ${cf.requestedPolicy.coverageType} coverage`);
+    }
+    // Drivers
+    if (cf.drivers && Array.isArray(cf.drivers) && cf.drivers.length > 0) {
+      webDataLines.push(`- Number of drivers: ${cf.drivers.length}`);
+      const primaryDriver = cf.drivers[0];
+      if (primaryDriver.maritalStatus) webDataLines.push(`- Marital status: ${primaryDriver.maritalStatus}`);
+    }
+    // Contact
+    if (cf.contact) {
+      if (cf.contact.city && cf.contact.state) webDataLines.push(`- Location: ${cf.contact.city}, ${cf.contact.state}`);
+    }
+    if (webDataLines.length > 0) {
+      lines.push(`\nINFO FROM THEIR ONLINE QUOTE REQUEST:`);
+      lines.push(...webDataLines);
+      lines.push(`Reference this info naturally to show you know their situation — e.g., "I see you're looking for coverage on your [vehicle]" — but don't recite every detail.`);
+    }
+  }
+
   lines.push(`\nUse this context naturally — don't mention you have notes. If they called before, acknowledge familiarity subtly.`);
 
   return lines.join('\n');

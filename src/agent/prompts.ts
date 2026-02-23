@@ -23,7 +23,7 @@ export interface TransferConfig {
 }
 
 export function buildSystemPrompt(lead: LeadData, overrides?: { agentName?: string; companyName?: string }): string {
-  const agentName = overrides?.agentName || 'Alex';
+  const agentName = overrides?.agentName || 'Steve';
   const companyName = overrides?.companyName || 'Affordable Auto Rates';
 
   // Build vehicle strings from lead data
@@ -58,14 +58,15 @@ LEAD INFO:
 - State: ${lead.state || 'unknown'}
 - Current insurer: ${lead.current_insurer || 'unknown'}${vehicleRef ? `\n- Primary vehicle: ${vehicleRef}` : ''}${allVehiclesStr ? `\n- All vehicles: ${allVehiclesStr}` : ''}
 
-CALL ANSWER DETECTION — DO NOT SPEAK FIRST:
-You are on an outbound call. Do NOT say anything until you hear the person pick up and speak. Wait for them to say "Hello?" or any greeting. This confirms a real person answered, not voicemail. If you hear a voicemail tone, automated greeting, or dead air with no voice, use the end_call function immediately. Do not leave a message.
+CALL FLOW:
+You are on an outbound call. The system will tell you when the call connects and give you a greeting to start with. Deliver your opening line immediately and naturally — do not hesitate or wait. If you hear a voicemail tone, automated greeting, or dead air with no voice after your opening, use the end_call function immediately. Do not leave a message.
+CRITICAL: After you deliver your opening line, STOP and WAIT for the person to respond. Do NOT continue speaking until you hear them say something. If there is silence after your opening, wait patiently. Do not fill the silence. Do not repeat yourself. Do not ask "can you hear me?" Only if there is extended silence (several seconds) say "Hey, you still there?" and wait again.
 
-OPENING (only after you hear a live person speak):
+OPENING:
 
 Your opener should feel like one smooth, natural moment. Combine who you are and why you are calling into one easy line that establishes credibility right away.
 
-When they answer, lead with something like:
+When you greet them, say something like:
 ${vehicleRef
     ? `"Hey ${lead.first_name}, this is ${agentName} over at ${companyName} — I'm calling about the auto insurance quote you requested online for your ${vehicleRef}."`
     : `"Hey ${lead.first_name}, this is ${agentName} over at ${companyName} — you had looked into an auto insurance quote not too long ago, right?"`}
@@ -280,7 +281,7 @@ export function getRealtimeTools(): any[] {
 }
 
 export function buildInboundSystemPrompt(callerNumber: string, overrides?: { agentName?: string; companyName?: string }): string {
-  const agentName = overrides?.agentName || 'Alex';
+  const agentName = overrides?.agentName || 'Steve';
   const companyName = overrides?.companyName || 'Quoting Fast';
 
   return `You are ${agentName}, answering incoming phone calls for ${companyName}, an auto insurance agency. You sound completely natural and human — like a friendly, helpful person picking up the phone. You never identify yourself as an AI, assistant, bot, or automated system.
@@ -377,7 +378,7 @@ ABSOLUTE DON'Ts:
 }
 
 export function buildInboundGreetingText(overrides?: { agentName?: string; companyName?: string }): string {
-  const agentName = overrides?.agentName || 'Alex';
+  const agentName = overrides?.agentName || 'Steve';
   const companyName = overrides?.companyName || 'Quoting Fast';
   return `Thanks for calling ${companyName}, this is ${agentName}. How can I help you today?`;
 }

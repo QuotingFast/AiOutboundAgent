@@ -21,6 +21,8 @@ import {
   notifySchedulingEmailSent,
   notifyCallbackScheduled,
   sendProspectEmail,
+  notifyHighFrustration,
+  notifyHighLatency,
 } from '../notifications';
 import {
   scheduleCallback as scheduleCallbackTimer,
@@ -1129,6 +1131,24 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         const userText = event.transcript || '';
         logger.info('stream', 'User said', { sessionId, transcript: redactPII(userText) });
 
+        // Guard: if transcript is empty or just noise/punctuation, cancel any auto-response
+        // OpenAI's VAD can false-trigger on line noise, producing empty transcripts
+        const cleanedText = userText.replace(/[^a-zA-Z0-9]/g, '').trim();
+        if (!cleanedText) {
+          logger.info('stream', 'Empty/noise transcript — suppressing response', { sessionId, rawTranscript: userText });
+          if (!useDeepSeek && openaiWs?.readyState === WebSocket.OPEN) {
+            openaiWs.send(JSON.stringify({ type: 'response.cancel' }));
+          }
+          if (useElevenLabs && elevenLabsWs) {
+            elevenLabsWs.close();
+            elevenLabsWs = null;
+            elevenLabsPendingText = [];
+          }
+          sendClearToTwilio();
+          responseIsPlaying = false;
+          break;
+        }
+
         // Process through conversation intelligence
         if (conversation && userText) {
           const result = conversation.processUserTurn(userText);
@@ -1662,6 +1682,21 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         // Run post-call workflow (async, don't block cleanup)
         runPostCallWorkflow(analyticsData, callerNumber, leadData.first_name, s.agentName, s.companyName)
           .catch(err => logger.error('stream', 'Post-call workflow error', { error: String(err) }));
+
+        // Quality alerts (async, don't block cleanup)
+        if (s.qualityAlertsEnabled) {
+          const frustrated = (analyticsData.sentiment || []).filter(
+            (se: { sentiment: string }) => se.sentiment === 'frustrated'
+          );
+          if (frustrated.length >= 2) {
+            notifyHighFrustration(callerNumber, leadData.first_name || 'Unknown', callSid)
+              .catch(err => logger.error('stream', 'Frustration alert error', { error: String(err) }));
+          }
+          if (analyticsData.avgLatencyMs > (s.latencyAlertThresholdMs || 2000)) {
+            notifyHighLatency(callerNumber, leadData.first_name || 'Unknown', callSid, analyticsData.avgLatencyMs)
+              .catch(err => logger.error('stream', 'Latency alert error', { error: String(err) }));
+          }
+        }
       }
 
       removeSession(callSid);

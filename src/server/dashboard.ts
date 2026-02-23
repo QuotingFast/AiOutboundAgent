@@ -165,6 +165,29 @@ export function getDashboardHtml(): string {
   .filter-bar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
   .filter-bar input, .filter-bar select { max-width: 200px; padding: 8px 12px; font-size: 13px; }
   .filter-bar .filter-label { font-size: 11px; color: var(--text2); font-weight: 600; text-transform: uppercase; }
+  .pagination-bar { display: flex; gap: 4px; align-items: center; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+  .pagination-bar button { min-width: 32px; height: 32px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text2); transition: all 0.15s; }
+  .pagination-bar button:hover { background: var(--primary-bg); color: var(--primary); border-color: var(--primary); }
+  .pagination-bar button.active { background: var(--primary); color: white; border-color: var(--primary); }
+  .pagination-bar button:disabled { opacity: 0.4; cursor: default; }
+  .pagination-bar .page-info { font-size: 12px; color: var(--text2); margin: 0 8px; }
+  /* Accordion */
+  .accordion-section { margin-bottom: 8px; }
+  .accordion-header { display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: var(--surface); border-radius: var(--radius); cursor: pointer; user-select: none; box-shadow: var(--shadow-3d); transition: all 0.2s; }
+  .accordion-header:hover { box-shadow: var(--shadow-3d-hover); }
+  .accordion-header .acc-icon { font-size: 18px; }
+  .accordion-header .acc-title { font-weight: 700; font-size: 14px; flex: 1; }
+  .accordion-header .acc-desc { font-size: 12px; color: var(--text2); flex: 2; }
+  .accordion-header .acc-chevron { font-size: 16px; color: var(--text2); transition: transform 0.25s ease; }
+  .accordion-header.open .acc-chevron { transform: rotate(180deg); }
+  .accordion-body { max-height: 0; overflow: hidden; transition: max-height 0.35s ease; }
+  .accordion-body.open { max-height: 5000px; overflow: visible; }
+  /* Unsaved changes banner */
+  .unsaved-banner { display: none; position: sticky; top: 66px; z-index: 50; background: linear-gradient(135deg, #fef3c7, #fde68a); color: #92400e; padding: 10px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+  .unsaved-banner.show { display: flex; align-items: center; gap: 8px; }
+  /* Tooltips */
+  .tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; background: var(--border); border-radius: 50%; font-size: 11px; font-weight: 700; color: var(--text2); cursor: help; margin-left: 6px; vertical-align: middle; }
+  .tip:hover::after { content: attr(data-tip); position: absolute; left: 24px; top: 50%; transform: translateY(-50%); background: var(--text); color: white; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 400; white-space: nowrap; max-width: 280px; white-space: normal; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
   .call-log {
     font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px;
     background: rgba(255,255,255,0.6); border: 1.5px solid rgba(0,0,0,0.06); border-radius: var(--radius-sm);
@@ -351,8 +374,11 @@ export function getDashboardHtml(): string {
       <h1 class="page-title" id="pageTitle">Campaigns</h1>
     </div>
     <div class="topbar-right">
+      <button id="pauseBtn" class="btn btn-sm" onclick="togglePause()" style="background:var(--orange);color:#fff;border:none;font-weight:600;padding:6px 14px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:6px;font-size:13px;box-shadow:0 2px 8px rgba(245,158,11,0.3);transition:all 0.2s">
+        <span id="pauseIcon">&#9646;&#9646;</span> <span id="pauseLabel">Pause All</span>
+      </button>
       <div class="topbar-status">
-        <span class="status-dot"></span> Connected
+        <span class="status-dot" id="statusDot"></span> <span id="statusLabel">Connected</span>
       </div>
     </div>
   </header>
@@ -523,6 +549,7 @@ export function getDashboardHtml(): string {
       <button class="btn btn-sm btn-secondary" onclick="filterCallHistory()">Search</button>
     </div>
     <div class="table-scroll" id="callHistory" style="font-size:13px;color:var(--text2)">Loading...</div>
+    <div id="callPagination" class="pagination-bar"></div>
   </div>
 </div>
 
@@ -541,13 +568,14 @@ export function getDashboardHtml(): string {
       <button class="btn btn-sm btn-secondary" onclick="filterRecordings()">Filter</button>
     </div>
     <div class="table-scroll" id="recordingsTable"><div class="empty-state">Loading...</div></div>
+    <div id="recPagination" class="pagination-bar"></div>
   </div>
 </div>
 
 <!-- ANALYTICS TAB -->
 <div class="tab-content" id="tab-analytics">
   <div class="card">
-    <h2><span class="icon">&#128200;</span> Summary</h2>
+    <h2><span class="icon">&#128200;</span> Summary <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="sendDailyReport()">Email Report</button></h2>
     <div class="grid-4" id="analyticsSummary">
       <div class="stat-card"><div class="stat-value">--</div><div class="stat-label">Total Calls</div></div>
       <div class="stat-card green"><div class="stat-value">--%</div><div class="stat-label">Transfer Rate</div></div>
@@ -606,6 +634,49 @@ export function getDashboardHtml(): string {
       <button class="btn btn-sm btn-secondary" onclick="filterAnalytics()">Filter</button>
     </div>
     <div class="table-scroll" id="analyticsTable"><div class="empty-state">Loading...</div></div>
+    <div id="analyticsPagination" class="pagination-bar"></div>
+  </div>
+
+  <!-- A/B Tests Section -->
+  <div class="card">
+    <h2 style="display:flex;align-items:center;gap:8px"><span class="icon">&#9878;</span> A/B Tests <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadABTests()">Refresh</button> <button class="btn btn-primary btn-sm" onclick="showCreateABTest()">+ New Test</button></h2>
+    <div id="abTestsList"><div class="empty-state">Loading...</div></div>
+    <div id="abTestForm" style="display:none;margin-top:16px;border:1px solid var(--border);border-radius:var(--radius);padding:16px">
+      <h3 style="margin-bottom:12px">Create A/B Test</h3>
+      <div class="grid">
+        <div><label>Test ID</label><input type="text" id="abTestId" placeholder="e.g. test-greeting-v2"></div>
+        <div><label>Test Name</label><input type="text" id="abTestName" placeholder="e.g. Greeting Variations"></div>
+      </div>
+      <div class="grid" style="margin-top:8px">
+        <div><label>Type</label>
+          <select id="abTestType"><option value="prompt">Prompt</option><option value="voice">Voice</option><option value="settings">Settings</option><option value="flow">Flow</option></select>
+        </div>
+        <div><label>Description</label><input type="text" id="abTestDesc" placeholder="What are you testing?"></div>
+      </div>
+      <h4 style="margin-top:12px;margin-bottom:8px">Variants</h4>
+      <div id="abVariants">
+        <div class="ab-variant-row" style="display:grid;grid-template-columns:1fr 1fr 80px 2fr 40px;gap:8px;margin-bottom:8px;align-items:end">
+          <div><label style="font-size:11px">Variant ID</label><input type="text" class="abv-id" placeholder="control"></div>
+          <div><label style="font-size:11px">Name</label><input type="text" class="abv-name" placeholder="Control"></div>
+          <div><label style="font-size:11px">Weight</label><input type="number" class="abv-weight" value="50" min="0" max="100"></div>
+          <div><label style="font-size:11px">Config (JSON)</label><input type="text" class="abv-config" placeholder='{"key":"value"}'></div>
+          <div></div>
+        </div>
+        <div class="ab-variant-row" style="display:grid;grid-template-columns:1fr 1fr 80px 2fr 40px;gap:8px;margin-bottom:8px;align-items:end">
+          <div><label style="font-size:11px">Variant ID</label><input type="text" class="abv-id" placeholder="variant-b"></div>
+          <div><label style="font-size:11px">Name</label><input type="text" class="abv-name" placeholder="Variant B"></div>
+          <div><label style="font-size:11px">Weight</label><input type="number" class="abv-weight" value="50" min="0" max="100"></div>
+          <div><label style="font-size:11px">Config (JSON)</label><input type="text" class="abv-config" placeholder='{"key":"value"}'></div>
+          <div><button class="btn btn-sm btn-red" onclick="this.closest(\\'.ab-variant-row\\').remove()" title="Remove">&times;</button></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-sm btn-secondary" onclick="addABVariant()">+ Add Variant</button>
+        <div style="flex:1"></div>
+        <button class="btn btn-sm btn-secondary" onclick="hideCreateABTest()">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="createABTest()">Create Test</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -671,7 +742,19 @@ export function getDashboardHtml(): string {
 
   <div class="card">
     <h2><span class="icon">&#128209;</span> Audit Log <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadAuditLog()">Refresh</button></h2>
+    <div class="filter-bar">
+      <select id="auditAction" onchange="filterAuditLog()">
+        <option value="">All Actions</option>
+        <option value="dnc_add">DNC Add</option>
+        <option value="dnc_remove">DNC Remove</option>
+        <option value="tcpa_check">TCPA Check</option>
+        <option value="call_recorded">Call Recorded</option>
+        <option value="consent">Consent</option>
+      </select>
+      <button class="btn btn-sm btn-secondary" onclick="filterAuditLog()">Filter</button>
+    </div>
     <div id="auditLog"><div class="empty-state">Loading...</div></div>
+    <div id="auditPagination" class="pagination-bar"></div>
   </div>
 </div>
 
@@ -715,6 +798,25 @@ export function getDashboardHtml(): string {
       <div style="margin-top:8px"><label style="font-size:11px">Reason</label><input type="text" id="cbReason" placeholder="Optional reason"></div>
     </div>
     <div id="callbacksList"><div class="empty-state">Loading...</div></div>
+    <div style="margin-top:16px">
+      <h3 style="font-size:13px;color:var(--text2);cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">Past Callbacks &#9660;</h3>
+      <div id="pastCallbacks" style="display:none;margin-top:8px"><div class="empty-state">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- Bulk Action Bar -->
+  <div id="bulkBar" style="display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface);padding:12px 24px;border-radius:var(--radius);box-shadow:var(--shadow-3d-hover);z-index:100;display:none;gap:12px;align-items:center">
+    <span id="bulkCount" style="font-weight:600;font-size:13px">0 selected</span>
+    <select id="bulkDisposition" style="font-size:12px;padding:6px 10px">
+      <option value="">Set Disposition...</option>
+      <option value="new">New</option><option value="contacted">Contacted</option><option value="interested">Interested</option>
+      <option value="transferred">Transferred</option><option value="not_interested">Not Interested</option><option value="callback">Callback</option><option value="dnc">DNC</option>
+    </select>
+    <button class="btn btn-sm btn-primary" onclick="bulkSetDisposition()">Apply</button>
+    <input type="text" id="bulkTag" placeholder="Tag..." style="width:100px;font-size:12px;padding:6px 10px">
+    <button class="btn btn-sm btn-secondary" onclick="bulkAddTag()">Add Tag</button>
+    <button class="btn btn-sm btn-red" onclick="bulkDeleteLeads()">Delete</button>
+    <button class="btn btn-sm btn-secondary" onclick="clearBulkSelection()">Clear</button>
   </div>
 </div>
 
@@ -741,7 +843,23 @@ export function getDashboardHtml(): string {
 
   <div class="card">
     <h2><span class="icon">&#128203;</span> SMS Log <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadSmsLog()">Refresh</button></h2>
+    <div class="filter-bar">
+      <input type="text" id="smsSearch" placeholder="Search by phone..." onkeydown="if(event.key==='Enter')filterSmsLog()">
+      <select id="smsDirection" onchange="filterSmsLog()">
+        <option value="">All Directions</option>
+        <option value="inbound">Inbound</option>
+        <option value="outbound">Outbound</option>
+      </select>
+      <select id="smsStatus" onchange="filterSmsLog()">
+        <option value="">All Statuses</option>
+        <option value="sent">Sent</option>
+        <option value="delivered">Delivered</option>
+        <option value="failed">Failed</option>
+      </select>
+      <button class="btn btn-sm btn-secondary" onclick="filterSmsLog()">Filter</button>
+    </div>
     <div id="smsLogTable"><div class="empty-state">Loading...</div></div>
+    <div id="smsPagination" class="pagination-bar"></div>
   </div>
 
   <div class="card">
@@ -752,8 +870,9 @@ export function getDashboardHtml(): string {
 
 <!-- SETTINGS TAB -->
 <div class="tab-content" id="tab-settings">
+  <div class="unsaved-banner" id="unsavedBanner">&#9888; You have unsaved changes <button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="saveSettings()">Save Now</button></div>
   <!-- Voice Provider -->
-  <div class="card">
+  <div class="card" data-acc="voice">
     <h2><span class="icon">&#127908;</span> Voice Provider</h2>
     <input type="hidden" id="voiceProvider" value="elevenlabs">
     <div class="provider-toggle">
@@ -1532,7 +1651,7 @@ export function getDashboardHtml(): string {
   </div>
 
   <!-- Model -->
-  <div class="card">
+  <div class="card" data-acc="voice">
     <h2><span class="icon">&#129302;</span> Model</h2>
     <div class="grid">
       <div>
@@ -1553,8 +1672,8 @@ export function getDashboardHtml(): string {
   </div>
 
   <!-- VAD -->
-  <div class="card">
-    <h2><span class="icon">&#127897;</span> VAD &amp; Barge-in</h2>
+  <div class="card" data-acc="audio">
+    <h2><span class="icon">&#127897;</span> VAD &amp; Barge-in <span class="tip" data-tip="Voice Activity Detection controls when the AI starts and stops listening">?</span></h2>
     <div class="grid">
       <div>
         <label>VAD Threshold</label>
@@ -1587,7 +1706,7 @@ export function getDashboardHtml(): string {
   </div>
 
   <!-- Agent Persona -->
-  <div class="card">
+  <div class="card" data-acc="persona">
     <h2><span class="icon">&#129489;</span> Agent Persona</h2>
     <div class="grid">
       <div>
@@ -1602,7 +1721,7 @@ export function getDashboardHtml(): string {
   </div>
 
   <!-- System Prompt -->
-  <div class="card">
+  <div class="card" data-acc="persona">
     <h2><span class="icon">&#128221;</span> System Prompt</h2>
     <p style="font-size:13px;color:var(--text2);margin-bottom:12px">
       Leave empty for default. Use <code style="background:var(--surface2);padding:2px 6px;border-radius:3px">{{first_name}}</code>,
@@ -1618,7 +1737,7 @@ export function getDashboardHtml(): string {
   </div>
 
   <!-- Inbound Calls -->
-  <div class="card">
+  <div class="card" data-acc="call">
     <h2><span class="icon">&#128222;</span> Inbound Calls</h2>
     <div style="margin-bottom:14px">
       <label>Inbound Enabled</label>
@@ -1647,7 +1766,7 @@ export function getDashboardHtml(): string {
   </div>
 
   <!-- Audio & Call Settings -->
-  <div class="card">
+  <div class="card" data-acc="audio">
     <h2><span class="icon">&#127925;</span> Audio &amp; Call Settings</h2>
     <div class="grid">
       <div>
@@ -1696,7 +1815,7 @@ export function getDashboardHtml(): string {
   </div>
 
   <!-- SMS Settings -->
-  <div class="card">
+  <div class="card" data-acc="sms">
     <h2><span class="icon">&#128172;</span> SMS Settings</h2>
     <div class="grid">
       <div>
@@ -1719,7 +1838,7 @@ export function getDashboardHtml(): string {
   </div>
 
   <!-- Compliance & Retry Settings -->
-  <div class="card">
+  <div class="card" data-acc="compliance">
     <h2><span class="icon">&#128737;</span> Compliance &amp; Retry</h2>
     <div class="grid">
       <div>
@@ -1753,10 +1872,75 @@ export function getDashboardHtml(): string {
         <input type="number" id="autoRetryMaxAttempts" value="3" min="1" max="10">
       </div>
     </div>
+    <h3 style="margin-top:16px;margin-bottom:8px">Retry Timing</h3>
+    <div class="grid">
+      <div>
+        <label>1st Retry Delay (minutes)</label>
+        <input type="number" id="retryDelay1Min" value="30" min="1" max="10080">
+        <span style="font-size:11px;color:var(--text2)">Default: 30 min</span>
+      </div>
+      <div>
+        <label>2nd Retry Delay (minutes)</label>
+        <input type="number" id="retryDelay2Min" value="120" min="1" max="10080">
+        <span style="font-size:11px;color:var(--text2)">Default: 2 hours</span>
+      </div>
+      <div>
+        <label>3rd Retry Delay (minutes)</label>
+        <input type="number" id="retryDelay3Min" value="1440" min="1" max="10080">
+        <span style="font-size:11px;color:var(--text2)">Default: 24 hours</span>
+      </div>
+    </div>
+    <h3 style="margin-top:16px;margin-bottom:8px">Quality Alerts</h3>
+    <div class="grid">
+      <div>
+        <label>Enable Quality Alerts</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="qualityAlertsEnabled" style="width:auto" checked>
+          <span style="font-size:13px;color:var(--text2)">Notify on high frustration or latency</span>
+        </div>
+      </div>
+      <div>
+        <label>Latency Alert Threshold (ms)</label>
+        <input type="number" id="latencyAlertThresholdMs" value="2000" min="500" max="10000">
+        <span style="font-size:11px;color:var(--text2)">Alert when avg latency exceeds this</span>
+      </div>
+    </div>
+    <h3 style="margin-top:16px;margin-bottom:8px">Daily Report</h3>
+    <div class="grid">
+      <div>
+        <label>Enable Daily Email Report</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="dailyReportEnabled" style="width:auto">
+          <span style="font-size:13px;color:var(--text2)">Send daily summary to notification email</span>
+        </div>
+      </div>
+      <div>
+        <label>Report Hour (0-23)</label>
+        <input type="number" id="dailyReportHour" value="18" min="0" max="23">
+        <span style="font-size:11px;color:var(--text2)">Default: 6 PM</span>
+      </div>
+    </div>
+    <h3 style="margin-top:16px;margin-bottom:8px">Auto-Processing</h3>
+    <div class="grid">
+      <div>
+        <label>Auto-Dial Web Leads</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="webleadAutoDialEnabled" style="width:auto">
+          <span style="font-size:13px;color:var(--text2)">Automatically call new web leads when they arrive (off by default)</span>
+        </div>
+      </div>
+      <div>
+        <label>Master Pause</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="autoProcessingPaused" style="width:auto">
+          <span style="font-size:13px;color:var(--text2)">Halt all automatic dialing (callbacks, retries, weblead auto-dial)</span>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Transfer Numbers -->
-  <div class="card">
+  <div class="card" data-acc="sms">
     <h2><span class="icon">&#128260;</span> Transfer Numbers</h2>
     <div class="grid">
       <div>
@@ -1766,6 +1950,41 @@ export function getDashboardHtml(): string {
       <div>
         <label>Non-Allstate Transfer Number</label>
         <input type="text" id="nonAllstateNumber" placeholder="+1...">
+      </div>
+    </div>
+  </div>
+
+  <!-- Webhooks Section -->
+  <div class="card" data-acc="webhooks">
+    <h2><span class="icon">&#128279;</span> Webhooks <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="showAddWebhook()">+ Add Webhook</button></h2>
+    <div id="webhooksList"><div class="empty-state">Loading...</div></div>
+    <div id="webhookForm" style="display:none;margin-top:16px;border:1px solid var(--border);border-radius:var(--radius);padding:16px">
+      <h3 style="margin-bottom:12px">Add Webhook</h3>
+      <div class="grid">
+        <div><label>Webhook ID</label><input type="text" id="webhookId" placeholder="e.g. my-webhook-1"></div>
+        <div><label>URL</label><input type="text" id="webhookUrl" placeholder="https://example.com/webhook"></div>
+      </div>
+      <div class="grid" style="margin-top:8px">
+        <div><label>Secret Header (optional)</label><input type="text" id="webhookSecret" placeholder="x-webhook-secret: ..."></div>
+        <div style="display:flex;align-items:end;gap:12px">
+          <label><input type="checkbox" id="webhookActive" checked> Active</label>
+        </div>
+      </div>
+      <div style="margin-top:8px"><label>Events</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+          <label style="font-size:12px"><input type="checkbox" class="wh-event" value="call.started"> call.started</label>
+          <label style="font-size:12px"><input type="checkbox" class="wh-event" value="call.ended"> call.ended</label>
+          <label style="font-size:12px"><input type="checkbox" class="wh-event" value="call.transferred"> call.transferred</label>
+          <label style="font-size:12px"><input type="checkbox" class="wh-event" value="call.scored"> call.scored</label>
+          <label style="font-size:12px"><input type="checkbox" class="wh-event" value="transcript.complete"> transcript.complete</label>
+          <label style="font-size:12px"><input type="checkbox" class="wh-event" value="objection.detected"> objection.detected</label>
+          <label style="font-size:12px"><input type="checkbox" class="wh-event" value="callback.requested"> callback.requested</label>
+          <label style="font-size:12px"><input type="checkbox" class="wh-event" value="dnc.requested"> dnc.requested</label>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+        <button class="btn btn-sm btn-secondary" onclick="hideAddWebhook()">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="createWebhook()">Add Webhook</button>
       </div>
     </div>
   </div>
@@ -1804,6 +2023,10 @@ var TAB_TITLES = { campaigns:'Campaigns', calls:'Calls', recordings:'Recordings'
 // ── Tabs ──
 var activeTab = 'campaigns';
 function switchTab(name) {
+  if (settingsChanged && activeTab === 'settings' && name !== 'settings') {
+    if (!confirm('You have unsaved settings changes. Leave anyway?')) return;
+    clearSettingsChanged();
+  }
   activeTab = name;
   document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
   document.querySelectorAll('.sidebar .nav-item').forEach(function(el) { el.classList.remove('active'); });
@@ -1826,14 +2049,18 @@ function refreshActiveTab(name) {
   if (name === 'campaigns') { loadCampaignConfig(currentCampaignId); loadCampaignStats(); }
   if (name === 'calls') loadCallHistory();
   if (name === 'recordings') loadRecordings();
-  if (name === 'analytics') loadAnalytics();
+  if (name === 'analytics') { loadAnalytics(); loadABTests(); }
   if (name === 'monitoring') loadMonitoring();
   if (name === 'compliance') { loadDnc(); loadAuditLog(); }
   if (name === 'leads') { loadLeads(); loadCallbacks(); }
   if (name === 'sms') { loadSmsLog(); loadSmsTemplates(); loadSmsStats(); }
 }
-// Auto-refresh: poll the active tab every 15 seconds
+// Auto-refresh: poll the active tab every 15 seconds & sync pause state
 setInterval(function() {
+  // Always keep topbar pause button in sync
+  fetch('/api/settings').then(function(r) { return r.json(); }).then(function(s) {
+    if (typeof syncPauseButton === 'function') syncPauseButton(!!s.autoProcessingPaused);
+  }).catch(function() {});
   // Don't poll settings (no need) or while user might be editing
   if (activeTab === 'settings') return;
   refreshActiveTab();
@@ -1846,18 +2073,21 @@ var SETTINGS_FIELDS = [
   'agentName','companyName','systemPromptOverride','inboundPromptOverride','allstateNumber','nonAllstateNumber',
   'elevenlabsVoiceId','elevenlabsModelId','elevenlabsStability','elevenlabsSimilarityBoost','elevenlabsStyle','elevenlabsSpeed',
   'deepseekModel','backgroundNoiseVolume','amdAction','maxCallDurationSec','callDurationWarnPct','silenceTimeoutSec',
-  'maxCallsPerPhonePerDay','autoRetryMaxAttempts'
+  'maxCallsPerPhonePerDay','autoRetryMaxAttempts',
+  'retryDelay1Min','retryDelay2Min','retryDelay3Min','latencyAlertThresholdMs','dailyReportHour'
 ];
 var CHECKBOX_FIELDS = [
   'elevenlabsUseSpeakerBoost','backgroundNoiseEnabled','amdEnabled','smsEnabled','autoSmsOnMissedCall',
   'autoSmsOnCallback','autoSmsOnTransfer','autoSmsOnTextRequest','tcpaOverride',
-  'autoDncEnabled','autoRetryEnabled'
+  'autoDncEnabled','autoRetryEnabled','qualityAlertsEnabled','dailyReportEnabled',
+  'webleadAutoDialEnabled','autoProcessingPaused'
 ];
 var NUMBER_FIELDS = [
   'temperature','vadThreshold','silenceDurationMs','prefixPaddingMs',
   'bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
   'elevenlabsStability','elevenlabsSimilarityBoost','elevenlabsStyle','elevenlabsSpeed','backgroundNoiseVolume',
-  'maxCallDurationSec','callDurationWarnPct','silenceTimeoutSec','maxCallsPerPhonePerDay','autoRetryMaxAttempts'
+  'maxCallDurationSec','callDurationWarnPct','silenceTimeoutSec','maxCallsPerPhonePerDay','autoRetryMaxAttempts',
+  'retryDelay1Min','retryDelay2Min','retryDelay3Min','latencyAlertThresholdMs','dailyReportHour'
 ];
 var MODEL_VOICES = {
   'gpt-4o-realtime-preview': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'],
@@ -1960,6 +2190,8 @@ async function loadSettings() {
       var cbEl = document.getElementById(CHECKBOX_FIELDS[ci]);
       if (cbEl) cbEl.checked = !!s[CHECKBOX_FIELDS[ci]];
     }
+    // Sync topbar pause button with settings
+    syncPauseButton(!!s.autoProcessingPaused);
     updatePromptCounter();
     toast('Settings loaded', 'success');
   } catch (e) { toast('Failed to load settings', 'error'); }
@@ -2020,6 +2252,7 @@ async function saveSettings() {
     var res = await fetch('/api/settings', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
     if (!res.ok) { toast('Save failed', 'error'); return; }
     toast('Settings saved', 'success');
+    clearSettingsChanged();
   } catch (e) { toast('Save failed', 'error'); }
   finally { btn.disabled = false; btn.textContent = 'Save All Settings'; }
 }
@@ -2101,6 +2334,22 @@ function copyWebhookUrl() {
   }
 }
 
+// ── Pagination ──
+var PAGE_SIZE = 25;
+var callPage = 1, recPage = 1, analyticsPage = 1, smsPage = 1, auditPage = 1;
+function renderPagination(containerId, currentPage, totalPages, onPageFn) {
+  var el = document.getElementById(containerId);
+  if (!el || totalPages <= 1) { if (el) el.innerHTML = ''; return; }
+  var html = '<button ' + (currentPage <= 1 ? 'disabled' : 'onclick="' + onPageFn + '(' + (currentPage-1) + ')"') + '>&laquo;</button>';
+  var start = Math.max(1, currentPage - 2), end = Math.min(totalPages, currentPage + 2);
+  if (start > 1) html += '<button onclick="' + onPageFn + '(1)">1</button>' + (start > 2 ? '<span class="page-info">...</span>' : '');
+  for (var p = start; p <= end; p++) html += '<button class="' + (p === currentPage ? 'active' : '') + '" onclick="' + onPageFn + '(' + p + ')">' + p + '</button>';
+  if (end < totalPages) html += (end < totalPages - 1 ? '<span class="page-info">...</span>' : '') + '<button onclick="' + onPageFn + '(' + totalPages + ')">' + totalPages + '</button>';
+  html += '<button ' + (currentPage >= totalPages ? 'disabled' : 'onclick="' + onPageFn + '(' + (currentPage+1) + ')"') + '>&raquo;</button>';
+  html += '<span class="page-info">Page ' + currentPage + ' of ' + totalPages + '</span>';
+  el.innerHTML = html;
+}
+
 var callHistoryCache = [];
 async function loadCallHistory() {
   try {
@@ -2116,7 +2365,8 @@ async function loadCallHistory() {
     filterCallHistory();
   } catch (e) { document.getElementById('callHistory').innerHTML = '<span class="err">Failed</span>'; }
 }
-function filterCallHistory() {
+function filterCallHistory(page) {
+  if (page) callPage = page; else callPage = 1;
   var search = (document.getElementById('callSearch').value || '').trim().toLowerCase();
   var recMap = window._callRecMap || {};
   var filtered = callHistoryCache.filter(function(c) {
@@ -2124,10 +2374,13 @@ function filterCallHistory() {
     return (c.to || '').toLowerCase().indexOf(search) > -1 || (c.leadName || '').toLowerCase().indexOf(search) > -1;
   });
   var el = document.getElementById('callHistory');
-  if (!filtered.length) { el.innerHTML = '<div class="empty-state">No calls found</div>'; return; }
+  if (!filtered.length) { el.innerHTML = '<div class="empty-state">No calls found</div>'; renderPagination('callPagination',1,1,'filterCallHistory'); return; }
+  var totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  if (callPage > totalPages) callPage = totalPages;
+  var start = (callPage - 1) * PAGE_SIZE, end = Math.min(start + PAGE_SIZE, filtered.length);
   var totalCost = 0;
   var html = '<table class="data-table"><tr><th>Time</th><th>To</th><th>Lead</th><th>Provider</th><th>Voice</th><th>Agent</th><th>Duration</th><th>Est. Cost</th><th>Actions</th></tr>';
-  for (var i = 0; i < Math.min(filtered.length, 50); i++) {
+  for (var i = start; i < end; i++) {
     var c = filtered[i]; var t = new Date(c.timestamp).toLocaleString(); var s = c.settings;
     var rec = recMap[c.callSid];
     var dur = rec ? rec.durationSec : 0;
@@ -2142,8 +2395,9 @@ function filterCallHistory() {
       + ' <button class="btn btn-sm btn-secondary" onclick="quickSms(\\'' + c.to + '\\')" title="SMS">SMS</button></td></tr>';
   }
   html += '</table>';
-  if (totalCost > 0) html += '<div style="margin-top:8px;font-size:12px;color:var(--text2)">Twilio telecom cost: <span style="color:#4ade80;font-weight:600">$' + totalCost.toFixed(3) + '</span> (' + filtered.length + ' calls)</div>';
+  html += '<div style="margin-top:8px;font-size:12px;color:var(--text2)">Twilio telecom cost: <span style="color:#4ade80;font-weight:600">$' + totalCost.toFixed(3) + '</span> (' + filtered.length + ' calls)</div>';
   el.innerHTML = html;
+  renderPagination('callPagination', callPage, totalPages, 'filterCallHistory');
 }
 function retryCall(to, name, state) {
   document.getElementById('callTo').value = to;
@@ -2169,7 +2423,8 @@ async function loadRecordings() {
     filterRecordings();
   } catch (e) { document.getElementById('recordingsTable').innerHTML = '<span class="err">Failed to load recordings</span>'; }
 }
-function filterRecordings() {
+function filterRecordings(page) {
+  if (page) recPage = page; else recPage = 1;
   var search = (document.getElementById('recSearch').value || '').trim().toLowerCase();
   var dispFilter = document.getElementById('recDisposition').value;
   var recordings = recordingsCache.filter(function(r) {
@@ -2178,10 +2433,13 @@ function filterRecordings() {
     return true;
   });
   var el = document.getElementById('recordingsTable');
-  if (!recordings.length) { el.innerHTML = '<div class="empty-state">' + (recordingsCache.length ? 'No matching recordings' : 'No recordings yet.<br><span style="font-size:12px;color:var(--text2)">Ensure RECORDING_ENABLED=true in your settings and the Twilio recording-status webhook is configured at: <code>' + location.origin + '/twilio/recording-status</code></span>') + '</div>'; return; }
+  if (!recordings.length) { el.innerHTML = '<div class="empty-state">' + (recordingsCache.length ? 'No matching recordings' : 'No recordings yet.<br><span style="font-size:12px;color:var(--text2)">Ensure RECORDING_ENABLED=true in your settings and the Twilio recording-status webhook is configured at: <code>' + location.origin + '/twilio/recording-status</code></span>') + '</div>'; renderPagination('recPagination',1,1,'filterRecordings'); return; }
+  var totalPages = Math.ceil(recordings.length / PAGE_SIZE);
+  if (recPage > totalPages) recPage = totalPages;
+  var start = (recPage - 1) * PAGE_SIZE, end = Math.min(start + PAGE_SIZE, recordings.length);
   var totalCost = 0;
   var html = '<table class="data-table"><tr><th>Time</th><th>Phone</th><th>Lead</th><th>Disposition</th><th>Duration</th><th>Source</th><th>Est. Cost</th><th>Play</th><th>Download</th></tr>';
-  for (var i = 0; i < recordings.length; i++) {
+  for (var i = start; i < end; i++) {
     var r = recordings[i];
     var t = new Date(r.timestamp).toLocaleString();
     var dur = r.durationSec + 's';
@@ -2205,6 +2463,7 @@ function filterRecordings() {
   html += '</table>';
   html += '<div style="margin-top:8px;font-size:12px;color:var(--text2)">Total Twilio cost: <span style="color:#4ade80;font-weight:600">$' + totalCost.toFixed(3) + '</span> (' + recordings.length + ' recordings)</div>';
   el.innerHTML = html;
+  renderPagination('recPagination', recPage, totalPages, 'filterRecordings');
 }
 
 // ── Voice ──
@@ -2291,6 +2550,53 @@ var outcomeChartInstance = null;
 var volumeChartInstance = null;
 var latencyChartInstance = null;
 
+async function sendDailyReport() {
+  try {
+    var res = await fetch('/api/reports/send-daily', { method: 'POST' });
+    var data = await res.json();
+    if (res.ok) toast('Report sent' + (data.sent ? '' : ' (email not configured)'), data.sent ? 'success' : 'info');
+    else toast(data.error || 'Failed', 'error');
+  } catch (e) { toast('Failed to send report', 'error'); }
+}
+
+// ── Master Pause / Resume ──
+var isPaused = false;
+function syncPauseButton(paused) {
+  isPaused = !!paused;
+  var btn = document.getElementById('pauseBtn');
+  var icon = document.getElementById('pauseIcon');
+  var label = document.getElementById('pauseLabel');
+  var dot = document.getElementById('statusDot');
+  var statusLabel = document.getElementById('statusLabel');
+  var pauseCheckbox = document.getElementById('autoProcessingPaused');
+  if (isPaused) {
+    btn.style.background = 'var(--green)';
+    btn.style.boxShadow = '0 2px 8px rgba(34,197,94,0.3)';
+    icon.innerHTML = '&#9654;';
+    label.textContent = 'Resume';
+    dot.style.background = 'var(--orange)';
+    dot.style.boxShadow = '0 0 8px rgba(245,158,11,0.5)';
+    statusLabel.textContent = 'Paused';
+    if (pauseCheckbox) pauseCheckbox.checked = true;
+  } else {
+    btn.style.background = 'var(--orange)';
+    btn.style.boxShadow = '0 2px 8px rgba(245,158,11,0.3)';
+    icon.innerHTML = '&#9646;&#9646;';
+    label.textContent = 'Pause All';
+    dot.style.background = 'var(--green)';
+    dot.style.boxShadow = '0 0 8px rgba(34,197,94,0.5)';
+    statusLabel.textContent = 'Connected';
+    if (pauseCheckbox) pauseCheckbox.checked = false;
+  }
+}
+async function togglePause() {
+  try {
+    var res = await fetch('/api/settings/toggle-pause', { method: 'POST' });
+    var data = await res.json();
+    syncPauseButton(data.paused);
+    toast(data.paused ? 'All auto-processing paused' : 'Auto-processing resumed', data.paused ? 'info' : 'success');
+  } catch (e) { toast('Failed to toggle pause', 'error'); }
+}
 async function loadAnalytics() {
   try {
     var r = await Promise.all([fetch('/api/analytics/summary'), fetch('/api/analytics/history')]);
@@ -2346,7 +2652,8 @@ async function loadAnalytics() {
   } catch (e) { document.getElementById('analyticsTable').innerHTML = '<div class="empty-state">Failed to load</div>'; }
 }
 
-function filterAnalytics() {
+function filterAnalytics(page) {
+  if (page) analyticsPage = page; else analyticsPage = 1;
   var search = (document.getElementById('analyticsSearch').value || '').trim().toLowerCase();
   var outcomeFilter = document.getElementById('analyticsOutcomeFilter').value;
   var filtered = analyticsHistoryCache.filter(function(a) {
@@ -2355,9 +2662,12 @@ function filterAnalytics() {
     return true;
   });
   var tEl = document.getElementById('analyticsTable');
-  if (!filtered.length) { tEl.innerHTML = '<div class="empty-state">No matching calls</div>'; return; }
+  if (!filtered.length) { tEl.innerHTML = '<div class="empty-state">No matching calls</div>'; renderPagination('analyticsPagination',1,1,'filterAnalytics'); return; }
+  var totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  if (analyticsPage > totalPages) analyticsPage = totalPages;
+  var start = (analyticsPage - 1) * PAGE_SIZE, end = Math.min(start + PAGE_SIZE, filtered.length);
   var html = '<table class="data-table"><tr><th>Call SID</th><th>Duration</th><th>Turns</th><th>Latency</th><th>Outcome</th><th>Score</th><th>Cost</th><th>Tags</th></tr>';
-  for (var i = 0; i < Math.min(filtered.length, 50); i++) {
+  for (var i = start; i < end; i++) {
     var a = filtered[i];
     var dur = a.durationMs ? Math.round(a.durationMs/1000) + 's' : '--';
     var ob = a.outcome === 'transferred' ? 'badge-green' : a.outcome === 'dropped' ? 'badge-red' : 'badge-gray';
@@ -2369,6 +2679,7 @@ function filterAnalytics() {
       + '<td>' + (a.score != null ? a.score : '--') + '</td><td>$' + (a.costEstimate ? a.costEstimate.estimatedCostUsd : '--') + '</td><td>' + (tags||'--') + '</td></tr>';
   }
   tEl.innerHTML = html + '</table>';
+  renderPagination('analyticsPagination', analyticsPage, totalPages, 'filterAnalytics');
 }
 
 function renderOutcomeChart(outcomes) {
@@ -2586,24 +2897,39 @@ async function checkTcpa() {
   if (data.allowed) el.innerHTML = warn + '<span class="badge badge-green">ALLOWED</span> ' + data.localTime + ' (' + data.timezone + ')' + (data.reason ? ' <span style="font-size:11px;color:var(--orange)">' + data.reason + '</span>' : '');
   else el.innerHTML = warn + '<span class="badge badge-red">BLOCKED</span> ' + (data.reason || 'Outside window') + ' (' + data.timezone + ')';
 }
+var auditLogCache = [];
 async function loadAuditLog() {
   try {
-    var res = await fetch('/api/compliance/audit-log?limit=30');
+    var res = await fetch('/api/compliance/audit-log?limit=100');
     var data = await res.json();
-    var el = document.getElementById('auditLog');
-    if (!data.entries.length) { el.innerHTML = '<div class="empty-state">No entries</div>'; return; }
-    var entries = data.entries.slice().reverse().slice(0, 30);
-    var html = '<table class="data-table"><tr><th>Time</th><th>Action</th><th>Data</th><th>Hash</th></tr>';
-    for (var i = 0; i < entries.length; i++) {
-      var e = entries[i];
-      var t = new Date(e.timestamp).toLocaleString();
-      var d = JSON.stringify(e.data).substring(0, 80);
-      html += '<tr><td style="font-size:11px">' + t + '</td><td><span class="badge badge-blue">' + e.action + '</span></td>'
-        + '<td style="font-size:11px;color:var(--text2);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + d + '</td>'
-        + '<td style="font-family:monospace;font-size:11px;color:var(--text2)">' + e.hash + '</td></tr>';
-    }
-    el.innerHTML = html + '</table><div style="margin-top:8px;font-size:12px;color:var(--text2)">' + data.total + ' total entries</div>';
+    auditLogCache = (data.entries || []).slice().reverse();
+    window._auditTotal = data.total || 0;
+    filterAuditLog();
   } catch (e) { document.getElementById('auditLog').innerHTML = '<div class="empty-state">Failed</div>'; }
+}
+function filterAuditLog(page) {
+  if (page) auditPage = page; else auditPage = 1;
+  var actionFilter = document.getElementById('auditAction').value;
+  var filtered = auditLogCache.filter(function(e) {
+    if (actionFilter && e.action !== actionFilter) return false;
+    return true;
+  });
+  var el = document.getElementById('auditLog');
+  if (!filtered.length) { el.innerHTML = '<div class="empty-state">No matching entries</div>'; renderPagination('auditPagination',1,1,'filterAuditLog'); return; }
+  var totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  if (auditPage > totalPages) auditPage = totalPages;
+  var start = (auditPage - 1) * PAGE_SIZE, end = Math.min(start + PAGE_SIZE, filtered.length);
+  var html = '<table class="data-table"><tr><th>Time</th><th>Action</th><th>Data</th><th>Hash</th></tr>';
+  for (var i = start; i < end; i++) {
+    var e = filtered[i];
+    var t = new Date(e.timestamp).toLocaleString();
+    var d = JSON.stringify(e.data).substring(0, 80);
+    html += '<tr><td style="font-size:11px">' + t + '</td><td><span class="badge badge-blue">' + e.action + '</span></td>'
+      + '<td style="font-size:11px;color:var(--text2);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + d + '</td>'
+      + '<td style="font-family:monospace;font-size:11px;color:var(--text2)">' + e.hash + '</td></tr>';
+  }
+  el.innerHTML = html + '</table><div style="margin-top:8px;font-size:12px;color:var(--text2)">' + (window._auditTotal || filtered.length) + ' total entries</div>';
+  renderPagination('auditPagination', auditPage, totalPages, 'filterAuditLog');
 }
 
 // ── Leads ──
@@ -2621,12 +2947,14 @@ async function loadLeads(page) {
     var leads = data.leads || [];
     var el = document.getElementById('leadsTable');
     if (!leads.length) { el.innerHTML = '<div class="empty-state">No leads found' + (data.total ? ' (' + data.total + ' total)' : '') + '.<br><span style="font-size:12px;color:var(--text2)">Leads are created from web form submissions, CSV imports, or the API.</span></div>'; document.getElementById('leadsPagination').innerHTML=''; return; }
-    var html = '<table class="data-table"><tr><th>Phone</th><th>Name</th><th>State</th><th>Disposition</th><th>Score</th><th>Calls</th><th>Last Contact</th><th>Tags</th></tr>';
+    selectedLeads.clear(); updateBulkBar();
+    var html = '<table class="data-table"><tr><th style="width:32px"><input type="checkbox" id="leadSelectAll" onchange="toggleAllLeads(this)"></th><th>Phone</th><th>Name</th><th>State</th><th>Disposition</th><th>Score</th><th>Calls</th><th>Last Contact</th><th>Tags</th></tr>';
     for (var i = 0; i < leads.length; i++) {
       var l = leads[i];
       var db = l.disposition === 'transferred' ? 'badge-green' : (l.disposition === 'not_interested' || l.disposition === 'dnc') ? 'badge-red' : l.disposition === 'callback' ? 'badge-orange' : 'badge-gray';
       var tags = (l.tags||[]).slice(0,3).map(function(t){return '<span class="badge badge-blue">' + t + '</span>';}).join(' ');
-      html += '<tr style="cursor:pointer" onclick="showLeadDetail(\\'' + l.phone + '\\')">'
+      html += '<tr style="cursor:pointer" onclick="if(!event.target.closest(\\'input\\'))showLeadDetail(\\'' + l.phone + '\\')">'
+        + '<td onclick="event.stopPropagation()"><input type="checkbox" class="lead-select-cb" value="' + l.phone + '" onchange="toggleLeadSelect(\\'' + l.phone + '\\',this)"></td>'
         + '<td style="font-family:monospace">' + l.phone + '</td><td>' + l.name + '</td><td>' + (l.state||'--') + '</td>'
         + '<td><span class="badge ' + db + '">' + l.disposition + '</span></td>'
         + '<td style="color:var(--accent)">' + (l.score || '--') + '</td>'
@@ -2680,20 +3008,27 @@ async function showLeadDetail(phone) {
       }
       html += '</table>';
     }
-    // SMS History
+    // SMS Conversation (chat bubbles)
+    html += '<h3 style="margin-bottom:8px">SMS Conversation</h3>';
+    html += '<div style="background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:8px;max-height:280px;overflow-y:auto" id="smsChatBubbles">';
     if (d.smsHistory && d.smsHistory.length) {
-      html += '<h3 style="margin-bottom:8px">SMS History (' + d.smsHistory.length + ')</h3>';
-      html += '<table class="data-table" style="margin-bottom:16px"><tr><th>Time</th><th>Dir</th><th>Message</th><th>Status</th></tr>';
-      for (var j = 0; j < Math.min(d.smsHistory.length, 20); j++) {
+      for (var j = 0; j < Math.min(d.smsHistory.length, 30); j++) {
         var s = d.smsHistory[j];
-        var dirBadge = s.direction === 'inbound' ? 'badge-blue' : 'badge-green';
-        html += '<tr><td style="font-size:11px">' + new Date(s.timestamp).toLocaleString() + '</td>';
-        html += '<td><span class="badge ' + dirBadge + '">' + s.direction + '</span></td>';
-        html += '<td style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + s.body + '</td>';
-        html += '<td>' + s.status + '</td></tr>';
+        var isOut = s.direction === 'outbound';
+        var stBadge = s.status === 'failed' ? 'color:#ef4444' : s.status === 'delivered' ? 'color:#22c55e' : 'color:var(--text2)';
+        html += '<div style="display:flex;justify-content:' + (isOut ? 'flex-end' : 'flex-start') + ';margin-bottom:8px">';
+        html += '<div style="max-width:75%;padding:8px 12px;border-radius:12px;font-size:12px;'
+          + (isOut ? 'background:var(--primary);color:white;border-bottom-right-radius:4px' : 'background:var(--border);color:var(--text);border-bottom-left-radius:4px') + '">';
+        html += s.body;
+        html += '<div style="font-size:10px;margin-top:4px;opacity:0.7;' + (isOut ? '' : stBadge) + '">' + new Date(s.timestamp).toLocaleTimeString() + ' &middot; ' + s.status + '</div>';
+        html += '</div></div>';
       }
-      html += '</table>';
+    } else {
+      html += '<div style="text-align:center;color:var(--text2);font-size:12px;padding:16px">No SMS messages yet</div>';
     }
+    html += '</div>';
+    // Quick reply
+    html += '<div style="display:flex;gap:8px;margin-bottom:16px"><input type="text" id="smsReplyInput" placeholder="Type a message..." style="flex:1;font-size:12px;padding:8px 12px"><button class="btn btn-sm btn-primary" onclick="sendLeadSms(\\'' + d.phone + '\\')">Send</button></div>';
     // Web Form Data (customFields from webhook)
     if (d.customFields && Object.keys(d.customFields).length > 0) {
       var cf = d.customFields;
@@ -2850,9 +3185,12 @@ async function loadCallbacks() {
         + '<td>' + new Date(cb.scheduledAt).toLocaleString() + '</td>'
         + '<td><span class="badge ' + sb + '">' + cb.status + '</span></td>'
         + '<td>' + cb.attempts + '/' + cb.maxAttempts + '</td>'
-        + '<td>' + (cb.status === 'pending' ? '<button class="btn btn-secondary btn-sm" onclick="cancelCb(\\'' + cb.id + '\\')">Cancel</button>' : (cb.result || '--')) + '</td></tr>';
+        + '<td>' + (cb.status === 'pending' ? '<button class="btn btn-secondary btn-sm" onclick="cancelCb(\\'' + cb.id + '\\')" style="margin-right:4px">Cancel</button><button class="btn btn-secondary btn-sm" onclick="showReschedule(\\'' + cb.id + '\\')">Reschedule</button>' +
+        '<div id="reschedule-' + cb.id + '" style="display:none;gap:6px;margin-top:6px;align-items:center"><input type="datetime-local" id="rescheduleDate-' + cb.id + '" style="font-size:11px;padding:4px"><button class="btn btn-sm btn-primary" onclick="rescheduleCb(\\'' + cb.id + '\\')">Save</button></div>'
+        : (cb.result || '--')) + '</td></tr>';
     }
     el.innerHTML = html + '</table>';
+    loadPastCallbacks();
   } catch (e) { document.getElementById('callbacksList').innerHTML = '<div class="empty-state">Failed</div>'; }
 }
 function showScheduleCallbackForm() {
@@ -2878,28 +3216,145 @@ async function cancelCb(id) {
     loadCallbacks();
   } catch (e) { toast('Failed', 'error'); }
 }
-
-// ── SMS ──
-async function loadSmsLog() {
+function showReschedule(id) {
+  var el = document.getElementById('reschedule-' + id);
+  if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+}
+async function rescheduleCb(id) {
+  var input = document.getElementById('rescheduleDate-' + id);
+  if (!input || !input.value) { toast('Pick a date/time', 'error'); return; }
   try {
-    var res = await fetch('/api/sms/log?limit=50');
-    var logs = await res.json();
-    var el = document.getElementById('smsLogTable');
-    if (!logs.length) { el.innerHTML = '<div class="empty-state">No SMS messages yet</div>'; return; }
-    var html = '<table class="data-table"><tr><th>Time</th><th>Phone</th><th>Dir</th><th>Message</th><th>Status</th><th>Trigger</th></tr>';
-    for (var i = 0; i < logs.length; i++) {
-      var s = logs[i];
-      var dirBadge = s.direction === 'inbound' ? 'badge-blue' : 'badge-green';
-      var stBadge = s.status === 'failed' ? 'badge-red' : s.status === 'sent' || s.status === 'delivered' ? 'badge-green' : 'badge-gray';
-      html += '<tr><td style="font-size:11px">' + new Date(s.timestamp).toLocaleString() + '</td>';
-      html += '<td style="font-family:monospace;font-size:11px">' + s.phone + '</td>';
-      html += '<td><span class="badge ' + dirBadge + '">' + s.direction + '</span></td>';
-      html += '<td style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + s.body + '</td>';
-      html += '<td><span class="badge ' + stBadge + '">' + s.status + '</span></td>';
-      html += '<td style="font-size:11px;color:var(--text2)">' + (s.triggerReason || '--') + '</td></tr>';
+    var res = await fetch('/api/callbacks/' + id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ scheduledAt: new Date(input.value).toISOString() }) });
+    if (res.ok) { toast('Rescheduled', 'success'); loadCallbacks(); }
+    else toast('Failed', 'error');
+  } catch (e) { toast('Failed', 'error'); }
+}
+async function loadPastCallbacks() {
+  try {
+    var res = await fetch('/api/callbacks/past?limit=20');
+    var cbs = await res.json();
+    var el = document.getElementById('pastCallbacks');
+    if (!cbs.length) { el.innerHTML = '<div class="empty-state">No past callbacks</div>'; return; }
+    var html = '<table class="data-table"><tr><th>Phone</th><th>Name</th><th>Scheduled</th><th>Status</th><th>Attempts</th><th>Result</th></tr>';
+    for (var i = 0; i < cbs.length; i++) {
+      var cb = cbs[i];
+      var sb = cb.status === 'completed' ? 'badge-green' : cb.status === 'failed' ? 'badge-red' : 'badge-gray';
+      html += '<tr><td style="font-family:monospace;font-size:11px">' + cb.phone + '</td><td>' + cb.leadName + '</td>';
+      html += '<td style="font-size:11px">' + new Date(cb.scheduledAt).toLocaleString() + '</td>';
+      html += '<td><span class="badge ' + sb + '">' + cb.status + '</span></td>';
+      html += '<td>' + cb.attempts + '/' + cb.maxAttempts + '</td>';
+      html += '<td style="font-size:11px;color:var(--text2)">' + (cb.result || '--') + '</td></tr>';
     }
     el.innerHTML = html + '</table>';
+  } catch (e) { document.getElementById('pastCallbacks').innerHTML = '<div class="empty-state">Failed</div>'; }
+}
+// SMS reply from lead modal
+async function sendLeadSms(phone) {
+  var input = document.getElementById('smsReplyInput');
+  if (!input || !input.value.trim()) { toast('Type a message', 'error'); return; }
+  try {
+    var res = await fetch('/api/sms/send', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone: phone, body: input.value.trim() }) });
+    if (res.ok) { toast('SMS sent', 'success'); input.value = ''; showLeadDetail(phone); }
+    else toast('Failed', 'error');
+  } catch (e) { toast('Failed', 'error'); }
+}
+
+// ── Bulk Lead Operations ──
+var selectedLeads = new Set();
+function toggleLeadSelect(phone, checkbox) {
+  if (checkbox.checked) selectedLeads.add(phone); else selectedLeads.delete(phone);
+  updateBulkBar();
+}
+function toggleAllLeads(checkbox) {
+  var rows = document.querySelectorAll('.lead-select-cb');
+  rows.forEach(function(cb) { cb.checked = checkbox.checked; if (checkbox.checked) selectedLeads.add(cb.value); else selectedLeads.delete(cb.value); });
+  updateBulkBar();
+}
+function updateBulkBar() {
+  var bar = document.getElementById('bulkBar');
+  if (selectedLeads.size > 0) {
+    bar.style.display = 'flex';
+    document.getElementById('bulkCount').textContent = selectedLeads.size + ' selected';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+function clearBulkSelection() {
+  selectedLeads.clear();
+  document.querySelectorAll('.lead-select-cb').forEach(function(cb) { cb.checked = false; });
+  var hdr = document.getElementById('leadSelectAll');
+  if (hdr) hdr.checked = false;
+  updateBulkBar();
+}
+async function bulkSetDisposition() {
+  var disp = document.getElementById('bulkDisposition').value;
+  if (!disp) { toast('Select a disposition', 'error'); return; }
+  try {
+    var res = await fetch('/api/leads/bulk/disposition', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phones: Array.from(selectedLeads), disposition: disp }) });
+    var data = await res.json();
+    toast('Updated ' + data.updated + ' leads', 'success');
+    clearBulkSelection(); loadLeads();
+  } catch (e) { toast('Failed', 'error'); }
+}
+async function bulkAddTag() {
+  var tag = document.getElementById('bulkTag').value.trim();
+  if (!tag) { toast('Enter a tag', 'error'); return; }
+  try {
+    var res = await fetch('/api/leads/bulk/tag', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phones: Array.from(selectedLeads), tag: tag }) });
+    var data = await res.json();
+    toast('Tagged ' + data.updated + ' leads', 'success');
+    clearBulkSelection(); loadLeads();
+  } catch (e) { toast('Failed', 'error'); }
+}
+async function bulkDeleteLeads() {
+  if (!confirm('Delete ' + selectedLeads.size + ' leads? This cannot be undone.')) return;
+  try {
+    var res = await fetch('/api/leads/bulk/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phones: Array.from(selectedLeads) }) });
+    var data = await res.json();
+    toast('Deleted ' + data.updated + ' leads', 'success');
+    clearBulkSelection(); loadLeads();
+  } catch (e) { toast('Failed', 'error'); }
+}
+
+// ── SMS ──
+var smsLogCache = [];
+async function loadSmsLog() {
+  try {
+    var res = await fetch('/api/sms/log?limit=200');
+    smsLogCache = await res.json();
+    filterSmsLog();
   } catch (e) { document.getElementById('smsLogTable').innerHTML = '<div class="empty-state">Failed</div>'; }
+}
+function filterSmsLog(page) {
+  if (page) smsPage = page; else smsPage = 1;
+  var search = (document.getElementById('smsSearch').value || '').trim().toLowerCase();
+  var dirFilter = document.getElementById('smsDirection').value;
+  var statusFilter = document.getElementById('smsStatus').value;
+  var filtered = smsLogCache.filter(function(s) {
+    if (dirFilter && s.direction !== dirFilter) return false;
+    if (statusFilter && s.status !== statusFilter) return false;
+    if (search && (s.phone||'').toLowerCase().indexOf(search) === -1) return false;
+    return true;
+  });
+  var el = document.getElementById('smsLogTable');
+  if (!filtered.length) { el.innerHTML = '<div class="empty-state">' + (smsLogCache.length ? 'No matching messages' : 'No SMS messages yet') + '</div>'; renderPagination('smsPagination',1,1,'filterSmsLog'); return; }
+  var totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  if (smsPage > totalPages) smsPage = totalPages;
+  var start = (smsPage - 1) * PAGE_SIZE, end = Math.min(start + PAGE_SIZE, filtered.length);
+  var html = '<table class="data-table"><tr><th>Time</th><th>Phone</th><th>Dir</th><th>Message</th><th>Status</th><th>Trigger</th></tr>';
+  for (var i = start; i < end; i++) {
+    var s = filtered[i];
+    var dirBadge = s.direction === 'inbound' ? 'badge-blue' : 'badge-green';
+    var stBadge = s.status === 'failed' ? 'badge-red' : s.status === 'sent' || s.status === 'delivered' ? 'badge-green' : 'badge-gray';
+    html += '<tr><td style="font-size:11px">' + new Date(s.timestamp).toLocaleString() + '</td>';
+    html += '<td style="font-family:monospace;font-size:11px">' + s.phone + '</td>';
+    html += '<td><span class="badge ' + dirBadge + '">' + s.direction + '</span></td>';
+    html += '<td style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + s.body + '</td>';
+    html += '<td><span class="badge ' + stBadge + '">' + s.status + '</span></td>';
+    html += '<td style="font-size:11px;color:var(--text2)">' + (s.triggerReason || '--') + '</td></tr>';
+  }
+  el.innerHTML = html + '</table>';
+  renderPagination('smsPagination', smsPage, totalPages, 'filterSmsLog');
 }
 var smsTemplatesData = [];
 async function loadSmsTemplates() {
@@ -3288,12 +3743,223 @@ async function loadCampaignSmsTemplates(id) {
   } catch (e) { console.error('loadCampaignSmsTemplates', e); }
 }
 
+// ── Settings Accordions ──
+var settingsChanged = false;
+function initSettingsAccordions() {
+  var tab = document.getElementById('tab-settings');
+  if (!tab || tab.dataset.accInit) return;
+  tab.dataset.accInit = '1';
+  var groups = {
+    voice: { title: 'Voice & Speech', desc: 'Provider, voice selection, model, temperature', icon: '&#127908;' },
+    audio: { title: 'VAD & Audio', desc: 'Voice detection, barge-in, background noise, call duration', icon: '&#127897;' },
+    persona: { title: 'Agent Persona', desc: 'Name, company, system prompt, inbound prompt', icon: '&#129489;' },
+    call: { title: 'Call Behavior', desc: 'Inbound calls, AMD, duration limits', icon: '&#128222;' },
+    sms: { title: 'SMS & Transfers', desc: 'SMS triggers, transfer numbers', icon: '&#128172;' },
+    compliance: { title: 'Compliance & Retry', desc: 'TCPA, DNC, rate limits, retry settings', icon: '&#128737;' },
+    webhooks: { title: 'Webhooks', desc: 'HTTP webhook integrations for event notifications', icon: '&#128279;' }
+  };
+  var cards = Array.from(tab.querySelectorAll('.card[data-acc]'));
+  var grouped = {};
+  cards.forEach(function(c) { var g = c.dataset.acc; if (!grouped[g]) grouped[g] = []; grouped[g].push(c); });
+  var saveRow = tab.querySelector('div[style*="flex-end"]');
+  Object.keys(groups).forEach(function(key) {
+    if (!grouped[key]) return;
+    var info = groups[key];
+    var section = document.createElement('div');
+    section.className = 'accordion-section';
+    var isFirst = key === 'voice';
+    section.innerHTML = '<div class="accordion-header' + (isFirst ? ' open' : '') + '" onclick="toggleAccordion(this)"><span class="acc-icon">' + info.icon + '</span><span class="acc-title">' + info.title + '</span><span class="acc-desc">' + info.desc + '</span><span class="acc-chevron">&#9660;</span></div>';
+    var body = document.createElement('div');
+    body.className = 'accordion-body' + (isFirst ? ' open' : '');
+    grouped[key].forEach(function(c) { body.appendChild(c); });
+    section.appendChild(body);
+    if (saveRow) tab.insertBefore(section, saveRow);
+    else tab.appendChild(section);
+  });
+}
+function toggleAccordion(header) {
+  header.classList.toggle('open');
+  var body = header.nextElementSibling;
+  if (body) body.classList.toggle('open');
+}
+function markSettingsChanged() {
+  settingsChanged = true;
+  var b = document.getElementById('unsavedBanner');
+  if (b) b.classList.add('show');
+}
+function clearSettingsChanged() {
+  settingsChanged = false;
+  var b = document.getElementById('unsavedBanner');
+  if (b) b.classList.remove('show');
+}
+// Listen for changes on all settings inputs
+document.getElementById('tab-settings').addEventListener('input', markSettingsChanged);
+document.getElementById('tab-settings').addEventListener('change', markSettingsChanged);
+
+// ── A/B Tests ──
+async function loadABTests() {
+  try {
+    var res = await fetch('/api/ab-tests');
+    var tests = await res.json();
+    var el = document.getElementById('abTestsList');
+    if (!tests || !tests.length) { el.innerHTML = '<div class="empty-state">No A/B tests configured.<br><span style="font-size:12px;color:var(--text2)">Create a test to compare prompt, voice, or settings variants.</span></div>'; return; }
+    var html = '<table class="data-table"><tr><th>Name</th><th>Type</th><th>Status</th><th>Variants</th><th>Total Calls</th><th>Actions</th></tr>';
+    for (var i = 0; i < tests.length; i++) {
+      var t = tests[i];
+      var statusBadge = t.active ? 'badge-green' : 'badge-gray';
+      var typeBadge = t.type === 'prompt' ? 'badge-blue' : t.type === 'voice' ? 'badge-orange' : 'badge-gray';
+      html += '<tr><td style="cursor:pointer" onclick="toggleABTestDetail(\\'' + t.id + '\\')">' + t.name + '</td>';
+      html += '<td><span class="badge ' + typeBadge + '">' + t.type + '</span></td>';
+      html += '<td><span class="badge ' + statusBadge + '">' + (t.active ? 'Active' : 'Paused') + '</span></td>';
+      html += '<td>' + t.variants.length + '</td>';
+      html += '<td>' + (t.results ? t.results.totalAssignments : 0) + '</td>';
+      html += '<td style="display:flex;gap:4px">';
+      html += '<button class="btn btn-sm ' + (t.active ? 'btn-secondary' : 'btn-green') + '" onclick="toggleABTest(\\'' + t.id + '\\',' + !t.active + ')">' + (t.active ? 'Pause' : 'Resume') + '</button>';
+      html += '<button class="btn btn-sm btn-red" onclick="deleteABTest(\\'' + t.id + '\\')">Delete</button>';
+      html += '</td></tr>';
+      // Detail row (hidden)
+      html += '<tr id="ab-detail-' + t.id + '" style="display:none"><td colspan="6" style="padding:12px;background:var(--bg)">';
+      html += '<p style="font-size:12px;color:var(--text2);margin-bottom:8px">' + (t.description || 'No description') + '</p>';
+      if (t.results && t.results.variantStats) {
+        html += '<table class="data-table" style="font-size:12px"><tr><th>Variant</th><th>Calls</th><th>Transfers</th><th>Conv. Rate</th><th>Avg Score</th><th>Avg Duration</th><th>Cost</th></tr>';
+        for (var vi = 0; vi < t.variants.length; vi++) {
+          var v = t.variants[vi];
+          var vs = t.results.variantStats[v.id] || { calls: 0, transfers: 0, conversionRate: 0, avgScore: 0, avgDurationMs: 0, totalCostUsd: 0 };
+          html += '<tr><td><strong>' + v.name + '</strong> <span style="color:var(--text2)">(' + v.weight + '%)</span></td>';
+          html += '<td>' + vs.calls + '</td><td>' + vs.transfers + '</td>';
+          html += '<td style="color:var(--accent)">' + (vs.conversionRate * 100).toFixed(1) + '%</td>';
+          html += '<td>' + vs.avgScore.toFixed(1) + '</td>';
+          html += '<td>' + (vs.avgDurationMs / 1000).toFixed(0) + 's</td>';
+          html += '<td>$' + vs.totalCostUsd.toFixed(2) + '</td></tr>';
+        }
+        html += '</table>';
+      } else { html += '<span style="font-size:12px;color:var(--text2)">No results yet</span>'; }
+      html += '</td></tr>';
+    }
+    el.innerHTML = html + '</table>';
+  } catch (e) { document.getElementById('abTestsList').innerHTML = '<div class="empty-state">Failed to load A/B tests</div>'; }
+}
+function toggleABTestDetail(id) {
+  var row = document.getElementById('ab-detail-' + id);
+  if (row) row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+}
+async function toggleABTest(id, active) {
+  try {
+    var res = await fetch('/api/ab-tests/' + id + '/toggle', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ active: active }) });
+    if (res.ok) { toast(active ? 'Test resumed' : 'Test paused', 'success'); loadABTests(); }
+    else toast('Failed', 'error');
+  } catch (e) { toast('Failed', 'error'); }
+}
+async function deleteABTest(id) {
+  if (!confirm('Delete A/B test "' + id + '"?')) return;
+  try {
+    var res = await fetch('/api/ab-tests/' + id, { method: 'DELETE' });
+    if (res.ok) { toast('Test deleted', 'success'); loadABTests(); }
+    else toast('Failed', 'error');
+  } catch (e) { toast('Failed', 'error'); }
+}
+function showCreateABTest() { document.getElementById('abTestForm').style.display = 'block'; }
+function hideCreateABTest() { document.getElementById('abTestForm').style.display = 'none'; }
+function addABVariant() {
+  var container = document.getElementById('abVariants');
+  var row = document.createElement('div');
+  row.className = 'ab-variant-row';
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 80px 2fr 40px;gap:8px;margin-bottom:8px;align-items:end';
+  row.innerHTML = '<div><label style="font-size:11px">Variant ID</label><input type="text" class="abv-id" placeholder="variant-c"></div>'
+    + '<div><label style="font-size:11px">Name</label><input type="text" class="abv-name" placeholder="Variant C"></div>'
+    + '<div><label style="font-size:11px">Weight</label><input type="number" class="abv-weight" value="33" min="0" max="100"></div>'
+    + '<div><label style="font-size:11px">Config (JSON)</label><input type="text" class="abv-config" placeholder=\\'{\"key\":\"value\"}\\'></div>'
+    + '<div><button class="btn btn-sm btn-red" onclick="this.closest(\\'.ab-variant-row\\').remove()" title="Remove">&times;</button></div>';
+  container.appendChild(row);
+}
+async function createABTest() {
+  var id = document.getElementById('abTestId').value.trim();
+  var name = document.getElementById('abTestName').value.trim();
+  var type = document.getElementById('abTestType').value;
+  var desc = document.getElementById('abTestDesc').value.trim();
+  if (!id || !name) { toast('ID and Name required', 'error'); return; }
+  var rows = document.querySelectorAll('.ab-variant-row');
+  var variants = [];
+  for (var i = 0; i < rows.length; i++) {
+    var vid = rows[i].querySelector('.abv-id').value.trim();
+    var vname = rows[i].querySelector('.abv-name').value.trim();
+    var weight = parseInt(rows[i].querySelector('.abv-weight').value) || 0;
+    var configStr = rows[i].querySelector('.abv-config').value.trim();
+    if (!vid || !vname) continue;
+    var config = {};
+    try { if (configStr) config = JSON.parse(configStr); } catch(e) { toast('Invalid JSON in variant ' + vid, 'error'); return; }
+    variants.push({ id: vid, name: vname, weight: weight, config: config });
+  }
+  if (variants.length < 2) { toast('At least 2 variants required', 'error'); return; }
+  try {
+    var res = await fetch('/api/ab-tests', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: id, name: name, type: type, description: desc, active: true, variants: variants }) });
+    if (res.ok) { toast('A/B test created', 'success'); hideCreateABTest(); loadABTests(); }
+    else { var err = await res.json(); toast(err.error || 'Failed', 'error'); }
+  } catch (e) { toast('Failed', 'error'); }
+}
+
+// ── Webhooks ──
+async function loadWebhooks() {
+  try {
+    var res = await fetch('/api/workflows/webhooks');
+    var hooks = await res.json();
+    var el = document.getElementById('webhooksList');
+    if (!hooks || !hooks.length) { el.innerHTML = '<div class="empty-state">No webhooks configured.<br><span style="font-size:12px;color:var(--text2)">Add webhooks to get notified of events via HTTP POST.</span></div>'; return; }
+    var html = '<table class="data-table"><tr><th>URL</th><th>Events</th><th>Status</th><th>Actions</th></tr>';
+    for (var i = 0; i < hooks.length; i++) {
+      var h = hooks[i];
+      var events = (h.events||[]).map(function(e) { return '<span class="badge badge-blue" style="font-size:10px">' + e + '</span>'; }).join(' ');
+      html += '<tr><td style="font-size:12px;font-family:monospace;max-width:300px;overflow:hidden;text-overflow:ellipsis">' + h.url + '</td>';
+      html += '<td style="max-width:250px">' + events + '</td>';
+      html += '<td><span class="badge ' + (h.active ? 'badge-green' : 'badge-gray') + '">' + (h.active ? 'Active' : 'Inactive') + '</span></td>';
+      html += '<td style="display:flex;gap:4px"><button class="btn btn-sm btn-secondary" onclick="testWebhook(\\'' + h.id + '\\',\\'' + h.url.replace(/'/g, '') + '\\')">Test</button>';
+      html += '<button class="btn btn-sm btn-red" onclick="deleteWebhook(\\'' + h.id + '\\')">Delete</button></td></tr>';
+    }
+    el.innerHTML = html + '</table>';
+  } catch (e) { document.getElementById('webhooksList').innerHTML = '<div class="empty-state">Failed to load webhooks</div>'; }
+}
+function showAddWebhook() { document.getElementById('webhookForm').style.display = 'block'; }
+function hideAddWebhook() { document.getElementById('webhookForm').style.display = 'none'; }
+async function createWebhook() {
+  var id = document.getElementById('webhookId').value.trim();
+  var url = document.getElementById('webhookUrl').value.trim();
+  var secret = document.getElementById('webhookSecret').value.trim();
+  var active = document.getElementById('webhookActive').checked;
+  if (!id || !url) { toast('ID and URL required', 'error'); return; }
+  var eventCbs = document.querySelectorAll('.wh-event:checked');
+  var events = [];
+  eventCbs.forEach(function(cb) { events.push(cb.value); });
+  if (!events.length) { toast('Select at least one event', 'error'); return; }
+  try {
+    var res = await fetch('/api/workflows/webhooks', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: id, url: url, events: events, active: active, secret: secret || undefined }) });
+    if (res.ok) { toast('Webhook added', 'success'); hideAddWebhook(); loadWebhooks(); }
+    else { var err = await res.json(); toast(err.error || 'Failed', 'error'); }
+  } catch (e) { toast('Failed', 'error'); }
+}
+async function deleteWebhook(id) {
+  if (!confirm('Delete webhook "' + id + '"?')) return;
+  try {
+    var res = await fetch('/api/workflows/webhooks/' + id, { method: 'DELETE' });
+    if (res.ok) { toast('Webhook deleted', 'success'); loadWebhooks(); }
+    else toast('Failed', 'error');
+  } catch (e) { toast('Failed', 'error'); }
+}
+async function testWebhook(id, url) {
+  toast('Sending test to ' + url + '...', 'info');
+  try {
+    var res = await fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ event: 'test', timestamp: new Date().toISOString(), data: { message: 'Test webhook from AI Outbound Agent', webhookId: id } }), mode: 'no-cors' });
+    toast('Test sent (check your endpoint)', 'success');
+  } catch (e) { toast('Test sent (CORS may prevent confirmation)', 'info'); }
+}
+
 // ── Init ──
 loadSettings();
 loadCallHistory();
 loadCampaignConfig('campaign-consumer-auto');
 loadCampaignStats();
 updatePromptCounter();
+initSettingsAccordions();
+loadWebhooks();
 </script>
 </body>
 </html>`;

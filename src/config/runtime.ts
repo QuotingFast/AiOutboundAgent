@@ -48,6 +48,9 @@ export interface RuntimeSettings {
   // Whether weblead auto-dial is enabled
   webleadAutoDialEnabled?: boolean;
 
+  // Master pause — halts all automatic dialing (callbacks, retries, weblead auto-dial)
+  autoProcessingPaused: boolean;
+
   // TCPA time-of-day override (bypass 8am-9pm restriction when true)
   tcpaOverride: boolean;
 
@@ -91,6 +94,19 @@ export interface RuntimeSettings {
 
   // Auto-DNC on verbal request
   autoDncEnabled: boolean;
+
+  // Retry delays (in minutes)
+  retryDelay1Min: number;  // Default: 30 minutes
+  retryDelay2Min: number;  // Default: 120 minutes (2 hours)
+  retryDelay3Min: number;  // Default: 1440 minutes (24 hours)
+
+  // Quality alerts
+  qualityAlertsEnabled: boolean;
+  latencyAlertThresholdMs: number;  // Default: 2000
+
+  // Daily report
+  dailyReportEnabled: boolean;
+  dailyReportHour: number;  // 0-23, default: 18 (6PM)
 }
 
 export interface CallRecord {
@@ -114,30 +130,31 @@ export interface CallRecord {
 }
 
 const settings: RuntimeSettings = {
-      voiceProvider: config.ttsProvider as 'openai' | 'elevenlabs' | 'deepseek',
+      voiceProvider: 'deepseek',
       voice: config.openai.voice,
       realtimeModel: config.openai.realtimeModel,
       temperature: 0.8,
-      elevenlabsVoiceId: config.elevenlabs.voiceId,
+      elevenlabsVoiceId: config.elevenlabs.voiceId || 'jn34bTlmmOgOJU9XfPuy', // Steve
       elevenlabsModelId: 'eleven_turbo_v2_5',
-      elevenlabsStability: 0.50,
+      elevenlabsStability: 0.45,
       elevenlabsSimilarityBoost: 0.78,
-      elevenlabsStyle: 0.07,
+      elevenlabsStyle: 0.10,
       elevenlabsUseSpeakerBoost: true,
-      elevenlabsSpeed: 1.00,
+      elevenlabsSpeed: 0.97,
       deepseekModel: config.deepseek.model || 'deepseek-chat',
-      vadThreshold: 0.9,
-      silenceDurationMs: 950,
-      prefixPaddingMs: 300,
-      bargeInDebounceMs: 350,
-      echoSuppressionMs: 200,
+      vadThreshold: 0.92,
+      silenceDurationMs: 1200,
+      prefixPaddingMs: 200,
+      bargeInDebounceMs: 400,
+      echoSuppressionMs: 250,
       maxResponseTokens: 275,
-      agentName: 'Alex',
+      agentName: 'Steve',
       companyName: 'Affordable Auto Rates',
       systemPromptOverride: '',
       inboundPromptOverride: '',
       inboundEnabled: true,
-      webleadAutoDialEnabled: true,
+      webleadAutoDialEnabled: false,
+      autoProcessingPaused: false,
       tcpaOverride: false,
       allstateNumber: '',
       nonAllstateNumber: '',
@@ -176,6 +193,19 @@ const settings: RuntimeSettings = {
 
       // Auto-DNC
       autoDncEnabled: true,
+
+      // Retry delays (minutes)
+      retryDelay1Min: 30,
+      retryDelay2Min: 120,
+      retryDelay3Min: 1440,
+
+      // Quality alerts
+      qualityAlertsEnabled: true,
+      latencyAlertThresholdMs: 2000,
+
+      // Daily report
+      dailyReportEnabled: false,
+      dailyReportHour: 18,
 };
 
 // Keep last 20 calls

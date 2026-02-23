@@ -323,3 +323,65 @@ export async function notifyCallbackFailed(
   notificationLog.unshift(entry);
   if (notificationLog.length > MAX_LOG) notificationLog.length = MAX_LOG;
 }
+
+// ── Quality Alerts ───────────────────────────────────────────────
+
+export async function notifyHighFrustration(
+  prospectPhone: string,
+  prospectName: string,
+  callSid: string,
+): Promise<void> {
+  const smsBody = `[Quoting Fast] HIGH FRUSTRATION detected on call with ${prospectName} (${prospectPhone}). Call SID: ${callSid}. Review the recording and transcript.`;
+  const smsSent = await sendNotificationSms(smsBody);
+
+  const emailSubject = `Quality Alert: High Frustration — ${prospectName}`;
+  const emailBody = `High frustration was detected during a call.\n\nProspect: ${prospectName}\nPhone: ${prospectPhone}\nCall SID: ${callSid}\nTime: ${new Date().toISOString()}\n\nReview the call recording and transcript in the dashboard.\n\n-- Quoting Fast AI Agent`;
+  const emailSent = await sendNotificationEmail(notificationConfig.ownerEmail, emailSubject, emailBody);
+
+  notificationLog.unshift({
+    id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    eventType: 'callback_failed',
+    prospectPhone,
+    prospectName,
+    message: smsBody,
+    smsNotificationSent: smsSent,
+    emailNotificationSent: emailSent,
+    timestamp: new Date().toISOString(),
+    details: { callSid, alertType: 'high_frustration' },
+  });
+  if (notificationLog.length > MAX_LOG) notificationLog.length = MAX_LOG;
+}
+
+export async function notifyHighLatency(
+  prospectPhone: string,
+  prospectName: string,
+  callSid: string,
+  avgLatencyMs: number,
+): Promise<void> {
+  const smsBody = `[Quoting Fast] HIGH LATENCY on call with ${prospectName} (${prospectPhone}): ${avgLatencyMs}ms avg. Call SID: ${callSid}`;
+  const smsSent = await sendNotificationSms(smsBody);
+
+  const emailSubject = `Quality Alert: High Latency — ${avgLatencyMs}ms`;
+  const emailBody = `High average latency was detected during a call.\n\nProspect: ${prospectName}\nPhone: ${prospectPhone}\nCall SID: ${callSid}\nAvg Latency: ${avgLatencyMs}ms\nTime: ${new Date().toISOString()}\n\nThis may indicate slow AI responses affecting call quality.\n\n-- Quoting Fast AI Agent`;
+  const emailSent = await sendNotificationEmail(notificationConfig.ownerEmail, emailSubject, emailBody);
+
+  notificationLog.unshift({
+    id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    eventType: 'callback_failed',
+    prospectPhone,
+    prospectName,
+    message: smsBody,
+    smsNotificationSent: smsSent,
+    emailNotificationSent: emailSent,
+    timestamp: new Date().toISOString(),
+    details: { callSid, avgLatencyMs, alertType: 'high_latency' },
+  });
+  if (notificationLog.length > MAX_LOG) notificationLog.length = MAX_LOG;
+}
+
+// ── Daily Report ─────────────────────────────────────────────────
+
+export async function sendDailyReport(reportHtml: string): Promise<boolean> {
+  const subject = `[Quoting Fast] Daily Report — ${new Date().toLocaleDateString()}`;
+  return sendNotificationEmail(notificationConfig.ownerEmail, subject, reportHtml);
+}

@@ -42,6 +42,7 @@ import {
 import {
   scheduleCallback as scheduleCallbackTimer,
   cancelCallback as cancelCallbackTimer,
+  rescheduleCallback,
   getUpcomingCallbacks, getPastCallbacks,
   getCallbacks as getSchedulerCallbacks,
   getRetries, scheduleRetry,
@@ -509,12 +510,24 @@ router.put('/api/settings', (req: Request, res: Response) => {
   res.json(updated);
 });
 
+// Toggle auto-processing pause (master pause button)
+router.post('/api/settings/toggle-pause', (_req: Request, res: Response) => {
+  const current = getSettings();
+  const updated = updateSettings({ autoProcessingPaused: !current.autoProcessingPaused });
+  logger.info('routes', `Auto-processing ${updated.autoProcessingPaused ? 'PAUSED' : 'RESUMED'}`);
+  res.json({ paused: updated.autoProcessingPaused });
+});
+
 router.get('/api/calls', (_req: Request, res: Response) => {
   res.json(getCallHistory());
 });
 
 router.get('/api/default-prompt', (_req: Request, res: Response) => {
-  const prompt = buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}' });
+  const s = getSettings();
+  const prompt = buildSystemPrompt(
+    { first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}', vehicles: [{ year: '{{vehicle_year}}', model: '{{vehicle_model}}' }] },
+    { agentName: s.agentName, companyName: s.companyName },
+  );
   res.json({ prompt });
 });
 
@@ -1117,6 +1130,46 @@ router.delete('/api/leads/:phone/tags/:tag', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+/**
+ * Bulk lead operations
+ */
+router.post('/api/leads/bulk/disposition', (req: Request, res: Response) => {
+  const { phones, disposition } = req.body;
+  if (!Array.isArray(phones) || !disposition) { res.status(400).json({ error: 'phones array and disposition required' }); return; }
+  let updated = 0;
+  for (const phone of phones) {
+    const lead = getLeadMemory(phone);
+    if (lead) { lead.disposition = disposition; updated++; }
+  }
+  res.json({ success: true, updated });
+});
+
+router.post('/api/leads/bulk/tag', (req: Request, res: Response) => {
+  const { phones, tag } = req.body;
+  if (!Array.isArray(phones) || !tag) { res.status(400).json({ error: 'phones array and tag required' }); return; }
+  let updated = 0;
+  for (const phone of phones) {
+    const lead = getLeadMemory(phone);
+    if (lead) {
+      if (!lead.tags) lead.tags = [];
+      if (!lead.tags.includes(tag)) { lead.tags.push(tag); updated++; }
+    }
+  }
+  res.json({ success: true, updated });
+});
+
+router.post('/api/leads/bulk/delete', (req: Request, res: Response) => {
+  const { phones } = req.body;
+  if (!Array.isArray(phones)) { res.status(400).json({ error: 'phones array required' }); return; }
+  // We can't easily delete from the Map-based store, so we mark disposition as 'dnc'
+  let updated = 0;
+  for (const phone of phones) {
+    const lead = getLeadMemory(phone);
+    if (lead) { lead.disposition = 'dnc'; updated++; }
+  }
+  res.json({ success: true, updated });
+});
+
 // ── Prompt Management Endpoints ─────────────────────────────────────
 
 router.get('/api/prompts', (_req: Request, res: Response) => {
@@ -1484,8 +1537,19 @@ async function handleWeblead(req: Request, res: Response) {
 
           // Check settings for auto-dial
           const settings = getSettings();
-          const autoDialEnabled = settings.webleadAutoDialEnabled !== false; // default true
+          const autoDialEnabled = settings.webleadAutoDialEnabled === true; // default false — must opt-in
           const fromNumber = settings.defaultFromNumber || config.twilio?.fromNumber || '';
+
+          // Skip auto-dial if master pause is active
+          if (settings.autoProcessingPaused) {
+                logger.info('routes', 'Weblead auto-dial skipped: auto-processing is paused', { phone });
+                res.json({
+                      success: true, phone, name: fullName, state,
+                      call: null, autoDialed: false, reason: 'paused',
+                      campaignId: resolvedCampaignId, campaignResolved, formData: formDataSummary,
+                });
+                return;
+          }
 
           if (autoDialEnabled && fromNumber) {
                   // Check concurrency before auto-dialing
@@ -1930,6 +1994,17 @@ router.delete('/api/callbacks/:id', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+/**
+ * PUT /api/callbacks/:id — Reschedule a callback
+ */
+router.put('/api/callbacks/:id', (req: Request, res: Response) => {
+  const { scheduledAt } = req.body;
+  if (!scheduledAt) { res.status(400).json({ error: 'scheduledAt required' }); return; }
+  const cb = rescheduleCallback(req.params.id, scheduledAt);
+  if (!cb) { res.status(404).json({ error: 'Callback not found or cannot be rescheduled' }); return; }
+  res.json(cb);
+});
+
 // ── Retry API ───────────────────────────────────────────────────────
 
 /**
@@ -2057,6 +2132,55 @@ router.get('/api/recordings/enriched', (_req: Request, res: Response) => {
     };
   });
   res.json({ recordings });
+});
+
+// ── Daily Report ─────────────────────────────────────────────────
+
+router.post('/api/reports/send-daily', async (_req: Request, res: Response) => {
+  try {
+    const summary = getAnalyticsSummary();
+    const history = getAnalyticsHistory();
+    const topCalls = [...history]
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
+      .slice(0, 5);
+
+    const outcomeLines = Object.entries(summary.outcomes)
+      .map(([k, v]) => `  ${k}: ${v}`)
+      .join('\n');
+
+    const callHistory = getCallHistory();
+    const topCallLines = topCalls
+      .map((c, i) => {
+        const call = callHistory.find(h => h.callSid === c.callSid);
+        return `  ${i + 1}. ${call?.leadName || 'Unknown'} (${call?.to || c.callSid}) — Score: ${c.score}, Outcome: ${c.outcome}, Duration: ${Math.round((c.durationMs || 0) / 1000)}s`;
+      })
+      .join('\n');
+
+    const reportBody = `DAILY REPORT — ${new Date().toLocaleDateString()}
+
+SUMMARY
+  Total Calls: ${summary.totalCalls}
+  Transfer Rate: ${summary.transferRate}%
+  Avg Score: ${summary.avgScore}
+  Avg Latency: ${summary.avgLatencyMs}ms
+  Avg Duration: ${Math.round(summary.avgDurationMs / 1000)}s
+  Total Cost: $${summary.totalCostUsd.toFixed(2)}
+
+OUTCOMES
+${outcomeLines || '  No calls recorded'}
+
+TOP 5 CALLS BY SCORE
+${topCallLines || '  No calls recorded'}
+
+— Quoting Fast AI Agent`;
+
+    const { sendDailyReport } = await import('../notifications');
+    const sent = await sendDailyReport(reportBody);
+    res.json({ success: true, sent });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg });
+  }
 });
 
 export { router };

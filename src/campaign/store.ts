@@ -353,15 +353,15 @@ export function seedCampaigns(): void {
   const consumerAiProfile: CampaignAIProfile = {
     id: 'ai-profile-consumer-default',
     campaignId: 'campaign-consumer-auto',
-    agentName: 'Alex',
+    agentName: 'Steve',
     companyName: 'Affordable Auto Rates',
     temperature: 0.8,
     maxResponseTokens: 275,
     realtimeModel: 'gpt-4o-realtime-preview',
-    systemPrompt: buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}', vehicles: [{ year: '{{vehicle_year}}', model: '{{vehicle_model}}' }] }),
+    systemPrompt: buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}', vehicles: [{ year: '{{vehicle_year}}', model: '{{vehicle_model}}' }] }, { agentName: 'Steve', companyName: 'Affordable Auto Rates' }),
     inboundPrompt: '',
-    greetingText: 'Hey {{first_name}}, this is Alex over at Affordable Auto Rates — I\'m calling about the auto insurance quote you requested online for your {{vehicle_year}} {{vehicle_model}}.',
-    inboundGreetingText: 'Thanks for calling Affordable Auto Rates, this is Alex. How can I help you today?',
+    greetingText: 'Hey {{first_name}}, this is Steve over at Affordable Auto Rates — I\'m calling about the auto insurance quote you requested online for your {{vehicle_year}} {{vehicle_model}}.',
+    inboundGreetingText: 'Thanks for calling Affordable Auto Rates, this is Steve. How can I help you today?',
     tools: [],
   };
 
@@ -374,15 +374,15 @@ export function seedCampaigns(): void {
     updatedAt: now,
     aiProfile: consumerAiProfile,
     voiceConfig: {
-      voiceProvider: 'elevenlabs',
+      voiceProvider: 'deepseek',
       openaiVoice: 'coral',
-      elevenlabsVoiceId: 'cjVigY5qzO86Huf0OWal', // eric
+      elevenlabsVoiceId: 'jn34bTlmmOgOJU9XfPuy', // Steve
       elevenlabsModelId: 'eleven_turbo_v2_5',
-      elevenlabsStability: 0.50,
+      elevenlabsStability: 0.45,
       elevenlabsSimilarityBoost: 0.78,
-      elevenlabsStyle: 0.07,
+      elevenlabsStyle: 0.10,
       elevenlabsUseSpeakerBoost: true,
-      elevenlabsSpeed: 1.00,
+      elevenlabsSpeed: 0.97,
       deepseekModel: 'deepseek-chat',
     },
     smsTemplateSetId: 'sms-set-consumer',

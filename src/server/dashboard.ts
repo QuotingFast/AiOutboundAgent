@@ -1989,7 +1989,7 @@ export function getDashboardHtml(): string {
     </div>
   </div>
 
-  <div style="display:flex;justify-content:flex-end;gap:12px">
+  <div id="settingsSaveRow" style="display:flex;justify-content:flex-end;gap:12px">
     <button class="btn btn-secondary" onclick="loadSettings()">Revert</button>
     <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">Save All Settings</button>
   </div>
@@ -2250,7 +2250,7 @@ async function saveSettings() {
     if (ct) body.defaultToNumber = ct;
     if (cf) body.defaultFromNumber = cf;
     var res = await fetch('/api/settings', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    if (!res.ok) { toast('Save failed', 'error'); return; }
+    if (!res.ok) { try { var errData = await res.json(); toast(errData.details ? errData.details.join(', ') : errData.error || 'Save failed', 'error'); } catch(_e) { toast('Save failed (status ' + res.status + ')', 'error'); } return; }
     toast('Settings saved', 'success');
     clearSettingsChanged();
   } catch (e) { toast('Save failed', 'error'); }
@@ -3761,7 +3761,7 @@ function initSettingsAccordions() {
   var cards = Array.from(tab.querySelectorAll('.card[data-acc]'));
   var grouped = {};
   cards.forEach(function(c) { var g = c.dataset.acc; if (!grouped[g]) grouped[g] = []; grouped[g].push(c); });
-  var saveRow = tab.querySelector('div[style*="flex-end"]');
+  var saveRow = document.getElementById('settingsSaveRow');
   Object.keys(groups).forEach(function(key) {
     if (!grouped[key]) return;
     var info = groups[key];
@@ -3792,9 +3792,15 @@ function clearSettingsChanged() {
   var b = document.getElementById('unsavedBanner');
   if (b) b.classList.remove('show');
 }
-// Listen for changes on all settings inputs
-document.getElementById('tab-settings').addEventListener('input', markSettingsChanged);
-document.getElementById('tab-settings').addEventListener('change', markSettingsChanged);
+// Listen for changes on settings inputs (exclude webhook form which has its own save flow)
+document.getElementById('tab-settings').addEventListener('input', function(e) {
+  if (e.target.closest && e.target.closest('#webhookForm')) return;
+  markSettingsChanged();
+});
+document.getElementById('tab-settings').addEventListener('change', function(e) {
+  if (e.target.closest && e.target.closest('#webhookForm')) return;
+  markSettingsChanged();
+});
 
 // ── A/B Tests ──
 async function loadABTests() {

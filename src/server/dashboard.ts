@@ -12,7 +12,7 @@ export function getDashboardHtml(): string {
 <style>
   :root {
     --primary: #2563eb;
-    --primary-light: #3b82f6;
+    --primary-light: #3b82f
     --primary-dark: #1d4ed8;
     --primary-bg: #eff6ff;
     --bg: #e8ecf4;

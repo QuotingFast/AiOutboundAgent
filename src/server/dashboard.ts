@@ -2419,7 +2419,7 @@ async function loadRecordings() {
   try {
     var res = await fetch('/api/recordings');
     var data = await res.json();
-    recordingsCache = data.recordings || [];
+    recordingsCache = (data.recordings || []).sort(function(a, b) { return new Date(b.timestamp) - new Date(a.timestamp); });
     filterRecordings();
   } catch (e) { document.getElementById('recordingsTable').innerHTML = '<span class="err">Failed to load recordings</span>'; }
 }

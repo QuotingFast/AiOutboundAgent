@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { startOutboundCall, StartCallParams, sendSms, endCall, fetchRecentRecordings } from '../twilio/client';
 import { buildMediaStreamTwiml, buildTransferTwiml, escapeXml } from '../twilio/twiml';
-import { registerPendingSession } from '../audio/stream';
+import { registerPendingSession, hasPendingSession } from '../audio/stream';
 import { TransferConfig, buildSystemPrompt } from '../agent/prompts';
 import { getSettings, updateSettings, recordCall, getCallHistory } from '../config/runtime';
 import { getDashboardHtml } from './dashboard';
@@ -296,7 +296,12 @@ router.post('/twilio/voice', (req: Request, res: Response) => {
   logger.info('routes', 'Voice webhook hit', { callSid, toPhone });
 
   if (lead && callSid !== 'unknown') {
-    registerPendingSession(callSid, lead, transfer, toPhone);
+    // Only register if this is a direct Twilio call (not via /call/start).
+    // /call/start already registers with campaign_id — re-registering here
+    // would overwrite it without campaign context.
+    if (!hasPendingSession(callSid)) {
+      registerPendingSession(callSid, lead, transfer, toPhone);
+    }
   }
 
   const twiml = buildMediaStreamTwiml('outbound');

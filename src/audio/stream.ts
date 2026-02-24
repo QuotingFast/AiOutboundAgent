@@ -40,6 +40,10 @@ export function registerPendingSession(callSid: string, lead: LeadData, transfer
   pendingSessions.set(callSid, { lead, transfer, toPhone, campaignId });
 }
 
+export function hasPendingSession(callSid: string): boolean {
+  return pendingSessions.has(callSid);
+}
+
 export function registerTranscriptListener(callSid: string, callback: (entry: { role: string; text: string; timestamp: number }) => void): void {
   liveTranscriptListeners.set(callSid, callback);
 }

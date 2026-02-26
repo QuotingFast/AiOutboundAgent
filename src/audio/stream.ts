@@ -87,13 +87,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   // Barge-in state
   let bargeInDebounceMs = 250;
   let echoSuppressionMs = 100;
-  let postTTSMuteMs = 300;
   let bargeInTimer: ReturnType<typeof setTimeout> | null = null;
   let responseIsPlaying = false;
   let lastAudioSentAt = 0;
-  let speechStartedAt = 0;
-  let lastSpeechDurationMs = 0;
-  let invalidUtteranceCount = 0;
 
   // Module instances (created when call starts)
   let analytics: CallAnalytics | null = null;
@@ -313,7 +309,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     const s = getSettings();
     bargeInDebounceMs = s.bargeInDebounceMs;
     echoSuppressionMs = s.echoSuppressionMs;
-    postTTSMuteMs = (s as any).postTTSMuteMs ?? 300;
 
     // Use campaign-specific AI profile and voice when available, fall back to global settings
     const campaignProfile = activeCampaign?.aiProfile;
@@ -946,55 +941,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     }
   }
 
-  function countMeaningfulWords(text: string): number {
-    return (text.toLowerCase().match(/[a-z0-9]{2,}/g) || []).length;
-  }
-
-  function isLikelyFillerOnly(text: string): boolean {
-    const normalized = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!normalized) return true;
-    const filler = new Set(['uh', 'um', 'hmm', 'hm', 'yeah', 'ok', 'okay']);
-    const parts = normalized.split(' ').filter(Boolean);
-    return parts.length > 0 && parts.every(p => filler.has(p));
-  }
-
-  function expectsBinaryAnswer(state?: string): boolean {
-    return state === 'greeting' || state === 'identity_check' || state === 'purpose' || state === 'insurance_question';
-  }
-
-  function validateForState(state: string | undefined, text: string): boolean {
-    const t = text.toLowerCase().trim();
-    if (!state) return true;
-    switch (state) {
-      case 'greeting':
-      case 'identity_check':
-        return /\b(yes|yeah|yep|speaking|this is|no|wrong number|not me|who)\b/i.test(t);
-      case 'insurance_question':
-        return /\b(yes|no|state farm|geico|progressive|allstate|usaa|liberty mutual|farmers|nationwide|esurance|mercury|aaa)\b/i.test(t);
-      case 'qualifying':
-        return countMeaningfulWords(t) >= 2;
-      default:
-        return true;
-    }
-  }
-
-  function getTranscriptConfidence(event: any): number | undefined {
-    if (typeof event?.confidence === 'number') return event.confidence;
-    if (typeof event?.transcript_confidence === 'number') return event.transcript_confidence;
-    if (Array.isArray(event?.segments)) {
-      const vals = event.segments.map((s: any) => s?.confidence).filter((v: any) => typeof v === 'number');
-      if (vals.length > 0) return vals.reduce((a: number, b: number) => a + b, 0) / vals.length;
-    }
-    return undefined;
-  }
-
-  function getValidationReprompt(): string {
-    if (invalidUtteranceCount >= 2) {
-      return '[System: I may not be hearing clearly. Ask them to answer very briefly with yes/no or their current insurer.]';
-    }
-    return '[System: I did not catch that clearly. Politely ask them to repeat in a short answer.]';
-  }
-
   // --- OpenAI event handling ---
 
   function handleOpenAIEvent(event: any): void {
@@ -1099,15 +1045,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       // --- Barge-in handling ---
       case 'input_audio_buffer.speech_started':
-        speechStartedAt = Date.now();
-        lastSpeechActivityAt = speechStartedAt;
+        lastSpeechActivityAt = Date.now();
         if (analytics) analytics.userStartedSpeaking();
 
         if (!responseIsPlaying) break;
 
-        const muteWindowMs = Math.max(echoSuppressionMs, postTTSMuteMs);
-        if (Date.now() - lastAudioSentAt < muteWindowMs) {
-          logger.debug('stream', 'Speech within post-TTS mute window — suppressing', { sessionId, muteWindowMs });
+        if (Date.now() - lastAudioSentAt < echoSuppressionMs) {
+          logger.debug('stream', 'Speech within echo window — suppressing', { sessionId });
           break;
         }
 
@@ -1137,10 +1081,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         break;
 
       case 'input_audio_buffer.speech_stopped':
-        if (speechStartedAt > 0) {
-          lastSpeechDurationMs = Math.max(0, Date.now() - speechStartedAt);
-        }
-
         if (bargeInTimer) {
           clearTimeout(bargeInTimer);
           bargeInTimer = null;
@@ -1209,41 +1149,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       case 'conversation.item.input_audio_transcription.completed': {
         const userText = event.transcript || '';
-        const transcriptConfidence = getTranscriptConfidence(event);
-        const conversationState = conversation?.getState();
-        logger.info('stream', 'User said', {
-          sessionId,
-          transcript: redactPII(userText),
-          speechDurationMs: lastSpeechDurationMs,
-          confidence: transcriptConfidence,
-          state: conversationState,
-        });
+        logger.info('stream', 'User said', { sessionId, transcript: redactPII(userText) });
 
-        // Input acceptance gate to block phantom/low-quality turns
+        // Guard: if transcript is empty or just noise/punctuation, cancel any auto-response
+        // OpenAI's VAD can false-trigger on line noise, producing empty transcripts
         const cleanedText = userText.replace(/[^a-zA-Z0-9]/g, '').trim();
-        const fillerOnly = isLikelyFillerOnly(userText);
-        const meaningfulWords = countMeaningfulWords(userText);
-        const expectsBinary = expectsBinaryAnswer(conversationState);
-        const stateValid = validateForState(conversationState, userText);
-        const tooShortSpeech = lastSpeechDurationMs > 0 && lastSpeechDurationMs < 450;
-        const lowConfidence = typeof transcriptConfidence === 'number' && transcriptConfidence < 0.85;
-        const lowTextQuality = meaningfulWords < 2 && cleanedText.length < 4;
-        const fillerRejected = fillerOnly && !expectsBinary;
-
-        if (!cleanedText || tooShortSpeech || lowConfidence || lowTextQuality || fillerRejected || !stateValid) {
-          invalidUtteranceCount++;
-          logger.info('stream', 'Rejected transcript by acceptance gate', {
-            sessionId,
-            reasons: {
-              empty: !cleanedText,
-              tooShortSpeech,
-              lowConfidence,
-              lowTextQuality,
-              fillerRejected,
-              stateValid,
-            },
-          });
-
+        if (!cleanedText) {
+          logger.info('stream', 'Empty/noise transcript — suppressing response', { sessionId, rawTranscript: userText });
           if (!useDeepSeek && openaiWs?.readyState === WebSocket.OPEN) {
             openaiWs.send(JSON.stringify({ type: 'response.cancel' }));
           }
@@ -1254,18 +1166,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           }
           sendClearToTwilio();
           responseIsPlaying = false;
-
-          const reprompt = getValidationReprompt();
-          if (useDeepSeek) {
-            responseRequestedAt = Date.now();
-            callDeepSeekStreaming(reprompt);
-          } else {
-            sendUserMessage(reprompt);
-          }
           break;
         }
-
-        invalidUtteranceCount = 0;
 
         // Process through conversation intelligence
         if (conversation && userText) {

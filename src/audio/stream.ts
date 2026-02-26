@@ -91,6 +91,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
   // Guard against double greeting on session reconfiguration
   let initialGreetingDone = false;
+  let greetingTriggeredAt = 0;
+
+  // Duplicate suppression (prevents double turns from duplicate STT events)
+  let lastUserTurnNorm = '';
+  let lastUserTurnAt = 0;
+  let lastDeepSeekUserNorm = '';
+  let lastDeepSeekUserAt = 0;
 
   // Barge-in state
   let bargeInDebounceMs = 250;
@@ -503,6 +510,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   }
 
   function triggerGreeting(): void {
+    const now = Date.now();
+    if (greetingTriggeredAt > 0 && now - greetingTriggeredAt < 8000) {
+      logger.warn('stream', 'Suppressed duplicate greeting trigger', { sessionId, deltaMs: now - greetingTriggeredAt });
+      return;
+    }
+    greetingTriggeredAt = now;
+
     const s = getSettings();
     const campaignProfile = activeCampaign?.aiProfile;
     const effectiveAgentName = campaignProfile?.agentName || s.agentName;
@@ -1213,6 +1227,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         const cleanedText = userText.replace(/[^a-zA-Z0-9]/g, '').trim();
         const meaningfulWords = countMeaningfulWords(userText);
         const fillerOnly = isFillerOnly(userText);
+        const normalizedUser = userText.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
         logger.info('stream', 'User said', {
           sessionId,
@@ -1224,10 +1239,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         // Phase 2: hard acceptance gate (minimal)
         let rejectReason: string | null = null;
         if (!cleanedText && speechDurationMs === 0) rejectReason = 'empty_no_speech';
-        else if (speechDurationMs > 0 && speechDurationMs < 450) rejectReason = 'short_speech';
-        else if (typeof confidence === 'number' && confidence < 0.85) rejectReason = 'low_conf';
+        else if (speechDurationMs > 0 && speechDurationMs < 650) rejectReason = 'short_speech';
+        else if (typeof confidence === 'number' && confidence < 0.9) rejectReason = 'low_conf';
         else if (fillerOnly) rejectReason = 'filler_only';
         else if (meaningfulWords < 2 && cleanedText.length < 4) rejectReason = 'low_quality';
+        else if (normalizedUser && normalizedUser === lastUserTurnNorm && (Date.now() - lastUserTurnAt) < 4500) rejectReason = 'duplicate_user_turn';
 
         if (rejectReason) {
           lastRejectReason = rejectReason;
@@ -1249,6 +1265,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
 
         lastRejectReason = null;
+        if (normalizedUser) {
+          lastUserTurnNorm = normalizedUser;
+          lastUserTurnAt = Date.now();
+        }
 
         // Process through conversation intelligence
         if (conversation && userText) {
@@ -1293,10 +1313,18 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
         // DeepSeek mode: OpenAI doesn't auto-respond, so we call DeepSeek
         if (useDeepSeek && userText.trim()) {
-          responseRequestedAt = Date.now();
-          firstAudioAt = 0;
-          audioChunkCount = 0;
-          callDeepSeekStreaming(userText);
+          const norm = userText.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+          const now = Date.now();
+          if (norm && norm === lastDeepSeekUserNorm && (now - lastDeepSeekUserAt) < 5000) {
+            logger.warn('stream', 'Suppressed duplicate DeepSeek request', { sessionId, norm, deltaMs: now - lastDeepSeekUserAt });
+          } else {
+            lastDeepSeekUserNorm = norm;
+            lastDeepSeekUserAt = now;
+            responseRequestedAt = now;
+            firstAudioAt = 0;
+            audioChunkCount = 0;
+            callDeepSeekStreaming(userText);
+          }
         }
         break;
       }

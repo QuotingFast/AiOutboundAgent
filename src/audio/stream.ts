@@ -110,6 +110,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let speechStartedAt = 0;
   let lastSpeechDurationMs = 0;
   let lastRejectReason: string | null = null;
+  let lastAcceptedUserText = '';
 
   // Module instances (created when call starts)
   let analytics: CallAnalytics | null = null;
@@ -1269,6 +1270,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           lastUserTurnNorm = normalizedUser;
           lastUserTurnAt = Date.now();
         }
+        lastAcceptedUserText = userText;
 
         // Process through conversation intelligence
         if (conversation && userText) {
@@ -1361,6 +1363,29 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
     if (name === 'transfer_call') {
       const route = args.route || 'other';
+
+      // Hard safety gate: never transfer unless caller explicitly confirmed transfer.
+      const normalizedLastUser = (lastAcceptedUserText || '').toLowerCase();
+      const hasNegative = /\b(no|not now|don't|do not|wait|hold on|stop)\b/.test(normalizedLastUser);
+      const hasAffirmative = /\b(yes|yeah|yep|sure|ok|okay|please do|go ahead|connect me|transfer me)\b/.test(normalizedLastUser);
+      if (hasNegative || !hasAffirmative) {
+        logger.warn('stream', 'Blocked transfer_call without explicit user confirmation', {
+          sessionId,
+          route,
+          lastAcceptedUserText: redactPII(lastAcceptedUserText),
+          hasNegative,
+          hasAffirmative,
+        });
+
+        const confirmMsg = '[System: Do NOT transfer yet. Ask one short yes/no question only: "Would you like me to connect you to a licensed agent now?" Wait for explicit yes before calling transfer_call.]';
+        if (useDeepSeek) {
+          callDeepSeekStreaming(confirmMsg);
+        } else {
+          sendUserMessage(confirmMsg);
+        }
+        return;
+      }
+
       let targetNumber: string | undefined;
 
       if (route === 'allstate' && transferConfig?.allstate_number) {

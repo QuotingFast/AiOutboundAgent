@@ -494,15 +494,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     }
   }
 
-  function speakDirectAgentLine(text: string): void {
-    if (!text.trim()) return;
-    responseRequestedAt = Date.now();
-    currentElevenLabsText = '';
-    sendTextToElevenLabs(text);
-    flushElevenLabs();
-    logger.info('stream', 'Agent said (direct)', { sessionId, transcript: redactPII(text) });
-  }
-
   function triggerGreeting(): void {
     const s = getSettings();
     const campaignProfile = activeCampaign?.aiProfile;
@@ -547,20 +538,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     }
 
     if (useDeepSeek) {
-      // Force exact opener for DeepSeek+ElevenLabs mode to avoid model drifting from configured first line.
-      if (callDirection === 'outbound' && campaignProfile?.greetingText) {
-        const directGreeting = campaignProfile.greetingText
-          .replace(/\{\{first_name\}\}/g, leadData.first_name)
-          .replace(/\{\{agency_name\}\}/g, leadData.first_name)
-          .replace(/\{\{vehicle_year\}\}/g, vehicleYear)
-          .replace(/\{\{vehicle_model\}\}/g, vehicleModel)
-          .replace(/\{\{vehicle_make\}\}/g, vehicleMake)
-          .trim();
-        speakDirectAgentLine(directGreeting);
-      } else {
-        // DeepSeek handles fallback greeting via its own API
-        callDeepSeekStreaming(greetingInstruction);
-      }
+      // DeepSeek handles the greeting via its own API
+      callDeepSeekStreaming(greetingInstruction);
       return;
     }
 
@@ -946,8 +925,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
         logger.info('stream', 'DeepSeek response', { sessionId, transcript: redactPII(fullResponse) });
         if (conversation) conversation.processAgentTurn(fullResponse);
-        // Transcript entry for ElevenLabs mode is recorded on TTS finalization (agentFinishedSpeaking)
-        // to avoid duplicate agent lines.
+        if (analytics) analytics.addTranscriptEntry('agent', fullResponse);
+        emitTranscript('agent', fullResponse);
 
         // Close ElevenLabs WS after response (lazy reconnect pattern)
         setTimeout(() => {
@@ -1276,15 +1255,12 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           sendClearToTwilio();
           responseIsPlaying = false;
 
-          const repromptText = invalidUtteranceCount >= 2
-            ? 'No worries — just say yes or no, or tell me your current insurer.'
-            : 'Sorry, I didn’t catch that — could you repeat that?';
-
-          if (useDeepSeek || useElevenLabs) {
-            // Keep reprompt deterministic; do not send noisy turns into LLM history.
-            speakDirectAgentLine(repromptText);
+          const reprompt = getValidationReprompt();
+          if (useDeepSeek) {
+            responseRequestedAt = Date.now();
+            callDeepSeekStreaming(reprompt);
           } else {
-            sendUserMessage(`[System: Say exactly: "${repromptText}"]`);
+            sendUserMessage(reprompt);
           }
           break;
         }

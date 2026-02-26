@@ -246,29 +246,75 @@ export function searchLeads(opts: LeadSearchOptions): LeadSearchResult {
 
 // ── Import / Export ──
 
+// Normalize a CSV header to a canonical key for flexible matching.
+// Lowercases, trims, and converts spaces/hyphens to underscores.
+function normalizeHeader(h: string): string {
+  return h.toLowerCase().trim().replace(/"/g, '').replace(/[\s-]+/g, '_');
+}
+
+// Find first matching column index from a list of aliases
+function findCol(headers: string[], ...aliases: string[]): number {
+  return headers.findIndex(h => aliases.includes(h));
+}
+
 export function importLeadsFromCSV(csvText: string): { imported: number; skipped: number; errors: string[] } {
   const lines = csvText.split('\n').map(l => l.trim()).filter(l => l);
   if (lines.length < 2) return { imported: 0, skipped: 0, errors: ['No data rows found'] };
 
-  const header = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/"/g, ''));
+  // Parse header row through the CSV parser to handle quoted headers, then normalize
+  const rawHeaders = parseCSVLine(lines[0]);
+  const header = rawHeaders.map(normalizeHeader);
   const errors: string[] = [];
   let imported = 0;
   let skipped = 0;
 
-  // Map columns
-  const phoneIdx = header.findIndex(h => h === 'phone' || h === 'phone_number');
-  const firstNameIdx = header.findIndex(h => h === 'first_name' || h === 'firstname' || h === 'name');
-  const lastNameIdx = header.findIndex(h => h === 'last_name' || h === 'lastname');
-  const stateIdx = header.findIndex(h => h === 'state');
-  const insurerIdx = header.findIndex(h => h === 'current_insurer' || h === 'insurer');
-  const sourceIdx = header.findIndex(h => h === 'source');
-  const notesIdx = header.findIndex(h => h === 'notes');
+  // Map columns — support both simple and vendor-format headers
+  const phoneIdx = findCol(header, 'phone', 'phone_number', 'primary_phone');
+  const phone2Idx = findCol(header, 'phone_2', 'phone2', 'secondary_phone');
+  const firstNameIdx = findCol(header, 'first_name', 'firstname', 'name', 'drivers_1_first_name');
+  const lastNameIdx = findCol(header, 'last_name', 'lastname', 'drivers_1_last_name');
+  const stateIdx = findCol(header, 'state');
+  const zipIdx = findCol(header, 'zip_code', 'zip', 'zipcode');
+  const cityIdx = findCol(header, 'city');
+  const emailIdx = findCol(header, 'email');
+  const addressIdx = findCol(header, 'address');
+  const insurerIdx = findCol(header, 'current_insurer', 'insurer', 'current_policy_insurance_company');
+  const sourceIdx = findCol(header, 'source');
+  const notesIdx = findCol(header, 'notes');
+
+  // Vehicle columns (up to 3 vehicles)
+  const vehicleCols: { yearIdx: number; makeIdx: number; modelIdx: number }[] = [];
+  for (let v = 1; v <= 3; v++) {
+    const yearIdx = findCol(header, `vehicles_${v}_year`, `vehicle_${v}_year`, ...(v === 1 ? ['vehicle_year'] : []));
+    const makeIdx = findCol(header, `vehicles_${v}_make`, `vehicle_${v}_make`, ...(v === 1 ? ['vehicle_make'] : []));
+    const modelIdx = findCol(header, `vehicles_${v}_model`, `vehicle_${v}_model`, ...(v === 1 ? ['vehicle_model'] : []));
+    if (yearIdx >= 0 || makeIdx >= 0 || modelIdx >= 0) {
+      vehicleCols.push({ yearIdx, makeIdx, modelIdx });
+    }
+  }
+
+  // Compliance columns
+  const tcpaIdx = findCol(header, 'tcpa', 'tcpa_consent');
+  const tcpaTextIdx = findCol(header, 'tcpa_consent_text');
+  const trustedFormIdx = findCol(header, 'trusted_form_cert_url', 'trustedform_cert_url', 'trustedform');
+  const leadIdIdx = findCol(header, 'leadid_code', 'leadid', 'lead_id');
+
+  // Driver detail columns
+  const driverDobIdx = findCol(header, 'drivers_1_birth_date', 'dob', 'birth_date');
+  const driverGenderIdx = findCol(header, 'drivers_1_gender', 'gender');
+  const driverMaritalIdx = findCol(header, 'drivers_1_marital_status', 'marital_status');
+
+  // Coverage columns
+  const coverageTypeIdx = findCol(header, 'requested_policy_coverage_type', 'coverage_type');
+  const currentCoverageIdx = findCol(header, 'current_policy_coverage_type');
 
   if (phoneIdx < 0) return { imported: 0, skipped: 0, errors: ['Missing required "phone" column'] };
 
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCSVLine(lines[i]);
-    const phone = cols[phoneIdx]?.trim();
+    let phone = cols[phoneIdx]?.trim();
+    // Fall back to phone_2 if primary is empty
+    if (!phone && phone2Idx >= 0) phone = cols[phone2Idx]?.trim();
     if (!phone) { skipped++; continue; }
 
     const firstName = cols[firstNameIdx]?.trim() || '';
@@ -279,12 +325,46 @@ export function importLeadsFromCSV(csvText: string): { imported: number; skipped
     const source = sourceIdx >= 0 ? cols[sourceIdx]?.trim() : undefined;
     const notes = notesIdx >= 0 ? cols[notesIdx]?.trim() : undefined;
 
+    // Build vehicles array
+    const vehicles: { year?: string; make?: string; model?: string }[] = [];
+    for (const vc of vehicleCols) {
+      const year = vc.yearIdx >= 0 ? cols[vc.yearIdx]?.trim() : undefined;
+      const make = vc.makeIdx >= 0 ? cols[vc.makeIdx]?.trim() : undefined;
+      const model = vc.modelIdx >= 0 ? cols[vc.modelIdx]?.trim() : undefined;
+      if (year || make || model) vehicles.push({ year, make, model });
+    }
+
+    // Build custom fields from extra columns
+    const customFields: Record<string, unknown> = {};
+    if (source) customFields.source = source;
+    if (emailIdx >= 0 && cols[emailIdx]?.trim()) customFields.email = cols[emailIdx].trim();
+    if (zipIdx >= 0 && cols[zipIdx]?.trim()) customFields.zipCode = cols[zipIdx].trim();
+    if (cityIdx >= 0 && cols[cityIdx]?.trim()) customFields.city = cols[cityIdx].trim();
+    if (addressIdx >= 0 && cols[addressIdx]?.trim()) customFields.address = cols[addressIdx].trim();
+    if (phone2Idx >= 0 && cols[phone2Idx]?.trim()) customFields.phone2 = cols[phone2Idx].trim();
+    if (leadIdIdx >= 0 && cols[leadIdIdx]?.trim()) customFields.leadId = cols[leadIdIdx].trim();
+    if (trustedFormIdx >= 0 && cols[trustedFormIdx]?.trim()) customFields.trustedFormUrl = cols[trustedFormIdx].trim();
+    if (tcpaIdx >= 0 && cols[tcpaIdx]?.trim()) customFields.tcpaCompliant = cols[tcpaIdx].trim();
+    if (tcpaTextIdx >= 0 && cols[tcpaTextIdx]?.trim()) customFields.tcpaConsentText = cols[tcpaTextIdx].trim();
+    if (coverageTypeIdx >= 0 && cols[coverageTypeIdx]?.trim()) customFields.requestedCoverageType = cols[coverageTypeIdx].trim();
+    if (currentCoverageIdx >= 0 && cols[currentCoverageIdx]?.trim()) customFields.currentCoverageType = cols[currentCoverageIdx].trim();
+    if (vehicles.length > 0) customFields.vehicles = vehicles;
+
+    // Driver details
+    if (driverDobIdx >= 0 || driverGenderIdx >= 0 || driverMaritalIdx >= 0) {
+      const driver: Record<string, string> = {};
+      if (driverDobIdx >= 0 && cols[driverDobIdx]?.trim()) driver.birthDate = cols[driverDobIdx].trim();
+      if (driverGenderIdx >= 0 && cols[driverGenderIdx]?.trim()) driver.gender = cols[driverGenderIdx].trim();
+      if (driverMaritalIdx >= 0 && cols[driverMaritalIdx]?.trim()) driver.maritalStatus = cols[driverMaritalIdx].trim();
+      if (Object.keys(driver).length > 0) customFields.primaryDriver = driver;
+    }
+
     try {
       createOrUpdateLead(phone, {
         name,
         state,
         currentInsurer: insurer,
-        customFields: source ? { source } : {},
+        customFields,
         notes: notes ? [notes] : [],
       });
       imported++;

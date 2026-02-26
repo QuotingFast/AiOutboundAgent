@@ -22,11 +22,10 @@ ${params.join('\n')}
 </Response>`;
 }
 
-export function buildTransferTwiml(targetNumber: string, bridgePhrase: string): string {
+export function buildTransferTwiml(targetNumber: string, _bridgePhrase: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Matthew">${escapeXml(bridgePhrase)}</Say>
-  <Dial timeout="30" callerId="${escapeXml(config.twilio.fromNumber)}">
+  <Dial timeout="40" callerId="${escapeXml(config.twilio.fromNumber)}">
     <Number>${escapeXml(targetNumber)}</Number>
   </Dial>
   <Say voice="Polly.Matthew">It looks like the line didn't connect. We'll try to reach you again shortly. Goodbye.</Say>

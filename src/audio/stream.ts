@@ -376,8 +376,24 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       instructions += '\n\n' + leadContext;
     }
 
+    // Build transfer config: campaign routes take priority, then global settings
     if (!transferConfig) {
-      if (s.allstateNumber || s.nonAllstateNumber) {
+      // First, try campaign-specific transfer routing
+      if (activeCampaign?.transferRouting?.routes?.length) {
+        const routes = activeCampaign.transferRouting.routes;
+        const allstateRoute = routes.find(r => r.id === 'route-allstate' || r.name.toLowerCase().includes('allstate'));
+        const otherRoute = routes.find(r => r.id === 'route-non-allstate' || r.id === 'route-agency-sales' || (!r.name.toLowerCase().includes('allstate') && r.active));
+        const allNum = allstateRoute?.active ? allstateRoute.destinationNumber : undefined;
+        const otherNum = otherRoute?.active ? otherRoute.destinationNumber : undefined;
+        if (allNum || otherNum) {
+          transferConfig = {
+            allstate_number: allNum || undefined,
+            non_allstate_number: otherNum || undefined,
+          };
+        }
+      }
+      // Fall back to global settings if campaign had no numbers
+      if (!transferConfig && (s.allstateNumber || s.nonAllstateNumber)) {
         transferConfig = {
           allstate_number: s.allstateNumber || undefined,
           non_allstate_number: s.nonAllstateNumber || undefined,

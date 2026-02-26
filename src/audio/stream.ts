@@ -1334,17 +1334,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
         // DeepSeek mode: OpenAI doesn't auto-respond, so we call DeepSeek
         if (useDeepSeek && userText.trim()) {
-          // Deterministic identity repair: if user asks "who is this", do not re-run long opener.
-          if (/\b(who is this|who's this|who are you)\b/i.test(userText)) {
-            const sNow = getSettings();
-            const prof = activeCampaign?.aiProfile;
-            const aName = prof?.agentName || sNow.agentName;
-            const cName = prof?.companyName || sNow.companyName;
-            const shortIdentity = `This is ${aName} with ${cName}, calling about your recent car insurance quote request. Is now a bad time?`;
-            speakDirectAgentLine(shortIdentity);
-            break;
-          }
-
           responseRequestedAt = Date.now();
           firstAudioAt = 0;
           audioChunkCount = 0;

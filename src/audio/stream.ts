@@ -36,6 +36,14 @@ const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferCon
 // Active live transcript listeners (callSid -> callback)
 const liveTranscriptListeners = new Map<string, (entry: { role: string; text: string; timestamp: number }) => void>();
 
+function normalizeCarrierForSpeech(carrier?: string): string {
+  const raw = (carrier || '').trim();
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+  if (['unknown', 'other', 'n/a', 'na', 'none', 'unsure', 'not sure'].includes(lower)) return '';
+  return raw;
+}
+
 export function registerPendingSession(callSid: string, lead: LeadData, transfer?: TransferConfig, toPhone?: string, campaignId?: string): void {
   pendingSessions.set(callSid, { lead, transfer, toPhone, campaignId });
 }
@@ -337,7 +345,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       instructions = campaignProfile.systemPrompt
         .replace(/\{\{first_name\}\}/g, leadData.first_name)
         .replace(/\{\{state\}\}/g, leadData.state || 'unknown')
-        .replace(/\{\{current_insurer\}\}/g, leadData.current_insurer || 'unknown')
+        .replace(/\{\{current_insurer\}\}/g, normalizeCarrierForSpeech(leadData.current_insurer) || 'not provided')
         .replace(/\{\{agent_name\}\}/g, effectiveAgentName)
         .replace(/\{\{company_name\}\}/g, effectiveCompanyName)
         .replace(/\{\{agency_name\}\}/g, leadData.first_name)
@@ -355,7 +363,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       instructions = s.systemPromptOverride
         .replace(/\{\{first_name\}\}/g, leadData.first_name)
         .replace(/\{\{state\}\}/g, leadData.state || 'unknown')
-        .replace(/\{\{current_insurer\}\}/g, leadData.current_insurer || 'unknown');
+        .replace(/\{\{current_insurer\}\}/g, normalizeCarrierForSpeech(leadData.current_insurer) || 'not provided');
     } else if (callDirection === 'inbound') {
       instructions = s.inboundPromptOverride
         ? s.inboundPromptOverride

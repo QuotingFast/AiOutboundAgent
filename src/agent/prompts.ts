@@ -22,6 +22,14 @@ export interface TransferConfig {
   target_number?: string;
 }
 
+function normalizeCarrierForSpeech(carrier?: string): string {
+  const raw = (carrier || '').trim();
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+  if (['unknown', 'other', 'n/a', 'na', 'none', 'unsure', 'not sure'].includes(lower)) return '';
+  return raw;
+}
+
 export function buildSystemPrompt(lead: LeadData, overrides?: { agentName?: string; companyName?: string }): string {
   const agentName = overrides?.agentName || 'Steve';
   const companyName = overrides?.companyName || 'Affordable Auto Rates';
@@ -35,6 +43,8 @@ export function buildSystemPrompt(lead: LeadData, overrides?: { agentName?: stri
   const allVehiclesStr = vehicles.length > 0
     ? vehicles.map(v => [v.year, v.model].filter(Boolean).join(' ')).join(' and the ')
     : '';
+
+  const safeCurrentInsurer = normalizeCarrierForSpeech(lead.current_insurer);
 
   return `YOU ARE ${agentName} — a real person making an outbound call for ${companyName}.
 You are ${agentName}, a laid-back, friendly guy in your early 30s who genuinely enjoys helping people save money on insurance. You have been doing this for a few years. You are calling someone who recently requested a quote online, so this is a warm follow-up, not a cold call.
@@ -59,7 +69,7 @@ Helpful buddy who is genuinely interested in saving them money. Patient if they 
 LEAD INFO:
 - Name: ${lead.first_name}
 - State: ${lead.state || 'unknown'}
-- Current insurer: ${lead.current_insurer || 'unknown'}${vehicleRef ? `\n- Primary vehicle: ${vehicleRef}` : ''}${allVehiclesStr ? `\n- All vehicles: ${allVehiclesStr}` : ''}
+- Current insurer: ${safeCurrentInsurer || 'not provided'}${vehicleRef ? `\n- Primary vehicle: ${vehicleRef}` : ''}${allVehiclesStr ? `\n- All vehicles: ${allVehiclesStr}` : ''}
 
 CALL FLOW:
 You are on an outbound call. The system will tell you when the call connects and give you a greeting to start with. Deliver your opening line immediately and naturally — do not hesitate or wait. If you hear a voicemail tone, automated greeting, or dead air with no voice after your opening, use the end_call function immediately. Do not leave a message.

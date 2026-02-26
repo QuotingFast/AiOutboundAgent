@@ -28,6 +28,7 @@ export interface RuntimeSettings {
       prefixPaddingMs: number;
       bargeInDebounceMs: number;
       echoSuppressionMs: number;
+      postTTSMuteMs: number;
 
   // Response
   maxResponseTokens: number;
@@ -124,6 +125,7 @@ export interface CallRecord {
         prefixPaddingMs: number;
         bargeInDebounceMs: number;
         echoSuppressionMs: number;
+        postTTSMuteMs: number;
         maxResponseTokens: number;
         agentName: string;
       };
@@ -142,11 +144,12 @@ const settings: RuntimeSettings = {
       elevenlabsUseSpeakerBoost: true,
       elevenlabsSpeed: 0.97,
       deepseekModel: config.deepseek.model || 'deepseek-chat',
-      vadThreshold: 0.7,
+      vadThreshold: 0.8,
       silenceDurationMs: 800,
       prefixPaddingMs: 200,
       bargeInDebounceMs: 150,
-      echoSuppressionMs: 120,
+      echoSuppressionMs: 450,
+      postTTSMuteMs: 300,
       maxResponseTokens: 150,
       agentName: 'Steve',
       companyName: 'Affordable Auto Rates',
@@ -270,6 +273,7 @@ export function recordCall(callSid: string, to: string, leadName: string): void 
                         prefixPaddingMs: s.prefixPaddingMs,
                         bargeInDebounceMs: s.bargeInDebounceMs,
                         echoSuppressionMs: s.echoSuppressionMs,
+                        postTTSMuteMs: s.postTTSMuteMs,
                         maxResponseTokens: s.maxResponseTokens,
                         agentName: s.agentName,
               },

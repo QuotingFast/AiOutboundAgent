@@ -1232,10 +1232,12 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         const userText = event.transcript || '';
         const transcriptConfidence = getTranscriptConfidence(event);
         const conversationState = conversation?.getState();
+        const speechDurationMs = lastSpeechDurationMs;
+        lastSpeechDurationMs = 0;
         logger.info('stream', 'User said', {
           sessionId,
           transcript: redactPII(userText),
-          speechDurationMs: lastSpeechDurationMs,
+          speechDurationMs,
           confidence: transcriptConfidence,
           state: conversationState,
         });
@@ -1246,10 +1248,17 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         const meaningfulWords = countMeaningfulWords(userText);
         const expectsBinary = expectsBinaryAnswer(conversationState);
         const stateValid = validateForState(conversationState, userText);
-        const tooShortSpeech = lastSpeechDurationMs > 0 && lastSpeechDurationMs < 450;
+        const tooShortSpeech = speechDurationMs > 0 && speechDurationMs < 450;
         const lowConfidence = typeof transcriptConfidence === 'number' && transcriptConfidence < 0.85;
         const lowTextQuality = meaningfulWords < 2 && cleanedText.length < 4;
         const fillerRejected = fillerOnly && !expectsBinary;
+
+        // Ignore pure-empty STT completions when there was no measured speech segment.
+        // These can happen on telephony jitter/VAD edge cases and should not trigger reprompts.
+        if (!cleanedText && speechDurationMs === 0) {
+          logger.debug('stream', 'Ignoring empty transcript with no speech duration', { sessionId });
+          break;
+        }
 
         if (!cleanedText || tooShortSpeech || lowConfidence || lowTextQuality || fillerRejected || !stateValid) {
           invalidUtteranceCount++;
@@ -1262,6 +1271,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
               lowTextQuality,
               fillerRejected,
               stateValid,
+              speechDurationMs,
             },
           });
 

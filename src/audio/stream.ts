@@ -1323,8 +1323,16 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       }
     } else if (name === 'send_scheduling_text') {
       // Send a text with Zoom scheduling link to the prospect
+      // Safety guardrail: always send only to current caller number, never an arbitrary spoken number.
       const prospectName = args.prospect_name || leadData.first_name || 'there';
       const targetPhone = callerNumber;
+      if (args.phone || args.phone_number || args.to) {
+        logger.warn('stream', 'Ignored model-provided phone override for scheduling text', {
+          sessionId,
+          provided: args.phone || args.phone_number || args.to,
+          enforced: targetPhone,
+        });
+      }
 
       logger.info('stream', 'Sending scheduling text', { sessionId, prospectName, targetPhone });
 

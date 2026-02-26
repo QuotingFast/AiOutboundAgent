@@ -15,7 +15,7 @@ import { getAnalyticsHistory, getAnalyticsSummary, getActiveAnalytics } from '..
 import {
   addToDnc, removeFromDnc, getDncList, getDncCount,
   runPreCallComplianceCheck, checkCallTimeAllowed,
-  recordConsent, getConsent,
+  recordConsent, getConsent, isOnDnc,
   getAuditLog, getAuditLogCount,
   requiresRecordingDisclosure,
   checkPhoneRateLimit,
@@ -1365,6 +1365,11 @@ function normalizePhone(phone: string): string {
     return phone.replace(/[^0-9+]/g, '');
 }
 
+function isKnownLeadPhone(phone: string): boolean {
+    const normalized = normalizePhone(phone);
+    return !!getLeadMemory(normalized);
+}
+
 // ── Weblead Webhook Endpoint (Jangl/QuotingFast format) ────────────────
 // Supports campaign routing via:
 //   1. Query param:  POST /webhook/weblead?campaign_id=campaign-consumer-auto
@@ -1785,9 +1790,28 @@ router.post('/api/sms/send', async (req: Request, res: Response) => {
       return;
     }
 
+    const normalizedPhone = normalizePhone(String(phone));
+    const trimmedBody = String(body).trim();
+    if (!trimmedBody) {
+      res.status(400).json({ error: 'SMS body cannot be empty' });
+      return;
+    }
+
+    // Guardrail: only allow SMS to known leads (prevents arbitrary number texting)
+    if (!isKnownLeadPhone(normalizedPhone)) {
+      res.status(403).json({ error: 'SMS blocked: phone is not an existing lead' });
+      return;
+    }
+
+    // Compliance guardrail: never text DNC numbers
+    if (isOnDnc(normalizedPhone)) {
+      res.status(403).json({ error: 'SMS blocked: number is on DNC' });
+      return;
+    }
+
     // Campaign enforcement for SMS
     if (isCampaignFlagEnabled('hardened_campaign_isolation')) {
-      const smsEnforcement = enforceSmsSend({ phone, campaignId: campaign_id });
+      const smsEnforcement = enforceSmsSend({ phone: normalizedPhone, campaignId: campaign_id });
       if (!smsEnforcement.allowed) {
         res.status(403).json({
           error: 'Campaign context required for SMS',
@@ -1804,17 +1828,17 @@ router.post('/api/sms/send', async (req: Request, res: Response) => {
     }
 
     const entry = logSms({
-      phone,
+      phone: normalizedPhone,
       direction: 'outbound',
       status: 'queued',
-      body,
+      body: trimmedBody,
       templateId,
       leadName,
       triggerReason: 'manual',
     });
 
     try {
-      const result = await sendSms(phone, body);
+      const result = await sendSms(normalizedPhone, trimmedBody);
       entry.status = 'sent';
       entry.twilioSid = result.sid;
       res.json({ success: true, smsId: entry.id, twilioSid: result.sid });
@@ -1898,6 +1922,20 @@ router.post('/api/sms/send-template', async (req: Request, res: Response) => {
       return;
     }
 
+    const normalizedPhone = normalizePhone(String(phone));
+
+    // Guardrail: only allow SMS to known leads (prevents arbitrary number texting)
+    if (!isKnownLeadPhone(normalizedPhone)) {
+      res.status(403).json({ error: 'SMS blocked: phone is not an existing lead' });
+      return;
+    }
+
+    // Compliance guardrail: never text DNC numbers
+    if (isOnDnc(normalizedPhone)) {
+      res.status(403).json({ error: 'SMS blocked: number is on DNC' });
+      return;
+    }
+
     const settings = getSettings();
     if (!settings.smsEnabled) {
       res.status(400).json({ error: 'SMS is not enabled' });
@@ -1922,7 +1960,7 @@ router.post('/api/sms/send-template', async (req: Request, res: Response) => {
     const body = renderTemplate(tpl.body, vars);
 
     const entry = logSms({
-      phone,
+      phone: normalizedPhone,
       direction: 'outbound',
       status: 'queued',
       body,
@@ -1930,7 +1968,7 @@ router.post('/api/sms/send-template', async (req: Request, res: Response) => {
       triggerReason: tpl.category,
     });
 
-    const result = await sendSms(phone, body);
+    const result = await sendSms(normalizedPhone, body);
     entry.status = 'sent';
     entry.twilioSid = result.sid;
     res.json({ success: true, smsId: entry.id, body });
@@ -2085,9 +2123,16 @@ router.get('/api/leads/:phone/detail', (req: Request, res: Response) => {
  */
 router.post('/api/leads/:phone/sms', async (req: Request, res: Response) => {
   try {
-    const phone = req.params.phone;
+    const phone = normalizePhone(req.params.phone);
     const { body } = req.body;
     if (!body) { res.status(400).json({ error: 'Missing body' }); return; }
+    const trimmedBody = String(body).trim();
+    if (!trimmedBody) { res.status(400).json({ error: 'SMS body cannot be empty' }); return; }
+
+    if (isOnDnc(phone)) {
+      res.status(403).json({ error: 'SMS blocked: number is on DNC' });
+      return;
+    }
 
     const settings = getSettings();
     if (!settings.smsEnabled) {
@@ -2100,15 +2145,15 @@ router.post('/api/leads/:phone/sms', async (req: Request, res: Response) => {
       phone,
       direction: 'outbound',
       status: 'queued',
-      body,
+      body: trimmedBody,
       leadName: lead?.name,
       triggerReason: 'manual',
     });
 
-    const result = await sendSms(phone, body);
+    const result = await sendSms(phone, trimmedBody);
     entry.status = 'sent';
     entry.twilioSid = result.sid;
-    addLeadNote(phone, `SMS sent: "${body.substring(0, 80)}"`);
+    addLeadNote(phone, `SMS sent: "${trimmedBody.substring(0, 80)}"`);
     res.json({ success: true, smsId: entry.id });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

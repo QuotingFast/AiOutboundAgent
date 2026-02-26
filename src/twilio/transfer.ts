@@ -2,8 +2,8 @@ import { transferCall } from './client';
 import { logger } from '../utils/logger';
 
 export async function executeWarmTransfer(callSid: string, targetNumber: string): Promise<boolean> {
-  // Blind transfer: no warm handoff narration before dialing target.
-  const bridgePhrase = '';
+  // Short transfer pre-bridge per caller UX preference.
+  const bridgePhrase = 'Connecting you with the licensed agent. You may hear a ring before it connects.';
 
   try {
     await transferCall(callSid, targetNumber, bridgePhrase);

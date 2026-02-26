@@ -3159,14 +3159,37 @@ async function removeLeadTag(phone, tag) {
 function importLeadsCSV(input) {
   var file = input.files[0];
   if (!file) return;
+
+  // Keep client-side guard aligned with server body limit to avoid opaque failures
+  var maxBytes = 14 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    toast('CSV too large (max ~14MB)', 'error');
+    input.value = '';
+    return;
+  }
+
   var reader = new FileReader();
   reader.onload = async function(e) {
     try {
-      var res = await fetch('/api/leads/import', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ csv: e.target.result }) });
+      var res = await fetch('/api/leads/import', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ csv: e.target.result })
+      });
+
+      if (!res.ok) {
+        var txt = await res.text();
+        var msg = txt && txt.length < 200 ? txt : ('HTTP ' + res.status);
+        toast('Import failed: ' + msg, 'error');
+        return;
+      }
+
       var data = await res.json();
       toast('Imported ' + data.imported + ' leads (' + data.skipped + ' skipped)', data.errors.length ? 'error' : 'success');
       loadLeads();
-    } catch (err) { toast('Import failed', 'error'); }
+    } catch (err) {
+      toast('Import failed', 'error');
+    }
   };
   reader.readAsText(file);
   input.value = '';

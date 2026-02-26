@@ -147,7 +147,7 @@ const settings: RuntimeSettings = {
       prefixPaddingMs: 200,
       bargeInDebounceMs: 150,
       echoSuppressionMs: 120,
-      maxResponseTokens: 275,
+      maxResponseTokens: 150,
       agentName: 'Steve',
       companyName: 'Affordable Auto Rates',
       systemPromptOverride: '',

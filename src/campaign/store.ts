@@ -356,7 +356,7 @@ export function seedCampaigns(): void {
     agentName: 'Steve',
     companyName: 'Affordable Auto Rates',
     temperature: 0.8,
-    maxResponseTokens: 275,
+    maxResponseTokens: 150,
     realtimeModel: 'gpt-4o-realtime-preview',
     systemPrompt: buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}', vehicles: [{ year: '{{vehicle_year}}', model: '{{vehicle_model}}' }] }, { agentName: 'Steve', companyName: 'Affordable Auto Rates' }),
     inboundPrompt: '',
@@ -449,7 +449,7 @@ export function seedCampaigns(): void {
     agentName: 'Brook',
     companyName: 'Quoting Fast',
     temperature: 0.7,
-    maxResponseTokens: 300,
+    maxResponseTokens: 200,
     realtimeModel: 'gpt-4o-realtime-preview',
     systemPrompt: `YOU ARE Brook — a confident, warm business development rep for Quoting Fast.
 You are calling insurance agencies to introduce Quoting Fast's lead generation services. You sound like a real person who knows the insurance industry inside and out. Professional but genuinely friendly, like a colleague they'd enjoy grabbing coffee with. You have energy and conviction without being salesy.
@@ -508,7 +508,7 @@ TRANSFER:
 When connecting to a decision maker, use the transfer_call function.
 
 STRICT RULES:
-One question per turn. Keep replies short, 1 to 2 sentences. If interrupted, stop and listen. Never stack questions. Never move forward without a clear answer.
+BREVITY IS CRITICAL. Keep every reply to 1 sentence — 2 only when necessary. Simple acknowledgments ("Got it", "Perfect", "Nice") stand alone. If interrupted, stop and listen. Never stack questions. Never move forward without a clear answer.
 
 DO NOT:
 Mention consumer quotes or auto insurance pricing. Discuss individual policy details. Use consumer-facing language. Sound like a telemarketer or read from a script. Use markdown, asterisks, or text formatting.`,

@@ -91,6 +91,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let responseIsPlaying = false;
   let lastAudioSentAt = 0;
 
+  // Speech acceptance telemetry/gating
+  let speechStartedAt = 0;
+  let lastSpeechDurationMs = 0;
+  let lastRejectReason: string | null = null;
+
   // Module instances (created when call starts)
   let analytics: CallAnalytics | null = null;
   let conversation: ConversationIntelligence | null = null;
@@ -629,6 +634,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           responseIsPlaying = true;
           lastAudioSentAt = Date.now();
           sendAudioToTwilio(msg.audio);
+          logger.debug('stream', 'tts_chunk', { sessionId, ts: lastAudioSentAt });
 
           // Track first audio latency (TTS latency)
           if (firstAudioAt === 0) {
@@ -642,6 +648,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
         if (msg.isFinal) {
           responseIsPlaying = false;
+          logger.debug('stream', 'tts_end', { sessionId, ts: Date.now() });
           if (analytics) analytics.agentFinishedSpeaking(currentElevenLabsText);
           currentElevenLabsText = '';
         }
@@ -941,6 +948,40 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     }
   }
 
+  function getTranscriptConfidence(event: any): number | undefined {
+    if (typeof event?.confidence === 'number') return event.confidence;
+    if (typeof event?.transcript_confidence === 'number') return event.transcript_confidence;
+    if (Array.isArray(event?.segments)) {
+      const vals = event.segments.map((s: any) => s?.confidence).filter((v: any) => typeof v === 'number');
+      if (vals.length > 0) return vals.reduce((a: number, b: number) => a + b, 0) / vals.length;
+    }
+    return undefined;
+  }
+
+  function countMeaningfulWords(text: string): number {
+    return (text.toLowerCase().match(/[a-z0-9]{2,}/g) || []).length;
+  }
+
+  function isFillerOnly(text: string): boolean {
+    const normalized = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!normalized) return true;
+    const filler = new Set(['uh', 'um', 'hmm', 'hm', 'yeah', 'ok', 'okay']);
+    const parts = normalized.split(' ').filter(Boolean);
+    return parts.length > 0 && parts.every(p => filler.has(p));
+  }
+
+  function deterministicReprompt(): void {
+    const line = 'Sorry, I didn\'t catch that — could you repeat that?';
+    if (useElevenLabs) {
+      currentElevenLabsText = '';
+      sendTextToElevenLabs(line);
+      flushElevenLabs();
+      logger.info('stream', 'Deterministic reprompt', { sessionId, line });
+      return;
+    }
+    sendUserMessage(`[System: Say exactly: "${line}"]`);
+  }
+
   // --- OpenAI event handling ---
 
   function handleOpenAIEvent(event: any): void {
@@ -1045,8 +1086,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       // --- Barge-in handling ---
       case 'input_audio_buffer.speech_started':
-        lastSpeechActivityAt = Date.now();
+        speechStartedAt = Date.now();
+        lastSpeechActivityAt = speechStartedAt;
         if (analytics) analytics.userStartedSpeaking();
+        logger.debug('stream', 'speech_started', { sessionId, ts: speechStartedAt });
 
         if (!responseIsPlaying) break;
 
@@ -1059,7 +1102,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         logger.debug('stream', 'Potential barge-in — starting debounce', { sessionId });
         bargeInTimer = setTimeout(() => {
           bargeInTimer = null;
-          logger.info('stream', 'Barge-in confirmed — canceling response', { sessionId });
+          logger.info('stream', 'Barge-in confirmed — canceling response', { sessionId, interruption_source: 'speech_started_debounced' });
 
           if (analytics) analytics.recordInterruption();
 
@@ -1081,6 +1124,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         break;
 
       case 'input_audio_buffer.speech_stopped':
+        if (speechStartedAt > 0) {
+          lastSpeechDurationMs = Math.max(0, Date.now() - speechStartedAt);
+        } else {
+          lastSpeechDurationMs = 0;
+        }
+        logger.debug('stream', 'speech_stopped', { sessionId, speechDurationMs: lastSpeechDurationMs });
+
         if (bargeInTimer) {
           clearTimeout(bargeInTimer);
           bargeInTimer = null;
@@ -1149,25 +1199,48 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       case 'conversation.item.input_audio_transcription.completed': {
         const userText = event.transcript || '';
-        logger.info('stream', 'User said', { sessionId, transcript: redactPII(userText) });
-
-        // Guard: if transcript is empty or just noise/punctuation, cancel any auto-response
-        // OpenAI's VAD can false-trigger on line noise, producing empty transcripts
+        const speechDurationMs = lastSpeechDurationMs;
+        lastSpeechDurationMs = 0;
+        const confidence = getTranscriptConfidence(event);
         const cleanedText = userText.replace(/[^a-zA-Z0-9]/g, '').trim();
-        if (!cleanedText) {
-          logger.info('stream', 'Empty/noise transcript — suppressing response', { sessionId, rawTranscript: userText });
-          if (!useDeepSeek && openaiWs?.readyState === WebSocket.OPEN) {
-            openaiWs.send(JSON.stringify({ type: 'response.cancel' }));
+        const meaningfulWords = countMeaningfulWords(userText);
+        const fillerOnly = isFillerOnly(userText);
+
+        logger.info('stream', 'User said', {
+          sessionId,
+          transcript: redactPII(userText),
+          speechDurationMs,
+          confidence,
+        });
+
+        // Phase 2: hard acceptance gate (minimal)
+        let rejectReason: string | null = null;
+        if (!cleanedText && speechDurationMs === 0) rejectReason = 'empty_no_speech';
+        else if (speechDurationMs > 0 && speechDurationMs < 450) rejectReason = 'short_speech';
+        else if (typeof confidence === 'number' && confidence < 0.85) rejectReason = 'low_conf';
+        else if (fillerOnly) rejectReason = 'filler_only';
+        else if (meaningfulWords < 2 && cleanedText.length < 4) rejectReason = 'low_quality';
+
+        if (rejectReason) {
+          lastRejectReason = rejectReason;
+          logger.info('stream', 'Rejected user turn', {
+            sessionId,
+            reject_reason: rejectReason,
+            speechDurationMs,
+            confidence,
+            cleanedLen: cleanedText.length,
+            meaningfulWords,
+          });
+
+          // Do not advance state, do not send to reasoning history.
+          // For pure no-speech empty events, ignore silently to avoid self-chatter loops.
+          if (rejectReason !== 'empty_no_speech') {
+            deterministicReprompt();
           }
-          if (useElevenLabs && elevenLabsWs) {
-            elevenLabsWs.close();
-            elevenLabsWs = null;
-            elevenLabsPendingText = [];
-          }
-          sendClearToTwilio();
-          responseIsPlaying = false;
           break;
         }
+
+        lastRejectReason = null;
 
         // Process through conversation intelligence
         if (conversation && userText) {

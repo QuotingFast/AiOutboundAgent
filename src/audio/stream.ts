@@ -1358,7 +1358,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       if (targetNumber) {
         await new Promise(r => setTimeout(r, 1500));
-        logger.info('stream', 'Executing warm transfer', { sessionId, route, target: targetNumber });
+        logger.info('stream', 'Executing blind transfer', { sessionId, route, target: targetNumber });
         const success = await executeWarmTransfer(callSid, targetNumber);
         if (!success) {
           logger.error('stream', 'Transfer failed', { sessionId, route });

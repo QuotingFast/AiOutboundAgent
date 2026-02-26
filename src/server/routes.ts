@@ -500,12 +500,16 @@ router.get('/api/settings', (_req: Request, res: Response) => {
 
 router.put('/api/settings', (req: Request, res: Response) => {
   const b = req.body;
+  if (!b || typeof b !== 'object' || Array.isArray(b)) {
+    res.status(400).json({ error: 'Invalid request body. Expected a JSON object.' });
+    return;
+  }
   const errors: string[] = [];
-  if (b.maxCallDurationSec !== undefined && b.maxCallDurationSec < 0) errors.push('maxCallDurationSec cannot be negative');
-  if (b.maxCallsPerPhonePerDay !== undefined && b.maxCallsPerPhonePerDay < 0) errors.push('maxCallsPerPhonePerDay cannot be negative');
-  if (b.callDurationWarnPct !== undefined && (b.callDurationWarnPct < 0 || b.callDurationWarnPct > 100)) errors.push('callDurationWarnPct must be 0-100');
-  if (b.vadThreshold !== undefined && (b.vadThreshold < 0 || b.vadThreshold > 1)) errors.push('vadThreshold must be 0-1');
-  if (b.backgroundNoiseVolume !== undefined && (b.backgroundNoiseVolume < 0 || b.backgroundNoiseVolume > 0.5)) errors.push('backgroundNoiseVolume must be 0-0.5');
+  if (b.maxCallDurationSec !== undefined && (!Number.isFinite(b.maxCallDurationSec) || b.maxCallDurationSec < 0)) errors.push('maxCallDurationSec must be a non-negative number');
+  if (b.maxCallsPerPhonePerDay !== undefined && (!Number.isFinite(b.maxCallsPerPhonePerDay) || b.maxCallsPerPhonePerDay < 0)) errors.push('maxCallsPerPhonePerDay must be a non-negative number');
+  if (b.callDurationWarnPct !== undefined && (!Number.isFinite(b.callDurationWarnPct) || b.callDurationWarnPct < 0 || b.callDurationWarnPct > 100)) errors.push('callDurationWarnPct must be 0-100');
+  if (b.vadThreshold !== undefined && (!Number.isFinite(b.vadThreshold) || b.vadThreshold < 0 || b.vadThreshold > 1)) errors.push('vadThreshold must be 0-1');
+  if (b.backgroundNoiseVolume !== undefined && (!Number.isFinite(b.backgroundNoiseVolume) || b.backgroundNoiseVolume < 0 || b.backgroundNoiseVolume > 0.5)) errors.push('backgroundNoiseVolume must be 0-0.5');
   if (errors.length) {
     res.status(400).json({ error: 'Validation failed', details: errors });
     return;
@@ -1053,6 +1057,8 @@ router.get('/api/leads/export', (_req: Request, res: Response) => {
  * NOTE: Must be registered before /api/leads/:phone to avoid route conflict.
  */
 router.get('/api/leads/search', (req: Request, res: Response) => {
+  const parsedPage = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
+  const parsedLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
   const result = searchLeads({
     query: req.query.q as string,
     disposition: req.query.disposition as string,
@@ -1061,8 +1067,8 @@ router.get('/api/leads/search', (req: Request, res: Response) => {
     dateFrom: req.query.dateFrom as string,
     dateTo: req.query.dateTo as string,
     source: req.query.source as string,
-    page: req.query.page ? parseInt(req.query.page as string) : undefined,
-    limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+    page: parsedPage && parsedPage > 0 ? parsedPage : undefined,
+    limit: parsedLimit && parsedLimit > 0 ? parsedLimit : undefined,
   });
   res.json(result);
 });
@@ -1615,12 +1621,18 @@ async function handleWeblead(req: Request, res: Response) {
                                         },
                             });
 
-                            registerPendingSession(cr.callSid, {
-                                        first_name: firstName,
-                                        state,
-                                        current_insurer: currentInsurer,
-                                        vehicles: leadVehicles,
-                            }, undefined, phone);
+                            registerPendingSession(
+                                        cr.callSid,
+                                        {
+                                                      first_name: firstName,
+                                                      state,
+                                                      current_insurer: currentInsurer,
+                                                      vehicles: leadVehicles,
+                                        },
+                                        undefined,
+                                        phone,
+                                        campaignCtx?.campaignId || resolvedCampaignId || undefined,
+                            );
 
                             recordCall(cr.callSid, phone, firstName);
 
@@ -1780,7 +1792,8 @@ router.post('/twilio/sms-incoming', (req: Request, res: Response) => {
 router.post('/api/sms/send', async (req: Request, res: Response) => {
   try {
     const { phone, body, templateId, leadName, campaign_id } = req.body;
-    if (!phone || !body) {
+    const trimmedBody = typeof body === 'string' ? body.trim() : '';
+    if (!phone || !trimmedBody) {
       res.status(400).json({ error: 'Missing phone or body' });
       return;
     }
@@ -1807,14 +1820,14 @@ router.post('/api/sms/send', async (req: Request, res: Response) => {
       phone,
       direction: 'outbound',
       status: 'queued',
-      body,
+      body: trimmedBody,
       templateId,
       leadName,
       triggerReason: 'manual',
     });
 
     try {
-      const result = await sendSms(phone, body);
+      const result = await sendSms(phone, trimmedBody);
       entry.status = 'sent';
       entry.twilioSid = result.sid;
       res.json({ success: true, smsId: entry.id, twilioSid: result.sid });
@@ -1919,7 +1932,11 @@ router.post('/api/sms/send-template', async (req: Request, res: Response) => {
       ...variables,
     };
 
-    const body = renderTemplate(tpl.body, vars);
+    const body = renderTemplate(tpl.body, vars).trim();
+    if (!body) {
+      res.status(400).json({ error: 'Rendered template body is empty' });
+      return;
+    }
 
     const entry = logSms({
       phone,
@@ -2087,7 +2104,8 @@ router.post('/api/leads/:phone/sms', async (req: Request, res: Response) => {
   try {
     const phone = req.params.phone;
     const { body } = req.body;
-    if (!body) { res.status(400).json({ error: 'Missing body' }); return; }
+    const trimmedBody = typeof body === 'string' ? body.trim() : '';
+    if (!trimmedBody) { res.status(400).json({ error: 'Missing body' }); return; }
 
     const settings = getSettings();
     if (!settings.smsEnabled) {
@@ -2100,15 +2118,15 @@ router.post('/api/leads/:phone/sms', async (req: Request, res: Response) => {
       phone,
       direction: 'outbound',
       status: 'queued',
-      body,
+      body: trimmedBody,
       leadName: lead?.name,
       triggerReason: 'manual',
     });
 
-    const result = await sendSms(phone, body);
+    const result = await sendSms(phone, trimmedBody);
     entry.status = 'sent';
     entry.twilioSid = result.sid;
-    addLeadNote(phone, `SMS sent: "${body.substring(0, 80)}"`);
+    addLeadNote(phone, `SMS sent: "${trimmedBody.substring(0, 80)}"`);
     res.json({ success: true, smsId: entry.id });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

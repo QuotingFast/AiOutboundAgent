@@ -13,6 +13,7 @@ export interface StartCallParams {
     mode: 'warm' | 'cold';
     target_number: string;
   };
+  campaign_id?: string;
   amdEnabled?: boolean;
 }
 
@@ -27,6 +28,9 @@ export async function startOutboundCall(params: StartCallParams): Promise<{ call
   webhookUrl.searchParams.set('lead', JSON.stringify(params.lead));
   if (params.transfer) {
     webhookUrl.searchParams.set('transfer', JSON.stringify(params.transfer));
+  }
+  if (params.campaign_id) {
+    webhookUrl.searchParams.set('campaign_id', params.campaign_id);
   }
 
   logger.info('twilio-client', 'Placing outbound call', { to: params.to, from: fromNumber });

@@ -186,9 +186,28 @@ export function handleMediaStream(twilioWs: WebSocket): void {
               pendingSessions.delete(callSid);
               logger.info('stream', 'Session found', { sessionId, lead: leadData.first_name, toPhone: callerNumber, campaignId: session.campaignId || 'none' });
             } else {
-              logger.warn('stream', 'No session found, using default', {
+              // Fallback for cross-instance routing: recover context from Twilio custom params.
+              const cp = customParams || {};
+              const leadFirstName = cp.leadFirstName || 'there';
+              const vehicle = (cp.leadVehicleYear || cp.leadVehicleMake || cp.leadVehicleModel)
+                ? [{ year: cp.leadVehicleYear || '', make: cp.leadVehicleMake || '', model: cp.leadVehicleModel || '' }]
+                : undefined;
+              leadData = {
+                first_name: leadFirstName,
+                state: cp.leadState || undefined,
+                current_insurer: cp.leadCurrentInsurer || undefined,
+                vehicles: vehicle,
+              } as any;
+
+              if (cp.campaignId) {
+                activeCampaign = getCampaign(cp.campaignId);
+              }
+
+              logger.warn('stream', 'No session found, recovered from custom params', {
                 sessionId,
                 callSid,
+                recoveredLead: leadData.first_name,
+                campaignId: cp.campaignId || 'none',
                 pendingKeys: [...pendingSessions.keys()],
               });
             }

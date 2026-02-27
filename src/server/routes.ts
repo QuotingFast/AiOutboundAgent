@@ -226,7 +226,14 @@ router.post('/call/start', async (req: Request, res: Response) => {
       return;
     }
 
-    const result = await startOutboundCall({ to, from, lead, amdEnabled: settings.amdEnabled });
+    const result = await startOutboundCall({
+      to,
+      from,
+      lead,
+      transfer,
+      campaign_id: campaignEnforcement.context?.campaignId || campaign_id,
+      amdEnabled: settings.amdEnabled,
+    });
 
     // Register session data so the WebSocket handler can pick it up when the call connects
     // Always pass campaign_id through — even when hardened isolation is off, the stream
@@ -288,23 +295,30 @@ router.post('/call/start', async (req: Request, res: Response) => {
 router.post('/twilio/voice', (req: Request, res: Response) => {
   const callSid = req.body?.CallSid || 'unknown';
   const toPhone = req.body?.To || '';
-  let lead = null;
-  let transfer = null;
+  let lead: any = null;
+  let transfer: any = null;
+  const campaignId = (req.query.campaign_id as string) || '';
   try { if (req.query.lead) lead = JSON.parse(req.query.lead as string); } catch {}
   try { if (req.query.transfer) transfer = JSON.parse(req.query.transfer as string); } catch {}
 
-  logger.info('routes', 'Voice webhook hit', { callSid, toPhone });
+  logger.info('routes', 'Voice webhook hit', { callSid, toPhone, campaignId: campaignId || 'none' });
 
-  if (lead && callSid !== 'unknown') {
-    // Only register if this is a direct Twilio call (not via /call/start).
-    // /call/start already registers with campaign_id — re-registering here
-    // would overwrite it without campaign context.
-    if (!hasPendingSession(callSid)) {
-      registerPendingSession(callSid, lead, transfer, toPhone);
-    }
+  if (callSid !== 'unknown' && !hasPendingSession(callSid)) {
+    // Cross-instance safety: restore session context from Twilio webhook query params.
+    // This prevents default/fallback prompt regressions when the media stream lands on
+    // a different app instance than /call/start.
+    registerPendingSession(callSid, lead || { first_name: 'there' }, transfer || undefined, toPhone, campaignId || undefined);
   }
 
-  const twiml = buildMediaStreamTwiml('outbound');
+  const twiml = buildMediaStreamTwiml('outbound', toPhone, {
+    campaignId: campaignId || undefined,
+    leadFirstName: lead?.first_name,
+    leadState: lead?.state,
+    leadCurrentInsurer: lead?.current_insurer,
+    leadVehicleMake: lead?.vehicles?.[0]?.make,
+    leadVehicleModel: lead?.vehicles?.[0]?.model,
+    leadVehicleYear: lead?.vehicles?.[0]?.year,
+  });
   res.type('text/xml');
   res.send(twiml);
 });

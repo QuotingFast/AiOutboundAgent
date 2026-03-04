@@ -1634,12 +1634,18 @@ async function handleWeblead(req: Request, res: Response) {
                                         },
                             });
 
-                            registerPendingSession(cr.callSid, {
-                                        first_name: firstName,
-                                        state,
-                                        current_insurer: currentInsurer,
-                                        vehicles: leadVehicles,
-                            }, undefined, phone);
+                            registerPendingSession(
+                                        cr.callSid,
+                                        {
+                                                  first_name: firstName,
+                                                  state,
+                                                  current_insurer: currentInsurer,
+                                                  vehicles: leadVehicles,
+                                        },
+                                        undefined,
+                                        phone,
+                                        campaignCtx?.campaignId || resolvedCampaignId || undefined,
+                            );
 
                             recordCall(cr.callSid, phone, firstName);
 

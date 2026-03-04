@@ -18,7 +18,18 @@ async function main() {
   console.log('--- Health Check ---');
   try {
     const res = await fetch(`${BASE}/health`);
-    const body = await res.json();
+    const contentType = res.headers.get('content-type') || '';
+    let body;
+
+    if (!contentType.includes('application/json')) {
+      const text = await res.text();
+      throw new Error(
+        `Expected JSON from /health but got ${contentType || 'unknown content-type'} (status ${res.status}). ` +
+        `Response starts with: ${text.substring(0, 80)}`
+      );
+    }
+
+    body = await res.json();
     console.log(`  Status: ${res.status}`);
     console.log(`  Body:   ${JSON.stringify(body)}`);
     if (res.status !== 200 || body.status !== 'ok') {

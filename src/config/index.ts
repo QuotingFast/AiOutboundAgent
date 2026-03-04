@@ -4,6 +4,11 @@ dotenv.config();
 function required(key: string): string {
   const value = process.env[key];
   if (!value) {
+    // Allow local/unit tests to import modules without full production secrets.
+    // Opt-in only: set SKIP_ENV_VALIDATION=true in test/dev tooling.
+    if (process.env.SKIP_ENV_VALIDATION === 'true') {
+      return `__MISSING_${key}__`;
+    }
     throw new Error(`Missing required env var: ${key}`);
   }
   return value;

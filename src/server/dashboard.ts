@@ -1989,7 +1989,7 @@ export function getDashboardHtml(): string {
     </div>
   </div>
 
-  <div style="display:flex;justify-content:flex-end;gap:12px">
+  <div id="settingsSaveRow" style="display:flex;justify-content:flex-end;gap:12px">
     <button class="btn btn-secondary" onclick="loadSettings()">Revert</button>
     <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">Save All Settings</button>
   </div>
@@ -3784,7 +3784,7 @@ function initSettingsAccordions() {
   var cards = Array.from(tab.querySelectorAll('.card[data-acc]'));
   var grouped = {};
   cards.forEach(function(c) { var g = c.dataset.acc; if (!grouped[g]) grouped[g] = []; grouped[g].push(c); });
-  var saveRow = tab.querySelector('div[style*="flex-end"]');
+  var saveRow = document.getElementById('settingsSaveRow');
   Object.keys(groups).forEach(function(key) {
     if (!grouped[key]) return;
     var info = groups[key];

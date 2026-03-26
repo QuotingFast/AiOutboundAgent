@@ -377,7 +377,7 @@ export function seedCampaigns(): void {
       voiceProvider: 'deepseek',
       openaiVoice: 'coral',
       elevenlabsVoiceId: 'jn34bTlmmOgOJU9XfPuy', // Steve
-      elevenlabsModelId: 'eleven_turbo_v2_5',
+      elevenlabsModelId: 'eleven_flash_v2_5',
       elevenlabsStability: 0.45,
       elevenlabsSimilarityBoost: 0.78,
       elevenlabsStyle: 0.10,
@@ -548,7 +548,7 @@ One question at a time. Short replies. Natural delivery. No markdown or formatti
       voiceProvider: 'elevenlabs',
       openaiVoice: 'ash',
       elevenlabsVoiceId: 'iP95p4xoKVk53GoZ742B', // chris
-      elevenlabsModelId: 'eleven_turbo_v2_5',
+      elevenlabsModelId: 'eleven_flash_v2_5',
       elevenlabsStability: 0.48,
       elevenlabsSimilarityBoost: 0.78,
       elevenlabsStyle: 0.08,

@@ -135,7 +135,7 @@ const settings: RuntimeSettings = {
       realtimeModel: config.openai.realtimeModel,
       temperature: 0.2,
       elevenlabsVoiceId: config.elevenlabs.voiceId || 'jn34bTlmmOgOJU9XfPuy', // Steve
-      elevenlabsModelId: 'eleven_turbo_v2_5',
+      elevenlabsModelId: 'eleven_flash_v2_5',
       elevenlabsStability: 0.45,
       elevenlabsSimilarityBoost: 0.78,
       elevenlabsStyle: 0.10,

@@ -557,7 +557,7 @@ const elPreviewCache = new Map<string, Buffer>();
 
 router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
   const voice = req.params.voice.toLowerCase();
-  const validVoices = ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'];
+  const validVoices = ['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar','fable','nova','onyx'];
 
   // ElevenLabs voice name → ID mapping (all American premade voices)
   const elVoiceMap: Record<string, string> = {
@@ -644,7 +644,7 @@ router.get('/api/voice-preview/:voice', async (req: Request, res: Response) => {
         },
         body: JSON.stringify({
           text: PREVIEW_TEXT,
-          model_id: 'eleven_turbo_v2_5',
+          model_id: 'eleven_flash_v2_5',
           voice_settings: {
             stability: preset.stability,
             similarity_boost: preset.similarityBoost,
@@ -753,7 +753,7 @@ router.get('/api/elevenlabs-voice-preview/:voiceId', async (req: Request, res: R
       },
       body: JSON.stringify({
         text: PREVIEW_TEXT,
-        model_id: 'eleven_turbo_v2_5',
+        model_id: 'eleven_flash_v2_5',
         voice_settings: {
           stability: preset.stability,
           similarity_boost: preset.similarityBoost,

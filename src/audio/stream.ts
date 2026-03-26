@@ -468,7 +468,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           modalities: ['text'],
           instructions: 'You are a speech-to-text transcription relay. Do not generate responses.',
           input_audio_format: 'g711_ulaw',
-          input_audio_transcription: { model: 'whisper-1' },
+          input_audio_transcription: { model: 'gpt-4o-transcribe' },
           turn_detection: {
             type: 'server_vad',
             threshold: s.vadThreshold,
@@ -489,7 +489,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           modalities: ['text'],
           instructions,
           input_audio_format: 'g711_ulaw',
-          input_audio_transcription: { model: 'whisper-1' },
+          input_audio_transcription: { model: 'gpt-4o-transcribe' },
           turn_detection: {
             type: 'server_vad',
             threshold: s.vadThreshold,
@@ -512,7 +512,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           voice: campaignVoice?.openaiVoice || s.voice,
           input_audio_format: 'g711_ulaw',
           output_audio_format: 'g711_ulaw',
-          input_audio_transcription: { model: 'whisper-1' },
+          input_audio_transcription: { model: 'gpt-4o-transcribe' },
           turn_detection: {
             type: 'server_vad',
             threshold: s.vadThreshold,
@@ -609,7 +609,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     // Use campaign voice config for ElevenLabs voice ID, model, and tuning
     const campaignVoice = activeCampaign?.voiceConfig;
     const effectiveVoiceId = campaignVoice?.elevenlabsVoiceId || s.elevenlabsVoiceId;
-    const effectiveModelId = campaignVoice?.elevenlabsModelId || s.elevenlabsModelId || 'eleven_turbo_v2_5';
+    const effectiveModelId = campaignVoice?.elevenlabsModelId || s.elevenlabsModelId || 'eleven_flash_v2_5';
     // Resolve per-voice preset, then allow campaign/runtime overrides
     const preset = getVoicePreset(effectiveVoiceId);
     const effectiveStability = campaignVoice?.elevenlabsStability ?? s.elevenlabsStability ?? preset.stability;
@@ -766,7 +766,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         modalities: ['text'],
         instructions: deepseekInstructions,
         input_audio_format: 'g711_ulaw',
-        input_audio_transcription: { model: 'whisper-1' },
+        input_audio_transcription: { model: 'gpt-4o-transcribe' },
         turn_detection: {
           type: 'server_vad',
           threshold: s.vadThreshold,

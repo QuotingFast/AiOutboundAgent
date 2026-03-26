@@ -934,6 +934,31 @@ export function getDashboardHtml(): string {
         <div class="vc-name">Shimmer</div><div class="vc-desc">Bright, energetic</div>
         <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
       </div>
+      <div class="voice-card" data-voice="marin" onclick="selectVoice('marin')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('marin',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Marin</div><div class="vc-desc">Warm, natural</div>
+        <span class="vc-tag sales">Recommended</span><span class="vc-check">&#10003;</span>
+      </div>
+      <div class="voice-card" data-voice="cedar" onclick="selectVoice('cedar')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('cedar',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Cedar</div><div class="vc-desc">Rich, grounded</div>
+        <span class="vc-tag sales">Recommended</span><span class="vc-check">&#10003;</span>
+      </div>
+      <div class="voice-card" data-voice="fable" onclick="selectVoice('fable')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('fable',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Fable</div><div class="vc-desc">Storytelling, engaging</div>
+        <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+      </div>
+      <div class="voice-card" data-voice="nova" onclick="selectVoice('nova')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('nova',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Nova</div><div class="vc-desc">Dynamic, confident</div>
+        <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+      </div>
+      <div class="voice-card" data-voice="onyx" onclick="selectVoice('onyx')">
+        <button class="vc-play" onclick="event.stopPropagation();previewVoice('onyx',this)" title="Preview">&#9654;</button>
+        <div class="vc-name">Onyx</div><div class="vc-desc">Deep, authoritative</div>
+        <span class="vc-tag neutral">Versatile</span><span class="vc-check">&#10003;</span>
+      </div>
     </div>
     </div>
 
@@ -1265,9 +1290,10 @@ export function getDashboardHtml(): string {
         <div>
           <label>ElevenLabs TTS Model</label>
           <select id="dsElevenlabsModelId">
-            <option value="eleven_turbo_v2_5">Turbo v2.5 (fastest)</option>
-            <option value="eleven_multilingual_v2">Multilingual v2</option>
-            <option value="eleven_monolingual_v1">Monolingual v1</option>
+            <option value="eleven_flash_v2_5">Flash v2.5 (ultra-low latency)</option>
+            <option value="eleven_turbo_v2_5">Turbo v2.5 (balanced)</option>
+            <option value="eleven_multilingual_v2">Multilingual v2 (29 languages)</option>
+            <option value="eleven_monolingual_v1">Monolingual v1 (English)</option>
           </select>
         </div>
         <div></div>
@@ -1599,9 +1625,10 @@ export function getDashboardHtml(): string {
         <div>
           <label>ElevenLabs Model</label>
           <select id="elevenlabsModelId">
-            <option value="eleven_turbo_v2_5">Turbo v2.5 (fastest)</option>
-            <option value="eleven_multilingual_v2">Multilingual v2</option>
-            <option value="eleven_monolingual_v1">Monolingual v1</option>
+            <option value="eleven_flash_v2_5">Flash v2.5 (ultra-low latency)</option>
+            <option value="eleven_turbo_v2_5">Turbo v2.5 (balanced)</option>
+            <option value="eleven_multilingual_v2">Multilingual v2 (29 languages)</option>
+            <option value="eleven_monolingual_v1">Monolingual v1 (English)</option>
           </select>
         </div>
         <div></div>
@@ -2090,10 +2117,10 @@ var NUMBER_FIELDS = [
   'retryDelay1Min','retryDelay2Min','retryDelay3Min','latencyAlertThresholdMs','dailyReportHour'
 ];
 var MODEL_VOICES = {
-  'gpt-4o-realtime-preview': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'],
-  'gpt-4o-mini-realtime-preview': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'],
+  'gpt-4o-realtime-preview': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar','fable','nova','onyx'],
+  'gpt-4o-mini-realtime-preview': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar','fable','nova','onyx'],
 };
-var ALL_VOICES = ['alloy','ash','ballad','coral','echo','sage','shimmer','verse'];
+var ALL_VOICES = ['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar','fable','nova','onyx'];
 
 function getCompatibleVoices() {
   var model = document.getElementById('realtimeModel').value;

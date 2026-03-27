@@ -13,7 +13,7 @@ import { registerSession, removeSession, updateSessionStatus, onSessionFreed } f
 import { buildLeadContext, recordCallToLead, addLeadNote } from '../memory';
 import { runPostCallWorkflow } from '../workflows';
 import { redactPII } from '../security';
-import { mixNoiseIntoAudio, resetNoisePosition } from './noise';
+import { mixNoiseIntoAudio, resetNoisePosition, getNoiseOnlyFrames } from './noise';
 import { handleAutoDnc, recordPhoneCall } from '../compliance';
 import { logSms } from '../sms';
 import {
@@ -133,6 +133,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let silenceDisconnectFired = false;
   let silenceCheckInterval: ReturnType<typeof setInterval> | null = null;
 
+  // Continuous background noise interval (sends ambient frames during silence)
+  let ambientNoiseInterval: ReturnType<typeof setInterval> | null = null;
+
   logger.info('stream', 'Twilio WS opened', { sessionId });
 
   // --- Twilio WebSocket handlers ---
@@ -220,6 +223,26 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           callStartedAt = Date.now();
           lastSpeechActivityAt = Date.now();
           resetNoisePosition();
+
+          // Start continuous ambient noise (fills silence with office sounds)
+          const noiseSettings = getSettings();
+          if (noiseSettings.backgroundNoiseEnabled) {
+            const NOISE_INTERVAL_MS = 20;
+            const SAMPLES_PER_CHUNK = Math.floor(8000 * NOISE_INTERVAL_MS / 1000); // 160 samples @ 8kHz
+            ambientNoiseInterval = setInterval(() => {
+              if (responseIsPlaying || twilioWs.readyState !== WebSocket.OPEN || !streamSid) return;
+              const s = getSettings();
+              if (!s.backgroundNoiseEnabled) return;
+              try {
+                const noiseChunk = getNoiseOnlyFrames(SAMPLES_PER_CHUNK, s.backgroundNoiseVolume);
+                twilioWs.send(JSON.stringify({
+                  event: 'media',
+                  streamSid,
+                  media: { payload: noiseChunk.toString('base64') },
+                }));
+              } catch {}
+            }, NOISE_INTERVAL_MS);
+          }
 
           // Start silence (dead air) monitoring
           const silenceSettings = getSettings();
@@ -1817,6 +1840,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   }
 
   function cleanup(): void {
+    if (ambientNoiseInterval) {
+      clearInterval(ambientNoiseInterval);
+      ambientNoiseInterval = null;
+    }
     if (silenceCheckInterval) {
       clearInterval(silenceCheckInterval);
       silenceCheckInterval = null;

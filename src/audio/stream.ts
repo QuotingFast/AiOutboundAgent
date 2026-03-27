@@ -1380,6 +1380,29 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           code: event.error?.code,
           message: event.error?.message,
         });
+
+        // If OpenAI dies before greeting triggers (e.g. quota exceeded) and we're
+        // in DeepSeek mode, bypass OpenAI and start the greeting via DeepSeek+ElevenLabs directly.
+        if (!initialGreetingDone && useDeepSeek) {
+          initialGreetingDone = true;
+          logger.info('stream', 'OpenAI failed pre-greeting, starting DeepSeek+ElevenLabs greeting directly', { sessionId });
+          connectElevenLabs();
+          let greetingSent = false;
+          const waitForEl = setInterval(() => {
+            if (!greetingSent && elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
+              clearInterval(waitForEl);
+              greetingSent = true;
+              triggerGreeting();
+            }
+          }, 100);
+          setTimeout(() => {
+            clearInterval(waitForEl);
+            if (!greetingSent) {
+              greetingSent = true;
+              triggerGreeting();
+            }
+          }, 3000);
+        }
         break;
 
       default:

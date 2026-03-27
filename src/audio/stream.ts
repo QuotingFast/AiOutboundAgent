@@ -588,8 +588,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         greetingInstruction = `[An inbound call has just connected. Someone is calling your company. Answer the phone warmly. Start with: "${greetingText}"]`;
       }
     } else {
-      // Use campaign-specific outbound greeting if available
-      if (campaignProfile?.greetingText) {
+      const hasVehicle = !!(vehicleYear || vehicleMake || vehicleModel);
+      if (campaignProfile?.greetingText && hasVehicle) {
         const greetingText = campaignProfile.greetingText
           .replace(/\{\{first_name\}\}/g, leadData.first_name)
           .replace(/\{\{agency_name\}\}/g, leadData.first_name)
@@ -598,7 +598,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           .replace(/\{\{vehicle_make\}\}/g, vehicleMake);
         greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "${greetingText}"]`;
       } else {
-        greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "Hey ${leadData.first_name}, this is ${effectiveAgentName} over at ${effectiveCompanyName} — you had looked into an auto insurance quote not too long ago, right?"]`;
+        greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "Hey ${leadData.first_name}, it's ${effectiveAgentName} over at ${effectiveCompanyName} — you had looked into getting a quote not too long ago, right?"]`;
       }
     }
 
@@ -1771,18 +1771,25 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   function sendAudioToTwilio(base64Audio: string): void {
     if (twilioWs.readyState !== WebSocket.OPEN) return;
 
-    let payload = base64Audio;
+    const s = getSettings();
+    let rawAudio = Buffer.from(base64Audio, 'base64');
 
     // Inject background noise if enabled
-    const s = getSettings();
     if (s.backgroundNoiseEnabled) {
       try {
-        const audioBuffer = Buffer.from(base64Audio, 'base64');
-        const mixed = mixNoiseIntoAudio(audioBuffer, s.backgroundNoiseVolume);
-        payload = mixed.toString('base64');
-      } catch {
-        // On any error, send original audio
-      }
+        rawAudio = mixNoiseIntoAudio(rawAudio, s.backgroundNoiseVolume);
+      } catch {}
+    }
+
+    // Split into 160-byte (20ms @ 8kHz mulaw) chunks for Twilio compatibility
+    const CHUNK_SIZE = 160;
+    for (let offset = 0; offset < rawAudio.length; offset += CHUNK_SIZE) {
+      const chunk = rawAudio.subarray(offset, Math.min(offset + CHUNK_SIZE, rawAudio.length));
+      twilioWs.send(JSON.stringify({
+        event: 'media',
+        streamSid,
+        media: { payload: chunk.toString('base64') },
+      }));
     }
 
     // Check call duration limits
@@ -1799,7 +1806,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         } else {
           sendUserMessage(limitMsg);
         }
-        // Force end after 10s grace period
         setTimeout(async () => {
           try { await endCall(callSid); } catch {}
         }, 10_000);
@@ -1814,12 +1820,6 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
       }
     }
-
-    twilioWs.send(JSON.stringify({
-      event: 'media',
-      streamSid,
-      media: { payload },
-    }));
   }
 
   function sendClearToTwilio(): void {

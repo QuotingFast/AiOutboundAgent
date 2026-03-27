@@ -163,7 +163,7 @@ const settings: RuntimeSettings = {
 
       // Background noise
       backgroundNoiseEnabled: true,
-      backgroundNoiseVolume: 0.12,
+      backgroundNoiseVolume: 0.07,
 
       // AMD / Voicemail detection
       amdEnabled: false,

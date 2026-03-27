@@ -1772,12 +1772,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     if (twilioWs.readyState !== WebSocket.OPEN) return;
 
     const s = getSettings();
-    let rawAudio = Buffer.from(base64Audio, 'base64');
+    const decoded = Buffer.from(base64Audio, 'base64');
+    let rawAudio: Buffer = decoded;
 
     // Inject background noise if enabled
     if (s.backgroundNoiseEnabled) {
       try {
-        rawAudio = mixNoiseIntoAudio(rawAudio, s.backgroundNoiseVolume);
+        rawAudio = mixNoiseIntoAudio(decoded, s.backgroundNoiseVolume);
       } catch {}
     }
 

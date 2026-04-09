@@ -1079,7 +1079,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
               logger.warn('stream', 'ElevenLabs connect timeout, triggering greeting anyway', { sessionId });
               triggerGreeting();
             }
-          }, 3000);
+          }, 1500);
         } else {
           setTimeout(() => triggerGreeting(), 300);
         }
@@ -1202,10 +1202,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           logger.debug('stream', 'Speech stopped before debounce — ignored', { sessionId });
         }
 
-        // Natural response delay: humans pause 300-800ms before responding.
-        // This prevents the uncanny instant-response effect that reveals AI.
+        // Minimal response delay: just enough jitter to avoid robotic instant replies.
         {
-          const humanDelayMs = 300 + Math.floor(Math.random() * 500);
+          const humanDelayMs = 50 + Math.floor(Math.random() * 100);
           logger.debug('stream', 'Adding human response delay', { sessionId, delayMs: humanDelayMs });
           responseRequestedAt = Date.now() + humanDelayMs; // Adjust baseline for latency tracking
           firstAudioAt = 0;
@@ -1214,16 +1213,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         break;
 
       case 'response.done':
-        if (useElevenLabs && !useDeepSeek && elevenLabsWs) {
-          // Don't eagerly reconnect — just close. Next sendTextToElevenLabs will reconnect on demand.
-          // This avoids ElevenLabs idle timeout killing the connection.
-          setTimeout(() => {
-            if (elevenLabsWs) {
-              elevenLabsWs.close();
-              elevenLabsWs = null;
-            }
-          }, 500);
-        }
+        // Keep ElevenLabs connection alive between responses to avoid reconnect latency.
+        // ElevenLabs has a ~5-minute idle timeout, which is plenty for conversation turns.
         if (!useElevenLabs) {
           responseIsPlaying = false;
           if (analytics && currentAgentText) {

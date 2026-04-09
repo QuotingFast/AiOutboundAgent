@@ -26,5 +26,9 @@ services:
         value: "elevenlabs"
       - key: STT_PROVIDER
         value: "openai"
+      - key: AUDIOSOCKET_ENABLED
+        value: "true"
+      - key: AUDIOSOCKET_PORT
+        value: "9092"
       - key: DEBUG
         value: "false"

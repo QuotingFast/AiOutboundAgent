@@ -24,6 +24,7 @@ import {
 } from '../campaign/scheduled-callbacks';
 import { loadLeadsFromDisk } from '../memory';
 import { flushAll } from '../db/persistence';
+import { startAudioSocketServer } from '../audiosocket/server';
 
 export function createServer(): http.Server {
   const app = express();
@@ -102,6 +103,12 @@ export function startServer(): void {
     logger.info('server', `  Health:     GET  ${config.baseUrl}/health`);
     logger.info('server', `  SMS In:     POST ${config.baseUrl}/twilio/sms-incoming`);
     logger.info('server', `  Campaigns:  GET  ${config.baseUrl}/api/campaigns`);
+    logger.info('server', `  AudioSocket: TCP ${config.audiosocket.host}:${config.audiosocket.port} (${config.audiosocket.enabled ? 'enabled' : 'disabled'})`);
+
+    // Start AudioSocket TCP server for Asterisk/VICIdial integration
+    if (config.audiosocket.enabled) {
+      startAudioSocketServer(config.audiosocket.port, config.audiosocket.host);
+    }
 
     // Backfill any recordings missed while server was down
     syncRecordingsFromTwilio().then(({ synced, total }) => {

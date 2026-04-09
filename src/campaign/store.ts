@@ -374,7 +374,7 @@ export function seedCampaigns(): void {
     updatedAt: now,
     aiProfile: consumerAiProfile,
     voiceConfig: {
-      voiceProvider: 'openai',
+      voiceProvider: 'elevenlabs',
       openaiVoice: 'coral',
       elevenlabsVoiceId: 'jn34bTlmmOgOJU9XfPuy', // Steve
       elevenlabsModelId: 'eleven_flash_v2_5',
@@ -585,7 +585,7 @@ DON'TS: Never say AI/bot/assistant. Never stack questions. Never use markdown. N
     updatedAt: now,
     aiProfile: agencyAiProfile,
     voiceConfig: {
-      voiceProvider: 'openai',
+      voiceProvider: 'elevenlabs',
       openaiVoice: 'ash',
       elevenlabsVoiceId: 'iP95p4xoKVk53GoZ742B', // chris
       elevenlabsModelId: 'eleven_flash_v2_5',

@@ -63,5 +63,11 @@ export const config = {
     channels: parseInt(optional('RECORDING_CHANNELS', '2'), 10) as 1 | 2,
   },
 
+  audiosocket: {
+    enabled: optional('AUDIOSOCKET_ENABLED', 'true') === 'true',
+    port: parseInt(optional('AUDIOSOCKET_PORT', '9092'), 10),
+    host: optional('AUDIOSOCKET_HOST', '0.0.0.0'),
+  },
+
   debug: optional('DEBUG', 'false') === 'true',
 };

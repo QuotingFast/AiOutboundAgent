@@ -12,6 +12,7 @@ import { loadData, scheduleSave } from '../db/persistence';
 
 // Module imports
 import { getAnalyticsHistory, getAnalyticsSummary, getActiveAnalytics } from '../analytics';
+import { createAudioSocketSession, getAudioSocketSession } from '../audiosocket/sessions';
 import {
   addToDnc, removeFromDnc, getDncList, getDncCount,
   runPreCallComplianceCheck, checkCallTimeAllowed,
@@ -539,6 +540,59 @@ router.post('/api/settings/toggle-pause', (_req: Request, res: Response) => {
 
 router.get('/api/calls', (_req: Request, res: Response) => {
   res.json(getCallHistory());
+});
+
+// ── AudioSocket session management (for VICIdial / Asterisk) ──────────
+
+/**
+ * Register a session BEFORE the AudioSocket TCP connection arrives.
+ * The AGI script calls this, receives a UUID, passes it to Asterisk's
+ * AudioSocket() application.
+ *
+ *   POST /audiosocket/session
+ *   Body: { leadFirstName, leadState?, campaignId?, callerNumber?, ... }
+ *   Returns: { uuid }
+ */
+router.post('/audiosocket/session', (req: Request, res: Response) => {
+  const b = req.body || {};
+  if (!b.leadFirstName) {
+    res.status(400).json({ error: 'leadFirstName is required' });
+    return;
+  }
+  const uuid = createAudioSocketSession({
+    leadFirstName: b.leadFirstName,
+    leadState: b.leadState,
+    leadCurrentInsurer: b.leadCurrentInsurer,
+    leadVehicleYear: b.leadVehicleYear,
+    leadVehicleMake: b.leadVehicleMake,
+    leadVehicleModel: b.leadVehicleModel,
+    campaignId: b.campaignId,
+    direction: b.direction || 'outbound',
+    callerNumber: b.callerNumber,
+    meta: b.meta,
+  });
+  logger.info('routes', 'AudioSocket session registered', { uuid, lead: b.leadFirstName });
+  res.json({ uuid });
+});
+
+/**
+ * Check session outcome after AudioSocket disconnects.
+ * AGI polls this to decide whether to transfer, schedule callback, etc.
+ *
+ *   GET /audiosocket/session/:uuid
+ */
+router.get('/audiosocket/session/:uuid', (req: Request, res: Response) => {
+  const session = getAudioSocketSession(req.params.uuid);
+  if (!session) {
+    res.status(404).json({ error: 'Session not found or expired' });
+    return;
+  }
+  res.json({
+    uuid: req.params.uuid,
+    outcome: session.outcome || 'unknown',
+    transferTarget: session.transferTarget || '',
+    meta: session.meta || {},
+  });
 });
 
 router.get('/api/default-prompt', (_req: Request, res: Response) => {

@@ -130,7 +130,7 @@ export interface CallRecord {
 }
 
 const settings: RuntimeSettings = {
-      voiceProvider: 'deepseek',
+      voiceProvider: 'openai',
       voice: config.openai.voice,
       realtimeModel: config.openai.realtimeModel,
       temperature: 0.2,

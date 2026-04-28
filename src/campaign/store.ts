@@ -72,8 +72,34 @@ function persistDidMappings(): void {
 export function loadCampaignStoreFromDisk(): void {
   const campaignData = loadData<Record<string, CampaignConfig>>(CAMPAIGNS_KEY);
   if (campaignData) {
+    let migratedVoiceProvider = 0;
+    let migratedTemperature = 0;
     for (const [key, value] of Object.entries(campaignData)) {
+      // Migration: the OpenAI Realtime native voice path produces no audible
+      // audio for legacy persisted campaigns (because temperature 0.2 is
+      // rejected by the API and output_audio_format silently falls back to
+      // pcm16 instead of mulaw). Force-revert any persisted 'openai' voice
+      // provider to 'elevenlabs' so existing deployments don't go silent.
+      if (value?.voiceConfig && value.voiceConfig.voiceProvider === 'openai') {
+        value.voiceConfig.voiceProvider = 'elevenlabs';
+        migratedVoiceProvider++;
+      }
+      // Migration: clamp legacy persisted temperatures into the OpenAI
+      // Realtime range [0.6, 1.2] so a future switch back to OpenAI native
+      // voice doesn't reproduce the same silent-call bug.
+      if (value?.aiProfile && typeof value.aiProfile.temperature === 'number' && value.aiProfile.temperature < 0.6) {
+        value.aiProfile.temperature = 0.6;
+        migratedTemperature++;
+      }
       campaigns.set(key, value);
+    }
+    if (migratedVoiceProvider > 0 || migratedTemperature > 0) {
+      logger.info('campaign-store', 'Migrated persisted campaign configs', {
+        voiceProviderUpdates: migratedVoiceProvider,
+        temperatureUpdates: migratedTemperature,
+      });
+      // Persist the migration so we don't repeat it on every restart.
+      scheduleSave(CAMPAIGNS_KEY, () => Object.fromEntries(campaigns));
     }
     logger.info('campaign-store', `Loaded ${campaigns.size} campaigns from disk`);
   }
@@ -355,7 +381,7 @@ export function seedCampaigns(): void {
     campaignId: 'campaign-consumer-auto',
     agentName: 'Steve',
     companyName: 'Smart Quotes',
-    temperature: 0.2,
+    temperature: 0.6,
     maxResponseTokens: 45,
     realtimeModel: 'gpt-4o-realtime-preview',
     systemPrompt: buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}', vehicles: [{ year: '{{vehicle_year}}', make: '{{vehicle_make}}', model: '{{vehicle_model}}' }] }, { agentName: 'Steve', companyName: 'Smart Quotes' }),

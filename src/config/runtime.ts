@@ -133,7 +133,10 @@ const settings: RuntimeSettings = {
       voiceProvider: 'elevenlabs',
       voice: config.openai.voice,
       realtimeModel: config.openai.realtimeModel,
-      temperature: 0.2,
+      // OpenAI Realtime requires temperature >= 0.6; values below that are
+      // silently rejected and the API falls back to pcm16 audio output,
+      // which Twilio can't play (mulaw expected) — call goes silent.
+      temperature: 0.6,
       elevenlabsVoiceId: config.elevenlabs.voiceId || 'jn34bTlmmOgOJU9XfPuy', // Steve
       elevenlabsModelId: 'eleven_flash_v2_5',
       elevenlabsStability: 0.45,
@@ -235,6 +238,19 @@ export function loadRuntimeFromDisk(): void {
       if (key in settings) {
         (settings as any)[key] = value;
       }
+    }
+    // Heal persisted state from earlier commits where voiceProvider was
+    // 'openai' — that path silently fails to produce audio over Twilio
+    // because OpenAI Realtime rejects temperature 0.2 and falls back to
+    // pcm16 instead of mulaw. Force back to elevenlabs and persist so the
+    // dashboard reflects reality.
+    if (settings.voiceProvider === 'openai') {
+      settings.voiceProvider = 'elevenlabs';
+      persistSettings();
+    }
+    if (typeof settings.temperature === 'number' && settings.temperature < 0.6) {
+      settings.temperature = 0.6;
+      persistSettings();
     }
   }
 }

@@ -464,8 +464,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       }
     }
 
-    // Use campaign-specific temperature and max tokens if available
-    const effectiveTemperature = activeCampaign?.aiProfile?.temperature ?? s.temperature;
+    // Use campaign-specific temperature and max tokens if available.
+    // OpenAI Realtime API requires temperature in [0.6, 1.2]; values outside
+    // this range cause session.update to be silently rejected, which leaves
+    // output_audio_format at the pcm16 default and breaks audio playback to
+    // Twilio (mulaw expected). Clamp here so any persisted lower temperature
+    // from older configs (commonly 0.2) doesn't silently kill the call audio.
+    const rawTemperature = activeCampaign?.aiProfile?.temperature ?? s.temperature;
+    const effectiveTemperature = Math.min(1.2, Math.max(0.6, rawTemperature));
     const effectiveMaxTokens = activeCampaign?.aiProfile?.maxResponseTokens ?? s.maxResponseTokens;
 
     const effectiveModel = activeCampaign?.aiProfile?.realtimeModel || s.realtimeModel;

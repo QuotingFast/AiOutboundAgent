@@ -1518,8 +1518,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         logger.error('stream', 'Failed to end call via Twilio API', { sessionId, error: errMsg });
       }
     } else if (name === 'send_scheduling_text') {
-      // Send a text with Zoom scheduling link to the prospect
-      // Safety guardrail: always send only to current caller number, never an arbitrary spoken number.
+      // Send a text with the scheduling link to the prospect.
+      // TCPA safety guardrails:
+      //   1. Always send to the live caller number — never an arbitrary number
+      //      the model or prospect may speak aloud.
+      //   2. Require explicit verbal consent on the most recent user turn
+      //      before sending. If consent isn't on the latest turn, prompt the
+      //      agent to ask first and abort this tool call.
       const prospectName = args.prospect_name || leadData.first_name || 'there';
       const targetPhone = callerNumber;
       if (args.phone || args.phone_number || args.to) {
@@ -1528,6 +1533,28 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           provided: args.phone || args.phone_number || args.to,
           enforced: targetPhone,
         });
+      }
+
+      // SMS consent gate — block unless the most recent caller turn contained
+      // an affirmative response. Mirrors the transfer_call confirmation gate.
+      const smsConsentText = (lastAcceptedUserText || '').toLowerCase();
+      const smsHasNegative = /\b(no|nope|don't|do not|stop|wait|hold on|not now|later)\b/.test(smsConsentText);
+      const smsHasAffirmative = /\b(yes|yeah|yep|sure|ok|okay|please|go ahead|sounds good|that works|do it|send it|text it|fine)\b/.test(smsConsentText);
+      if (smsHasNegative || !smsHasAffirmative) {
+        logger.warn('stream', 'Blocked send_scheduling_text without explicit SMS consent', {
+          sessionId,
+          targetPhone,
+          lastAcceptedUserText: redactPII(lastAcceptedUserText),
+          hasNegative: smsHasNegative,
+          hasAffirmative: smsHasAffirmative,
+        });
+        if (!useDeepSeek) {
+          sendFunctionOutput(call_id, { status: 'consent_required', reason: 'no_explicit_sms_consent_on_last_turn' });
+        }
+        const consentMsg = '[System: Do NOT text yet. Ask one short yes/no question only: "Is it cool if I shoot you a quick text with the link to this number?" Wait for an explicit yes before calling send_scheduling_text. Never send to any number other than the one currently on the line.]';
+        if (useDeepSeek) callDeepSeekStreaming(consentMsg);
+        else sendUserMessage(consentMsg);
+        return;
       }
 
       logger.info('stream', 'Sending scheduling text', { sessionId, prospectName, targetPhone });
@@ -1647,11 +1674,20 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
       }
     } else if (name === 'schedule_callback') {
-      // Schedule a callback to call the prospect back later
+      // Schedule a callback to call the prospect back later.
+      // TCPA safety: callbacks ALWAYS go to the live caller number — never
+      // an arbitrary number the model or prospect speaks aloud during the call.
       const callbackTime = args.callback_time || '';
       const prospectName = args.prospect_name || leadData.first_name || 'Unknown';
       const reason = args.reason || '';
       const targetPhone = callerNumber;
+      if (args.phone || args.phone_number || args.to || args.callback_phone) {
+        logger.warn('stream', 'Ignored model-provided phone override for callback', {
+          sessionId,
+          provided: args.phone || args.phone_number || args.to || args.callback_phone,
+          enforced: targetPhone,
+        });
+      }
 
       logger.info('stream', 'Scheduling callback', { sessionId, prospectName, callbackTime, targetPhone });
 

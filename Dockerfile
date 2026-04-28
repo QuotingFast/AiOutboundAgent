@@ -7,6 +7,9 @@ RUN npm install --production=false
 
 COPY tsconfig.json ./
 COPY src ./src
+# Optional: ship the office-ambience WAV (custom background noise loop).
+# Safe to omit — code falls back to the synthetic generator if assets/ is missing.
+COPY assets ./assets
 
 RUN npm run build
 RUN npm prune --production

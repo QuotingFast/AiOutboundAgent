@@ -25,6 +25,7 @@ import {
 import { loadLeadsFromDisk } from '../memory';
 import { flushAll } from '../db/persistence';
 import { startAudioSocketServer } from '../audiosocket/server';
+import { initOfficeNoise } from '../audio/noise';
 
 export function createServer(): http.Server {
   const app = express();
@@ -71,6 +72,12 @@ export function startServer(): void {
 
   // Seed default campaigns (skips if campaigns already loaded from disk)
   seedCampaigns();
+
+  // Pre-load the office-ambience buffer (custom WAV/MP3 if present in
+  // assets/, else synthetic). Don't block startup — log on completion.
+  initOfficeNoise()
+    .then(() => logger.info('server', 'Office ambience buffer ready'))
+    .catch((err) => logger.error('server', 'Office ambience init failed', { error: String(err) }));
 
   // Graceful shutdown: flush all pending writes to disk
   const shutdownHandler = (signal: string) => {

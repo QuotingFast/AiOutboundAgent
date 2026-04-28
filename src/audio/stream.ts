@@ -483,16 +483,21 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     // Older preview models fall back to server_vad with conservative
     // thresholds.
     const useSemanticVad = /^gpt-realtime/.test(effectiveModel);
+    // Disable OpenAI's auto-response. We call response.create() ourselves
+    // from the input_audio_transcription.completed handler AFTER the
+    // rejection gate passes. This is the fix for the duplicate-response
+    // bug where a transient sound (line noise, echo, breathing) triggered
+    // a phantom VAD commit, OpenAI auto-fired a response, our barge-in
+    // cancelled it — then the next real commit auto-fired *another*
+    // response on the same user turn. Net: two agent replies played for
+    // one thing the caller said, making them feel unheard and repeat
+    // themselves. With auto-create off, every response is gated on a
+    // real, accepted transcript: one user utterance → one reply, period.
     const turnDetection: any = useSemanticVad
       ? {
           type: 'semantic_vad',
-          // 'high' = decide the user is done quickly. 'auto' caused 3-7s
-          // pauses on short answers ("Ah, Geico.") because the model was
-          // waiting to see if the user would continue. On phone sales calls
-          // a fast, decisive turn-take feels more human; the prospect can
-          // always interrupt if they have more to say.
           eagerness: 'high',
-          create_response: !useDeepSeek,
+          create_response: false,
           interrupt_response: true,
         }
       : {
@@ -500,7 +505,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           threshold: s.vadThreshold,
           prefix_padding_ms: s.prefixPaddingMs,
           silence_duration_ms: s.silenceDurationMs,
-          create_response: !useDeepSeek,
+          // See note on semantic_vad branch above — auto-response off,
+          // we trigger response.create() manually post-transcription.
+          create_response: false,
           interrupt_response: true,
         };
 
@@ -1350,7 +1357,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
         emitTranscript('user', userText);
 
-        // Auto-DNC detection: if user says "stop calling", add to DNC
+        // Auto-DNC detection: if user says "stop calling", add to DNC.
+        // DNC takes over the response — we return early so the normal
+        // response.create path below doesn't fire a second time.
         if (userText && callerNumber) {
           const autoDncSettings = getSettings();
           if (autoDncSettings.autoDncEnabled && handleAutoDnc(callerNumber, userText)) {
@@ -1365,6 +1374,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             } else {
               sendUserMessage(dncMsg);
             }
+            break;
           }
         }
 
@@ -1382,6 +1392,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             audioChunkCount = 0;
             callDeepSeekStreaming(userText);
           }
+        } else if (!useDeepSeek && userText.trim() && openaiWs?.readyState === WebSocket.OPEN) {
+          // OpenAI Realtime mode (ElevenLabs or native voice): auto-response
+          // is OFF in session config to prevent duplicates from phantom VAD
+          // commits. Trigger one response per accepted user transcript here.
+          responseRequestedAt = Date.now();
+          firstAudioAt = 0;
+          audioChunkCount = 0;
+          openaiWs.send(JSON.stringify({ type: 'response.create' }));
         }
         break;
       }

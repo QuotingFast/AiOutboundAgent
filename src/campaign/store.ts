@@ -74,6 +74,7 @@ export function loadCampaignStoreFromDisk(): void {
   if (campaignData) {
     let migratedVoiceProvider = 0;
     let migratedTemperature = 0;
+    let migratedRealtimeModel = 0;
     for (const [key, value] of Object.entries(campaignData)) {
       // Migration: the OpenAI Realtime native voice path produces no audible
       // audio for legacy persisted campaigns (because temperature 0.2 is
@@ -91,12 +92,21 @@ export function loadCampaignStoreFromDisk(): void {
         value.aiProfile.temperature = 0.6;
         migratedTemperature++;
       }
+      // Migration: bump persisted legacy realtime model aliases to the GA
+      // 'gpt-realtime' model. The preview aliases still work but the GA
+      // model has measurably better prosody, instruction following, and
+      // VAD behavior — and the alias will eventually deprecate.
+      if (value?.aiProfile && value.aiProfile.realtimeModel === 'gpt-4o-realtime-preview') {
+        value.aiProfile.realtimeModel = 'gpt-realtime';
+        migratedRealtimeModel++;
+      }
       campaigns.set(key, value);
     }
-    if (migratedVoiceProvider > 0 || migratedTemperature > 0) {
+    if (migratedVoiceProvider > 0 || migratedTemperature > 0 || migratedRealtimeModel > 0) {
       logger.info('campaign-store', 'Migrated persisted campaign configs', {
         voiceProviderUpdates: migratedVoiceProvider,
         temperatureUpdates: migratedTemperature,
+        realtimeModelUpdates: migratedRealtimeModel,
       });
       // Persist the migration so we don't repeat it on every restart.
       scheduleSave(CAMPAIGNS_KEY, () => Object.fromEntries(campaigns));
@@ -383,7 +393,7 @@ export function seedCampaigns(): void {
     companyName: 'Smart Quotes',
     temperature: 0.6,
     maxResponseTokens: 45,
-    realtimeModel: 'gpt-4o-realtime-preview',
+    realtimeModel: 'gpt-realtime',
     systemPrompt: buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}', vehicles: [{ year: '{{vehicle_year}}', make: '{{vehicle_make}}', model: '{{vehicle_model}}' }] }, { agentName: 'Steve', companyName: 'Smart Quotes' }),
     inboundPrompt: '',
     greetingText: 'Hi {{first_name}}, this is Steve with Smart Quotes. You requested a quote online for your {{vehicle_make}} — is now a bad time?',
@@ -476,7 +486,7 @@ export function seedCampaigns(): void {
     companyName: 'Quoting Fast',
     temperature: 0.7,
     maxResponseTokens: 200,
-    realtimeModel: 'gpt-4o-realtime-preview',
+    realtimeModel: 'gpt-realtime',
     systemPrompt: `You ARE Brook. Real person, real phone call. You're a biz dev rep at Quoting Fast. Mid-20s, sharp, know the insurance industry cold. Calling agencies because that's your job and you're good at it.
 
 ═══════════════════════════════════════════

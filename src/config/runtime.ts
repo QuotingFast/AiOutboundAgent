@@ -145,11 +145,16 @@ const settings: RuntimeSettings = {
       elevenlabsUseSpeakerBoost: true,
       elevenlabsSpeed: 0.97,
       deepseekModel: config.deepseek.model || 'deepseek-chat',
-      vadThreshold: 0.85,
-      silenceDurationMs: 800,
-      prefixPaddingMs: 200,
-      bargeInDebounceMs: 200,
-      echoSuppressionMs: 300,
+      // VAD tuning: prior 0.85/800ms was too eager — it triggered on phantom
+      // speech (background ambience leak, breathing, line noise) and treated
+      // mid-sentence pauses as user-finished. Bumped threshold up and silence
+      // duration out so the agent doesn't barge in on the prospect's pauses
+      // or hallucinate user turns from silence.
+      vadThreshold: 0.92,
+      silenceDurationMs: 1400,
+      prefixPaddingMs: 250,
+      bargeInDebounceMs: 350,
+      echoSuppressionMs: 450,
       maxResponseTokens: 45,
       agentName: 'Steve',
       companyName: 'Smart Quotes',
@@ -255,6 +260,23 @@ export function loadRuntimeFromDisk(): void {
       settings.temperature = 0.6;
       persistSettings();
     }
+    // Bump legacy preview-alias model to the GA 'gpt-realtime'.
+    if (settings.realtimeModel === 'gpt-4o-realtime-preview') {
+      settings.realtimeModel = 'gpt-realtime';
+      persistSettings();
+    }
+    // Heal too-loose VAD thresholds that persisted from prior latency-tuning
+    // commits — they cause phantom-speech detection and mid-pause cutoffs.
+    let vadMigrated = false;
+    if (typeof settings.vadThreshold === 'number' && settings.vadThreshold < 0.90) {
+      settings.vadThreshold = 0.92;
+      vadMigrated = true;
+    }
+    if (typeof settings.silenceDurationMs === 'number' && settings.silenceDurationMs < 1000) {
+      settings.silenceDurationMs = 1400;
+      vadMigrated = true;
+    }
+    if (vadMigrated) persistSettings();
   }
 }
 

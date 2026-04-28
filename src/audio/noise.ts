@@ -7,19 +7,26 @@ import path from 'path';
 // and mixes it into outgoing TTS audio at a configurable volume
 // (~10-15% default) to make the AI sound like it's in a real office.
 
-// µ-law encoding/decoding helpers
+// G.711 µ-law encoding/decoding (standard 16-bit linear range).
+// The previous implementation clipped at 14-bit (MULAW_MAX = 0x1FFF), which
+// matched what the synthetic noise generator produced internally but
+// catastrophically squashed any 16-bit input — including TTS audio passed
+// through mixNoiseIntoAudio() and any custom WAV/MP3 normalized to full
+// scale. That's why both the synthetic ambience and the user's ElevenLabs
+// office WAV came out as quiet "static": ~75% of the dynamic range was
+// clipped away on every audio frame. Fixed to the standard G.711 range.
+const MULAW_CLIP = 32635;
+const MULAW_BIAS = 0x84;
+
 function linearToMulaw(sample: number): number {
-  const MULAW_MAX = 0x1FFF;
-  const MULAW_BIAS = 33;
   const sign = sample < 0 ? 0x80 : 0;
-  if (sample < 0) sample = -sample;
-  if (sample > MULAW_MAX) sample = MULAW_MAX;
+  if (sign) sample = -sample;
+  if (sample > MULAW_CLIP) sample = MULAW_CLIP;
   sample += MULAW_BIAS;
   let exponent = 7;
   for (let expMask = 0x4000; (sample & expMask) === 0 && exponent > 0; exponent--, expMask >>= 1) { /* find exponent */ }
   const mantissa = (sample >> (exponent + 3)) & 0x0F;
-  const mulawByte = ~(sign | (exponent << 4) | mantissa) & 0xFF;
-  return mulawByte;
+  return ~(sign | (exponent << 4) | mantissa) & 0xFF;
 }
 
 function mulawToLinear(mulawByte: number): number {
@@ -27,8 +34,8 @@ function mulawToLinear(mulawByte: number): number {
   const sign = mulawByte & 0x80;
   const exponent = (mulawByte >> 4) & 0x07;
   const mantissa = mulawByte & 0x0F;
-  let sample = ((mantissa << 3) + 0x84) << exponent;
-  sample -= 0x84;
+  let sample = ((mantissa << 3) + MULAW_BIAS) << exponent;
+  sample -= MULAW_BIAS;
   return sign ? -sample : sample;
 }
 
@@ -298,11 +305,21 @@ function finalizeNoiseBuffer(mono: Float32Array, sourceSampleRate: number, label
     resampled[i] = resampled[i] * w + resampled[resampled.length - fadeLen + i] * (1 - w);
   }
 
-  // Convert to mulaw with ~15% headroom so peaks don't slam clip.
-  const SCALE = 8191 * 0.85;
+  // Peak-normalize. ElevenLabs ambience exports tend to sit at very low
+  // levels (peaks ~2% of full scale), which the volume slider then scales
+  // *further* down — total result was inaudible at typical settings. After
+  // normalizing the loop's peak to 0.6 of full scale, the dashboard volume
+  // slider has meaningful range (0.0–1.0 maps to silent–loud-but-not-clip).
+  let peak = 0;
+  for (let i = 0; i < resampled.length; i++) {
+    const a = Math.abs(resampled[i]);
+    if (a > peak) peak = a;
+  }
+  const normGain = peak > 0.001 ? (0.6 / peak) : 1;
+  const SCALE = MULAW_CLIP * 0.85;
   const mulaw = Buffer.alloc(resampled.length);
   for (let i = 0; i < resampled.length; i++) {
-    const s = Math.max(-1, Math.min(1, resampled[i]));
+    const s = Math.max(-1, Math.min(1, resampled[i] * normGain));
     mulaw[i] = linearToMulaw(Math.round(s * SCALE));
   }
 
@@ -313,6 +330,8 @@ function finalizeNoiseBuffer(mono: Float32Array, sourceSampleRate: number, label
     sourceBitsPerSample: label.bitsPerSample,
     frames: mulaw.length,
     durationSec: Math.round(mulaw.length / SAMPLE_RATE),
+    sourcePeak: Number(peak.toFixed(4)),
+    normGain: Number(normGain.toFixed(2)),
   });
   return mulaw;
 }

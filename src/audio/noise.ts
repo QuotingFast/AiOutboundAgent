@@ -51,6 +51,21 @@ class PRNG {
 // ── Noise Buffer ──
 
 let officeNoiseBuffer: Buffer | null = null;
+// Diagnostic state — exposed via /api/debug/noise to figure out why a custom
+// asset isn't loading (file missing in image, decode failure, async race, etc).
+const noiseLoadDiagnostics = {
+  startedAt: 0 as number,
+  finishedAt: 0 as number,
+  source: 'pending' as 'pending' | 'custom' | 'synthetic',
+  customPath: null as string | null,
+  customExists: false as boolean,
+  customExtension: null as string | null,
+  customByteSize: 0,
+  decodeError: null as string | null,
+  bufferLengthBytes: 0,
+  loaderCwd: '' as string,
+  assetsDirContents: [] as string[],
+};
 const SAMPLE_RATE = 8000;
 const BUFFER_DURATION_SEC = 30; // 30-second loopable buffer (longer = harder to detect repetition)
 const BUFFER_LENGTH = SAMPLE_RATE * BUFFER_DURATION_SEC;
@@ -303,28 +318,68 @@ function finalizeNoiseBuffer(mono: Float32Array, sourceSampleRate: number, label
 }
 
 async function loadCustomNoiseFile(): Promise<Buffer | null> {
+  noiseLoadDiagnostics.loaderCwd = process.cwd();
+  const assetsDir = path.join(process.cwd(), 'assets');
+  try {
+    noiseLoadDiagnostics.assetsDirContents = fs.existsSync(assetsDir) ? fs.readdirSync(assetsDir) : [];
+  } catch { noiseLoadDiagnostics.assetsDirContents = []; }
+
   const customPath = findCustomNoiseFile();
-  if (!customPath) return null;
+  noiseLoadDiagnostics.customPath = customPath;
+  if (!customPath) {
+    logger.warn('noise', 'No custom noise file found anywhere — using synthetic', {
+      cwd: noiseLoadDiagnostics.loaderCwd,
+      checkedAssetsDir: assetsDir,
+      assetsDirContents: noiseLoadDiagnostics.assetsDirContents,
+      envPath: process.env.BACKGROUND_NOISE_FILE || null,
+    });
+    return null;
+  }
 
   try {
+    const stat = fs.statSync(customPath);
+    noiseLoadDiagnostics.customExists = true;
+    noiseLoadDiagnostics.customByteSize = stat.size;
+    noiseLoadDiagnostics.customExtension = path.extname(customPath).toLowerCase();
+
     const buf = fs.readFileSync(customPath);
     const ext = path.extname(customPath).toLowerCase();
+    logger.info('noise', 'Decoding custom noise file', {
+      path: customPath,
+      bytes: buf.length,
+      ext,
+    });
     const decoded = ext === '.mp3'
       ? await decodeMp3(buf, customPath)
       : decodeWav(buf, customPath);
-    if (!decoded) return null;
+    if (!decoded) {
+      noiseLoadDiagnostics.decodeError = 'decoder returned null (see prior log)';
+      return null;
+    }
     return finalizeNoiseBuffer(decoded.mono, decoded.sampleRate, {
       path: customPath,
       channels: decoded.channels,
       bitsPerSample: decoded.bitsPerSample,
     });
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    noiseLoadDiagnostics.decodeError = msg;
     logger.error('noise', 'Failed to load custom noise file — falling back to synthetic', {
       path: customPath,
-      error: err instanceof Error ? err.message : String(err),
+      error: msg,
     });
     return null;
   }
+}
+
+export function getNoiseDiagnostics() {
+  return {
+    ...noiseLoadDiagnostics,
+    cachedBufferLengthBytes: officeNoiseBuffer ? officeNoiseBuffer.length : 0,
+    cachedSource: noiseLoadDiagnostics.source,
+    initStarted,
+    initSettled: !!noiseLoadDiagnostics.finishedAt,
+  };
 }
 
 let initStarted = false;
@@ -339,31 +394,41 @@ let initPromise: Promise<void> | null = null;
 export function initOfficeNoise(): Promise<void> {
   if (initPromise) return initPromise;
   initStarted = true;
+  noiseLoadDiagnostics.startedAt = Date.now();
   initPromise = (async () => {
     const custom = await loadCustomNoiseFile();
     if (custom) {
       officeNoiseBuffer = custom;
+      noiseLoadDiagnostics.source = 'custom';
     } else {
       officeNoiseBuffer = generateOfficeNoiseBuffer();
+      noiseLoadDiagnostics.source = 'synthetic';
       logger.info('noise', `Synthetic office noise buffer generated: ${officeNoiseBuffer.length} bytes (${BUFFER_DURATION_SEC}s @ ${SAMPLE_RATE}Hz mulaw)`);
     }
+    noiseLoadDiagnostics.finishedAt = Date.now();
+    noiseLoadDiagnostics.bufferLengthBytes = officeNoiseBuffer.length;
   })();
   return initPromise;
 }
 
+// Reusable transient synthetic buffer used while async init is still in flight.
+// Lives separately from officeNoiseBuffer so a pre-init call doesn't poison
+// the cache and prevent the real custom buffer from being installed once
+// initOfficeNoise() resolves.
+let transientSyntheticBuffer: Buffer | null = null;
+
 export function getOfficeNoiseBuffer(): Buffer {
-  if (!officeNoiseBuffer) {
-    // Init wasn't called (or hasn't finished). Synthesize synchronously so
-    // the audio path never blocks on a missing buffer; the proper custom
-    // buffer will replace this once initOfficeNoise() resolves.
-    if (!initStarted) {
-      initOfficeNoise().catch(() => { /* logged inside */ });
-    }
-    if (!officeNoiseBuffer) {
-      officeNoiseBuffer = generateOfficeNoiseBuffer();
-    }
+  if (officeNoiseBuffer) return officeNoiseBuffer;
+
+  // Init hasn't completed yet. Kick it off if nothing has, then serve a
+  // transient synthetic buffer for the brief window until it resolves.
+  if (!initStarted) {
+    initOfficeNoise().catch(() => { /* logged inside */ });
   }
-  return officeNoiseBuffer;
+  if (!transientSyntheticBuffer) {
+    transientSyntheticBuffer = generateOfficeNoiseBuffer();
+  }
+  return transientSyntheticBuffer;
 }
 
 // ── Mixer ──

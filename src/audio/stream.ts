@@ -476,20 +476,44 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
     const effectiveModel = activeCampaign?.aiProfile?.realtimeModel || s.realtimeModel;
 
+    // Pick turn-detection strategy based on model. The GA 'gpt-realtime'
+    // model supports semantic_vad, which uses the model itself to decide
+    // when the user is done speaking — much more robust than energy-based
+    // server_vad, especially with background ambience playing on the line.
+    // Older preview models fall back to server_vad with conservative
+    // thresholds.
+    const useSemanticVad = /^gpt-realtime/.test(effectiveModel);
+    const turnDetection: any = useSemanticVad
+      ? {
+          type: 'semantic_vad',
+          eagerness: 'auto',
+          create_response: !useDeepSeek,
+          interrupt_response: true,
+        }
+      : {
+          type: 'server_vad',
+          threshold: s.vadThreshold,
+          prefix_padding_ms: s.prefixPaddingMs,
+          silence_duration_ms: s.silenceDurationMs,
+          create_response: !useDeepSeek,
+          interrupt_response: true,
+        };
+
     logger.info('stream', 'Configuring session', {
       sessionId,
       campaignId: activeCampaign?.id || 'none',
       voiceProvider: campaignVoice?.voiceProvider || s.voiceProvider,
       voice: useElevenLabs ? `elevenlabs:${campaignVoice?.elevenlabsVoiceId || s.elevenlabsVoiceId}` : s.voice,
       model: effectiveModel,
+      turnDetectionType: turnDetection.type,
       vadThreshold: s.vadThreshold,
       silenceDurationMs: s.silenceDurationMs,
       maxTokens: effectiveMaxTokens,
     });
 
     if (useDeepSeek) {
-      // DeepSeek mode: OpenAI Realtime is STT-only (no auto-response)
-      // Store instructions for DeepSeek API calls
+      // DeepSeek mode: OpenAI Realtime is STT-only (no auto-response).
+      // Force create_response=false on the unified turnDetection.
       deepseekInstructions = instructions;
       openaiWs.send(JSON.stringify({
         type: 'session.update',
@@ -498,14 +522,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           instructions: 'You are a speech-to-text transcription relay. Do not generate responses.',
           input_audio_format: 'g711_ulaw',
           input_audio_transcription: { model: 'gpt-4o-transcribe' },
-          turn_detection: {
-            type: 'server_vad',
-            threshold: s.vadThreshold,
-            prefix_padding_ms: s.prefixPaddingMs,
-            silence_duration_ms: s.silenceDurationMs,
-            create_response: false,
-            interrupt_response: true,
-          },
+          turn_detection: { ...turnDetection, create_response: false },
           tools: [],
           max_response_output_tokens: 1,
           temperature: 0.6,
@@ -519,14 +536,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           instructions,
           input_audio_format: 'g711_ulaw',
           input_audio_transcription: { model: 'gpt-4o-transcribe' },
-          turn_detection: {
-            type: 'server_vad',
-            threshold: s.vadThreshold,
-            prefix_padding_ms: s.prefixPaddingMs,
-            silence_duration_ms: s.silenceDurationMs,
-            create_response: true,
-            interrupt_response: true,
-          },
+          turn_detection: turnDetection,
           tools: getRealtimeTools(),
           max_response_output_tokens: effectiveMaxTokens,
           temperature: effectiveTemperature,
@@ -542,14 +552,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           input_audio_format: 'g711_ulaw',
           output_audio_format: 'g711_ulaw',
           input_audio_transcription: { model: 'gpt-4o-transcribe' },
-          turn_detection: {
-            type: 'server_vad',
-            threshold: s.vadThreshold,
-            prefix_padding_ms: s.prefixPaddingMs,
-            silence_duration_ms: s.silenceDurationMs,
-            create_response: true,
-            interrupt_response: true,
-          },
+          turn_detection: turnDetection,
           tools: getRealtimeTools(),
           max_response_output_tokens: effectiveMaxTokens,
           temperature: effectiveTemperature,

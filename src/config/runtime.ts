@@ -145,12 +145,13 @@ const settings: RuntimeSettings = {
       elevenlabsUseSpeakerBoost: true,
       elevenlabsSpeed: 0.97,
       deepseekModel: config.deepseek.model || 'deepseek-chat',
-      // VAD tuning: prior 0.85/800ms was too eager — it triggered on phantom
-      // speech (background ambience leak, breathing, line noise) and treated
-      // mid-sentence pauses as user-finished. Bumped threshold up and silence
-      // duration out so the agent doesn't barge in on the prospect's pauses
-      // or hallucinate user turns from silence.
-      vadThreshold: 0.92,
+      // VAD tuning. Note: with the GA gpt-realtime model the agent now uses
+      // semantic_vad and these fields are unused. They only matter when the
+      // model is one of the legacy preview aliases.
+      // 0.65 is a safe phone-call threshold (lower = more sensitive). The
+      // long silence_duration prevents cutting users off mid-pause; the
+      // strict threshold avoids triggering on ambient noise/breathing.
+      vadThreshold: 0.65,
       silenceDurationMs: 1400,
       prefixPaddingMs: 250,
       bargeInDebounceMs: 350,
@@ -265,11 +266,15 @@ export function loadRuntimeFromDisk(): void {
       settings.realtimeModel = 'gpt-realtime';
       persistSettings();
     }
-    // Heal too-loose VAD thresholds that persisted from prior latency-tuning
-    // commits — they cause phantom-speech detection and mid-pause cutoffs.
+    // Heal pathological VAD thresholds. The previous 0.92 default was too
+    // strict and made the agent unable to hear normal phone speech; the
+    // older 0.85 was too eager. Anything outside [0.5, 0.85] gets reset to
+    // the safe 0.65 default. Note: only applies when the legacy server_vad
+    // path is used (preview models); gpt-realtime ignores this entirely
+    // and uses semantic_vad instead.
     let vadMigrated = false;
-    if (typeof settings.vadThreshold === 'number' && settings.vadThreshold < 0.90) {
-      settings.vadThreshold = 0.92;
+    if (typeof settings.vadThreshold === 'number' && (settings.vadThreshold < 0.5 || settings.vadThreshold > 0.85)) {
+      settings.vadThreshold = 0.65;
       vadMigrated = true;
     }
     if (typeof settings.silenceDurationMs === 'number' && settings.silenceDurationMs < 1000) {

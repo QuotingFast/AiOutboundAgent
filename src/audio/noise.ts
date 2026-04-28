@@ -1,4 +1,6 @@
 import { logger } from '../utils/logger';
+import fs from 'fs';
+import path from 'path';
 
 // ── Background Noise Injection ─────────────────────────────────────
 // Generates a synthetic office ambiance buffer in 8kHz µ-law format
@@ -135,10 +137,150 @@ function generateOfficeNoiseBuffer(): Buffer {
   return mulaw;
 }
 
+// ── Custom WAV loader ─────────────────────────────────────────────
+// Allows replacing the synthetic noise with a real recording (e.g. an
+// ElevenLabs office-ambience export). Looks for a WAV file at:
+//   1. process.env.BACKGROUND_NOISE_FILE (absolute path)
+//   2. <repo>/assets/office-ambience.wav
+// On success the file is decoded once, downmixed to mono, resampled to
+// 8 kHz, converted to mulaw, and cross-faded for seamless looping.
+// Any failure logs an error and falls back to the synthetic generator.
+
+function loadCustomNoiseWav(): Buffer | null {
+  const customPath = process.env.BACKGROUND_NOISE_FILE
+    || path.join(process.cwd(), 'assets', 'office-ambience.wav');
+  if (!fs.existsSync(customPath)) {
+    return null;
+  }
+
+  try {
+    const buf = fs.readFileSync(customPath);
+
+    if (buf.length < 44 || buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') {
+      logger.error('noise', 'Custom noise file is not a valid RIFF/WAVE', { path: customPath });
+      return null;
+    }
+
+    let format = 0, channels = 0, sampleRate = 0, bitsPerSample = 0;
+    let dataOffset = -1, dataSize = 0;
+    let offset = 12;
+    while (offset + 8 <= buf.length) {
+      const chunkId = buf.toString('ascii', offset, offset + 4);
+      const chunkSize = buf.readUInt32LE(offset + 4);
+      if (chunkId === 'fmt ') {
+        format = buf.readUInt16LE(offset + 8);
+        channels = buf.readUInt16LE(offset + 10);
+        sampleRate = buf.readUInt32LE(offset + 12);
+        bitsPerSample = buf.readUInt16LE(offset + 22);
+      } else if (chunkId === 'data') {
+        dataOffset = offset + 8;
+        dataSize = chunkSize;
+        break;
+      }
+      offset += 8 + chunkSize + (chunkSize & 1); // pad byte if odd
+    }
+
+    if (dataOffset < 0 || channels < 1 || sampleRate < 1 || (format !== 1 && format !== 3)) {
+      logger.error('noise', 'Unsupported WAV format', { path: customPath, format, channels, sampleRate, bitsPerSample });
+      return null;
+    }
+
+    const bytesPerSample = bitsPerSample / 8;
+    const frameSize = bytesPerSample * channels;
+    const totalFrames = Math.floor(dataSize / frameSize);
+    if (totalFrames < sampleRate) {
+      logger.error('noise', 'Custom noise file too short (<1s)', { path: customPath, totalFrames });
+      return null;
+    }
+
+    const mono = new Float32Array(totalFrames);
+    for (let i = 0; i < totalFrames; i++) {
+      let sum = 0;
+      for (let c = 0; c < channels; c++) {
+        const sOff = dataOffset + (i * channels + c) * bytesPerSample;
+        let v: number;
+        if (format === 3 && bitsPerSample === 32) {
+          v = buf.readFloatLE(sOff);
+        } else if (bitsPerSample === 16) {
+          v = buf.readInt16LE(sOff) / 32768;
+        } else if (bitsPerSample === 24) {
+          const b0 = buf[sOff], b1 = buf[sOff + 1], b2 = buf[sOff + 2];
+          let raw = (b2 << 16) | (b1 << 8) | b0;
+          if (raw & 0x800000) raw |= ~0xFFFFFF;
+          v = raw / 8388608;
+        } else if (bitsPerSample === 32 && format === 1) {
+          v = buf.readInt32LE(sOff) / 2147483648;
+        } else if (bitsPerSample === 8) {
+          v = (buf[sOff] - 128) / 128;
+        } else {
+          logger.error('noise', 'Unsupported bit depth', { bitsPerSample });
+          return null;
+        }
+        sum += v;
+      }
+      mono[i] = sum / channels;
+    }
+
+    // Resample to 8 kHz with linear interpolation (good enough for ambience).
+    let resampled: Float32Array;
+    if (sampleRate === SAMPLE_RATE) {
+      resampled = mono;
+    } else {
+      const ratio = sampleRate / SAMPLE_RATE;
+      const outLen = Math.floor(mono.length / ratio);
+      resampled = new Float32Array(outLen);
+      for (let i = 0; i < outLen; i++) {
+        const src = i * ratio;
+        const i0 = Math.floor(src);
+        const i1 = Math.min(i0 + 1, mono.length - 1);
+        const frac = src - i0;
+        resampled[i] = mono[i0] * (1 - frac) + mono[i1] * frac;
+      }
+    }
+
+    // Cross-fade the ends for seamless looping (100 ms).
+    const fadeLen = Math.min(Math.floor(SAMPLE_RATE * 0.1), Math.floor(resampled.length / 4));
+    for (let i = 0; i < fadeLen; i++) {
+      const w = i / fadeLen;
+      resampled[i] = resampled[i] * w + resampled[resampled.length - fadeLen + i] * (1 - w);
+    }
+
+    // Convert to mulaw. linearToMulaw clips at 0x1FFF so scale [-1, 1] into
+    // that range and leave a little headroom so peaks don't slam to clip.
+    const SCALE = 8191 * 0.85;
+    const mulaw = Buffer.alloc(resampled.length);
+    for (let i = 0; i < resampled.length; i++) {
+      const s = Math.max(-1, Math.min(1, resampled[i]));
+      mulaw[i] = linearToMulaw(Math.round(s * SCALE));
+    }
+
+    logger.info('noise', 'Loaded custom office ambience from WAV', {
+      path: customPath,
+      sourceSampleRate: sampleRate,
+      sourceChannels: channels,
+      sourceBitsPerSample: bitsPerSample,
+      frames: mulaw.length,
+      durationSec: Math.round(mulaw.length / SAMPLE_RATE),
+    });
+    return mulaw;
+  } catch (err) {
+    logger.error('noise', 'Failed to decode custom noise WAV — falling back to synthetic', {
+      path: customPath,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
 export function getOfficeNoiseBuffer(): Buffer {
   if (!officeNoiseBuffer) {
-    officeNoiseBuffer = generateOfficeNoiseBuffer();
-    logger.info('noise', `Office noise buffer generated: ${officeNoiseBuffer.length} bytes (${BUFFER_DURATION_SEC}s @ ${SAMPLE_RATE}Hz mulaw)`);
+    const custom = loadCustomNoiseWav();
+    if (custom) {
+      officeNoiseBuffer = custom;
+    } else {
+      officeNoiseBuffer = generateOfficeNoiseBuffer();
+      logger.info('noise', `Synthetic office noise buffer generated: ${officeNoiseBuffer.length} bytes (${BUFFER_DURATION_SEC}s @ ${SAMPLE_RATE}Hz mulaw)`);
+    }
   }
   return officeNoiseBuffer;
 }

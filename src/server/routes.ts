@@ -504,6 +504,14 @@ router.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), system: health });
 });
 
+// Diagnostic endpoint for the office-ambience loader. Returns where the loader
+// looked, what it found, whether decoding succeeded, and which buffer is live.
+router.get('/api/debug/noise', (_req: Request, res: Response) => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { getNoiseDiagnostics } = require('../audio/noise');
+  res.json(getNoiseDiagnostics());
+});
+
 router.get('/dashboard', (_req: Request, res: Response) => {
   res.type('text/html');
   res.send(getDashboardHtml());

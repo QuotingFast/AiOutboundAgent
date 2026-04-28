@@ -486,7 +486,12 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     const turnDetection: any = useSemanticVad
       ? {
           type: 'semantic_vad',
-          eagerness: 'auto',
+          // 'high' = decide the user is done quickly. 'auto' caused 3-7s
+          // pauses on short answers ("Ah, Geico.") because the model was
+          // waiting to see if the user would continue. On phone sales calls
+          // a fast, decisive turn-take feels more human; the prospect can
+          // always interrupt if they have more to say.
+          eagerness: 'high',
           create_response: !useDeepSeek,
           interrupt_response: true,
         }

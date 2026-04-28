@@ -154,8 +154,11 @@ const settings: RuntimeSettings = {
       vadThreshold: 0.65,
       silenceDurationMs: 1400,
       prefixPaddingMs: 250,
-      bargeInDebounceMs: 350,
-      echoSuppressionMs: 450,
+      // Aggressive barge-in for snappy turn-taking. With semantic_vad
+      // handling phantom-speech rejection at the model level we don't
+      // need long debounces here as a defensive moat anymore.
+      bargeInDebounceMs: 150,
+      echoSuppressionMs: 250,
       maxResponseTokens: 45,
       agentName: 'Steve',
       companyName: 'Smart Quotes',
@@ -279,6 +282,15 @@ export function loadRuntimeFromDisk(): void {
     }
     if (typeof settings.silenceDurationMs === 'number' && settings.silenceDurationMs < 1000) {
       settings.silenceDurationMs = 1400;
+      vadMigrated = true;
+    }
+    // Heal sluggish barge-in/echo windows from the prior over-correction.
+    if (typeof settings.bargeInDebounceMs === 'number' && settings.bargeInDebounceMs > 250) {
+      settings.bargeInDebounceMs = 150;
+      vadMigrated = true;
+    }
+    if (typeof settings.echoSuppressionMs === 'number' && settings.echoSuppressionMs > 350) {
+      settings.echoSuppressionMs = 250;
       vadMigrated = true;
     }
     if (vadMigrated) persistSettings();

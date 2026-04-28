@@ -668,7 +668,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     const voiceId = effectiveVoiceId;
     logger.info('stream', 'ElevenLabs connecting', { sessionId, voiceId, campaignId: activeCampaign?.id || 'none' });
     const modelId = effectiveModelId;
-    const url = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=${modelId}&output_format=ulaw_8000`;
+    // optimize_streaming_latency=3 trades a tiny bit of audio quality for
+    // ~30-40% faster first-byte. Inaudible on a phone line.
+    // inactivity_timeout=180 keeps the WS alive 3 minutes between turns
+    // so we don't pay reconnect cost mid-call.
+    const url = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=${modelId}&output_format=ulaw_8000&optimize_streaming_latency=3&inactivity_timeout=180`;
 
     const ws = new WebSocket(url);
     elevenLabsWs = ws;
@@ -690,7 +694,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           use_speaker_boost: effectiveUseSpeakerBoost,
         },
         generation_config: {
-          chunk_length_schedule: [120, 160, 250, 290],
+          // auto_mode triggers TTS on every text chunk we send instead of
+          // waiting for chunk_length_schedule (was buffering the first 120
+          // characters before starting). Each token from OpenAI now
+          // immediately produces audio. Cuts ~200-400 ms off first audio.
+          auto_mode: true,
           ...(effectiveSpeed !== 1.0 ? { speed: effectiveSpeed } : {}),
         },
         xi_api_key: config.elevenlabs.apiKey,

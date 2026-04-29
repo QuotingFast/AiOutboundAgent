@@ -514,7 +514,7 @@ export function getDashboardHtml(): string {
     <div class="call-row">
       <div class="field">
         <label>To Number</label>
-        <input type="text" id="callTo" placeholder="+19547905093">
+        <input type="text" id="callTo" value="+13073183551" placeholder="+13073183551">
       </div>
       <div class="field">
         <label>From Number</label>
@@ -522,7 +522,7 @@ export function getDashboardHtml(): string {
       </div>
       <div class="field">
         <label>Lead Name</label>
-        <input type="text" id="callName" value="Justin">
+        <input type="text" id="callName" value="Thomas">
       </div>
       <div class="field">
         <label>Lead State</label>

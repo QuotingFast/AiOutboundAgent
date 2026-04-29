@@ -1,5 +1,6 @@
 import { logger } from '../utils/logger';
 import { loadData, scheduleSave } from '../db/persistence';
+import type { PropertyValidationResult } from '../property/types';
 
 // ── Cross-Session Lead Memory ───────────────────────────────────────
 
@@ -16,6 +17,7 @@ export interface LeadMemory {
   disposition: 'new' | 'contacted' | 'interested' | 'transferred' | 'not_interested' | 'dnc' | 'callback';
   callbackScheduled?: string;
   customFields: Record<string, unknown>;
+  propertyValidation?: PropertyValidationResult;
 }
 
 export interface LeadCallSummary {
@@ -133,6 +135,23 @@ export function addLeadTag(phone: string, tag: string): void {
     lead.tags.push(tag);
     persistLeads();
   }
+}
+
+export function setPropertyValidation(phone: string, result: PropertyValidationResult): void {
+  const lead = leadStore.get(normalizePhone(phone));
+  if (!lead) return;
+  lead.propertyValidation = result;
+  // Tag homeowner-verified leads for easy filtering
+  if (result.isVerifiedHomeowner && !lead.tags.includes('homeowner-verified')) {
+    lead.tags.push('homeowner-verified');
+  }
+  if (result.homeownerMismatch && !lead.tags.includes('homeowner-mismatch')) {
+    lead.tags.push('homeowner-mismatch');
+  }
+  if (result.bundleOpportunity && !lead.tags.includes('bundle-opportunity')) {
+    lead.tags.push('bundle-opportunity');
+  }
+  persistLeads();
 }
 
 export function scheduleCallback(phone: string, dateTime: string): void {
@@ -527,6 +546,23 @@ export function buildLeadContext(phone: string): string {
       lines.push(`\nINFO FROM THEIR ONLINE QUOTE REQUEST:`);
       lines.push(...webDataLines);
       lines.push(`Reference this info naturally to show you know their situation — e.g., "I see you're looking for coverage on your [vehicle]" — but don't recite every detail.`);
+    }
+  }
+
+  // Property validation context
+  const pv = lead.propertyValidation;
+  if (pv && pv.status === 'success') {
+    const pvLines: string[] = [];
+    if (pv.isVerifiedHomeowner) pvLines.push(`- Verified homeowner`);
+    if (pv.propertyType) pvLines.push(`- Property type: ${pv.propertyType}`);
+    if (pv.estimatedValue || pv.assessedValue) {
+      const val = pv.estimatedValue || pv.assessedValue;
+      pvLines.push(`- Property value: ~$${(val! / 1000).toFixed(0)}k`);
+    }
+    if (pv.yearBuilt) pvLines.push(`- Year built: ${pv.yearBuilt}`);
+    if (pvLines.length > 0) {
+      lines.push(`\nPROPERTY DATA:`);
+      lines.push(...pvLines);
     }
   }
 

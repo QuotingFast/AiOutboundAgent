@@ -3124,6 +3124,40 @@ async function showLeadDetail(phone) {
       }
       html += '</div>';
     }
+    // Property Validation
+    if (d.propertyValidation) {
+      var pv = d.propertyValidation;
+      var pvStatusColor = pv.isVerifiedHomeowner ? '#22c55e' : pv.homeownerMismatch ? '#ef4444' : '#f59e0b';
+      var pvStatusLabel = pv.homeownerMismatch ? 'HOMEOWNER MISMATCH' : pv.isVerifiedHomeowner ? 'Verified Homeowner' : pv.ownershipStatus === 'renter' ? 'Renter' : 'Unknown';
+      html += '<h3 style="margin-bottom:8px">Property Validation</h3>';
+      html += '<div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px">';
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
+      html += '<span style="background:' + pvStatusColor + ';color:#fff;padding:3px 10px;border-radius:20px;font-weight:700;font-size:11px">' + pvStatusLabel + '</span>';
+      if (pv.bundleOpportunity) html += '<span style="background:#6366f1;color:#fff;padding:3px 10px;border-radius:20px;font-weight:700;font-size:11px">Bundle Opportunity</span>';
+      if (typeof pv.bundleScore === 'number') html += '<span style="color:var(--text2)">Bundle Score: <strong style="color:var(--accent)">' + pv.bundleScore + '/100</strong></span>';
+      html += '</div>';
+      var pvFields = [
+        ['Ownership', pv.ownershipStatus ? pv.ownershipStatus.replace('_', ' ') : null],
+        ['Owner on Record', pv.ownerName || null],
+        ['Property Type', pv.propertyType || null],
+        ['Year Built', pv.yearBuilt || null],
+        ['Est. Value', pv.estimatedValue ? '$' + Number(pv.estimatedValue).toLocaleString() : (pv.assessedValue ? '$' + Number(pv.assessedValue).toLocaleString() + ' (assessed)' : null)],
+        ['Sq Ft', pv.squareFootage ? Number(pv.squareFootage).toLocaleString() : null],
+        ['Beds / Baths', (pv.bedrooms || pv.bathrooms) ? (pv.bedrooms || '?') + ' bd / ' + (pv.bathrooms || '?') + ' ba' : null],
+        ['Validated', pv.validatedAt ? new Date(pv.validatedAt).toLocaleString() : null],
+        ['Source', pv.apiSource || null],
+      ];
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+      for (var pvi = 0; pvi < pvFields.length; pvi++) { if (pvFields[pvi][1]) html += '<span><span style="color:var(--text2)">' + pvFields[pvi][0] + ':</span> ' + pvFields[pvi][1] + '</span>'; }
+      html += '</div>';
+      if (pv.errorMessage) html += '<div style="margin-top:8px;color:#f59e0b;font-size:11px">Note: ' + pv.errorMessage + '</div>';
+      html += '<div style="margin-top:10px">';
+      html += '<button class="btn btn-sm btn-secondary" onclick="revalidateProperty(\\'' + d.phone + '\\')">Re-validate Property</button>';
+      html += '</div>';
+      html += '</div>';
+    } else {
+      html += '<div style="margin-bottom:16px"><button class="btn btn-sm btn-secondary" onclick="revalidateProperty(\\'' + d.phone + '\\')">Validate Property Ownership</button></div>';
+    }
     // Notes
     html += '<h3 style="margin-bottom:8px">Notes</h3>';
     if (d.notes && d.notes.length) {
@@ -3186,6 +3220,23 @@ async function removeLeadTag(phone, tag) {
     if (res.ok) { toast('Tag removed', 'success'); showLeadDetail(phone); loadLeads(); }
     else toast('Failed', 'error');
   } catch (e) { toast('Failed', 'error'); }
+}
+async function revalidateProperty(phone) {
+  try {
+    toast('Validating property...', 'info');
+    var res = await fetch('/api/leads/' + encodeURIComponent(phone) + '/validate-property', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+    var data = await res.json();
+    if (res.ok && data.success) {
+      var pv = data.result;
+      if (pv.homeownerMismatch) toast('Homeowner mismatch detected', 'error');
+      else if (pv.isVerifiedHomeowner) toast('Verified homeowner' + (pv.bundleOpportunity ? ' — bundle opportunity!' : ''), 'success');
+      else toast('Property validated: ' + (pv.ownershipStatus || 'unknown'), 'info');
+      showLeadDetail(phone);
+      loadLeads();
+    } else {
+      toast('Validation failed: ' + (data.error || 'unknown error'), 'error');
+    }
+  } catch (e) { toast('Property validation error', 'error'); }
 }
 function importLeadsCSV(input) {
   var file = input.files[0];

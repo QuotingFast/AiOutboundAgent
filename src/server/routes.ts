@@ -34,7 +34,9 @@ import {
   setLeadDisposition, addLeadNote, addLeadTag, scheduleCallback,
   getLeadCount, getLeadsByDisposition, getLeadsForCallback,
   searchLeads, importLeadsFromCSV, exportLeadsToCSV, calculateLeadScore,
+  setPropertyValidation,
 } from '../memory';
+import { validatePropertyOwnership, extractClaimedHomeowner } from '../property';
 import {
   logSms, getSmsLog, getSmsLogForLead, getSmsStats,
   getTemplates, getTemplate, createTemplate, updateTemplate, deleteTemplate,
@@ -1212,6 +1214,45 @@ router.delete('/api/leads/:phone/tags/:tag', (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/leads/:phone/validate-property
+ * Trigger (or re-trigger) property validation for a lead.
+ * Optionally accepts { claimedHomeowner: boolean } in body.
+ */
+router.post('/api/leads/:phone/validate-property', async (req: Request, res: Response) => {
+  const lead = getLeadMemory(req.params.phone);
+  if (!lead) {
+    res.status(404).json({ error: 'Lead not found' });
+    return;
+  }
+
+  const cf = lead.customFields as Record<string, any>;
+  const contact = cf.contact || {};
+  const claimedHomeowner = req.body.claimedHomeowner !== undefined
+    ? Boolean(req.body.claimedHomeowner)
+    : extractClaimedHomeowner(cf);
+
+  const nameParts = lead.name.split(' ');
+  const result = await validatePropertyOwnership({
+    firstName: nameParts[0] || lead.name,
+    lastName: nameParts.slice(1).join(' ') || undefined,
+    address: contact.address || cf.address as string || undefined,
+    city: contact.city || cf.city as string || undefined,
+    state: lead.state || contact.state || undefined,
+    zip: contact.zipCode || cf.zipCode as string || undefined,
+    phone: lead.phone,
+    claimedHomeowner,
+  });
+
+  setPropertyValidation(lead.phone, result);
+
+  if (result.homeownerMismatch) {
+    addLeadNote(lead.phone, `Property validation: claimed homeowner but records show ${result.ownershipStatus}. Homeowner mismatch flagged.`);
+  }
+
+  res.json({ success: true, result });
+});
+
+/**
  * Bulk lead operations
  */
 router.post('/api/leads/bulk/disposition', (req: Request, res: Response) => {
@@ -1621,6 +1662,54 @@ async function handleWeblead(req: Request, res: Response) {
           // Add auto-generated note with form submission details
           addLeadNote(phone, `Weblead received: ${drivers.length} driver(s), ${vehicles.length} vehicle(s). Current insurer: ${currentInsurer || 'N/A'}. Lead ID: ${body.id || 'N/A'}. Campaign: ${resolvedCampaignId || 'none'}`);
 
+          // ── Property Validation (async, non-blocking) ──
+          // If the lead has address info, validate homeownership in the background.
+          // Leads that claim to be homeowners but are NOT verified will be tagged
+          // 'homeowner-mismatch' and will NOT be auto-dialed.
+          const claimedHomeowner = extractClaimedHomeowner(body);
+          let propertyValidationResult = null;
+          if (address || zipCode) {
+                  const nameParts = fullName.split(' ');
+                  try {
+                        propertyValidationResult = await validatePropertyOwnership({
+                              firstName: nameParts[0] || firstName,
+                              lastName: nameParts.slice(1).join(' ') || lastName || undefined,
+                              address: address || undefined,
+                              city: city || undefined,
+                              state: state || undefined,
+                              zip: zipCode || undefined,
+                              phone,
+                              claimedHomeowner,
+                        });
+                        setPropertyValidation(phone, propertyValidationResult);
+
+                        if (propertyValidationResult.homeownerMismatch) {
+                              addLeadNote(phone, `HOMEOWNER MISMATCH: Lead claimed homeowner but property records show "${propertyValidationResult.ownershipStatus}". Auto-dial blocked.`);
+                              logger.warn('routes', 'Weblead homeowner mismatch — auto-dial will be blocked', {
+                                    phone, ownershipStatus: propertyValidationResult.ownershipStatus,
+                              });
+                        } else if (propertyValidationResult.isVerifiedHomeowner) {
+                              addLeadNote(phone, `Property validated: Verified homeowner. Bundle score: ${propertyValidationResult.bundleScore}/100.`);
+                        }
+                  } catch (pvErr) {
+                        logger.warn('routes', 'Property validation error (non-fatal)', {
+                              error: pvErr instanceof Error ? pvErr.message : String(pvErr),
+                        });
+                  }
+          }
+
+          // Block auto-dial if homeowner mismatch detected
+          if (propertyValidationResult?.homeownerMismatch) {
+                  res.json({
+                        success: true, phone, name: fullName, state,
+                        call: null, autoDialed: false, reason: 'homeowner_mismatch',
+                        campaignId: resolvedCampaignId, campaignResolved,
+                        formData: formDataSummary,
+                        propertyValidation: propertyValidationResult,
+                  });
+                  return;
+          }
+
           // Check settings for auto-dial
           const settings = getSettings();
           const autoDialEnabled = settings.webleadAutoDialEnabled === true; // default false — must opt-in
@@ -1744,6 +1833,7 @@ async function handleWeblead(req: Request, res: Response) {
                                         campaignId: resolvedCampaignId,
                                         campaignResolved,
                                         formData: formDataSummary,
+                                        propertyValidation: propertyValidationResult,
                             });
                             return;
                   }
@@ -1760,6 +1850,7 @@ async function handleWeblead(req: Request, res: Response) {
                             campaignId: resolvedCampaignId,
                             campaignResolved,
                             formData: formDataSummary,
+                            propertyValidation: propertyValidationResult,
                   });
                   return;
           }
@@ -1777,6 +1868,7 @@ async function handleWeblead(req: Request, res: Response) {
                   campaignId: resolvedCampaignId,
                   campaignResolved,
                   formData: formDataSummary,
+                  propertyValidation: propertyValidationResult,
           });
 
     } catch (err: unknown) {

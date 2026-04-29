@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { startOutboundCall, StartCallParams, sendSms, endCall, fetchRecentRecordings } from '../twilio/client';
-import { buildMediaStreamTwiml, buildTransferTwiml, escapeXml } from '../twilio/twiml';
+import { buildMediaStreamTwiml, buildTransferTwiml, buildConferenceProspectTwiml, buildAgentIntroTwiml, escapeXml } from '../twilio/twiml';
 import { registerPendingSession, hasPendingSession } from '../audio/stream';
 import { TransferConfig, buildSystemPrompt } from '../agent/prompts';
 import { getSettings, updateSettings, recordCall, getCallHistory } from '../config/runtime';
@@ -445,6 +445,43 @@ router.post('/twilio/transfer', (req: Request, res: Response) => {
   const twiml = buildTransferTwiml(target, phrase);
   res.type('text/xml');
   res.send(twiml);
+});
+
+/**
+ * POST /twilio/conference-prospect
+ * Puts the prospect into a named Conference room to wait for the agent.
+ */
+router.post('/twilio/conference-prospect', (req: Request, res: Response) => {
+  const conf = (req.query.conf as string) || '';
+  if (!conf) {
+    res.status(400).send('Missing conf parameter');
+    return;
+  }
+  logger.info('routes', 'Conference prospect TwiML requested', { conf });
+  const twiml = buildConferenceProspectTwiml(conf);
+  res.type('text/xml').send(twiml);
+});
+
+/**
+ * POST /twilio/agent-intro
+ * Serves TwiML for the agent leg of a warm conference transfer.
+ * Says the lead intro to the agent alone, then joins them into the waiting conference.
+ */
+router.post('/twilio/agent-intro', (req: Request, res: Response) => {
+  const conf = (req.query.conf as string) || '';
+  const firstname = (req.query.firstname as string) || 'the prospect';
+  const carrier = (req.query.carrier as string) || 'their current carrier';
+  const years = (req.query.years as string) || '';
+  const vehicles = (req.query.vehicles as string) || '1';
+
+  if (!conf) {
+    res.status(400).send('Missing conf parameter');
+    return;
+  }
+
+  logger.info('routes', 'Agent intro TwiML requested', { conf, firstname });
+  const twiml = buildAgentIntroTwiml(conf, firstname, carrier, years, vehicles);
+  res.type('text/xml').send(twiml);
 });
 
 /**

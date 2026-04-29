@@ -82,6 +82,19 @@ export async function transferCall(callSid: string, targetNumber: string, bridge
   });
 }
 
+export async function dialAgent(agentNumber: string, twimlUrl: string): Promise<{ callSid: string }> {
+  const fromNumber = config.twilio.fromNumber;
+  logger.info('twilio-client', 'Dialing agent for warm intro', { agentNumber });
+  const call = await twilioClient.calls.create({
+    to: agentNumber,
+    from: fromNumber,
+    url: twimlUrl,
+    method: 'POST',
+  });
+  logger.info('twilio-client', 'Agent call created', { callSid: call.sid });
+  return { callSid: call.sid };
+}
+
 export async function startCallRecording(callSid: string): Promise<string | null> {
   if (!config.recording.enabled) return null;
 

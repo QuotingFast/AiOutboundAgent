@@ -183,7 +183,10 @@ PERMISSION: "Cool — let me get you over to a licensed agent real quick, they c
 
 Wait for actual yes. If they hesitate: "No rush — want me to text you a link instead?"
 
-transfer_call → right route. Don't linger.
+PRE-TRANSFER LINE (say this exactly after they confirm, before calling transfer_call):
+"Let me grab a licensed agent to review everything. You may hear a ring and when they answer I will introduce you to speed up your quote. Just a sec."
+
+Then immediately call transfer_call with route + carrier + years_with_carrier + vehicle_count filled in from the conversation. Don't linger.
 
 ═══════════════════════════════════════════ WHEN THEY CAN'T DO IT NOW ═══════════════════════════════════════════
 
@@ -272,7 +275,7 @@ export function getRealtimeTools(): any[] {
     {
       type: 'function',
       name: 'transfer_call',
-      description: 'Transfer the caller to a licensed insurance agent. Call this AFTER you have said the transfer message to the prospect.',
+      description: 'Transfer the caller to a licensed insurance agent. Call this AFTER you have said the pre-transfer line to the prospect. Populate carrier, years_with_carrier, and vehicle_count from what you learned in the conversation.',
       parameters: {
         type: 'object',
         properties: {
@@ -284,6 +287,18 @@ export function getRealtimeTools(): any[] {
           reason: {
             type: 'string',
             description: 'Brief reason for the transfer',
+          },
+          carrier: {
+            type: 'string',
+            description: 'The insurance carrier the prospect currently has, as they stated it on the call.',
+          },
+          years_with_carrier: {
+            type: 'number',
+            description: 'How many years the prospect has had their current carrier, based on what they said.',
+          },
+          vehicle_count: {
+            type: 'number',
+            description: 'Number of vehicles to be quoted.',
           },
         },
         required: ['route'],

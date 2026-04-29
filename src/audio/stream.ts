@@ -1519,8 +1519,18 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       if (targetNumber) {
         await new Promise(r => setTimeout(r, 1500));
-        logger.info('stream', 'Executing blind transfer', { sessionId, route, target: targetNumber });
-        const success = await executeWarmTransfer(callSid, targetNumber);
+        logger.info('stream', 'Executing warm transfer', { sessionId, route, target: targetNumber });
+        const leadInfo = {
+          firstname: leadData?.first_name || 'the prospect',
+          carrier: args.carrier || normalizeCarrierForSpeech(leadData?.current_insurer) || undefined,
+          years: args.years_with_carrier != null
+            ? args.years_with_carrier
+            : (leadData?.continuous_months ? Math.round(leadData.continuous_months / 12) : undefined),
+          vehicleCount: args.vehicle_count != null
+            ? args.vehicle_count
+            : (leadData?.vehicles?.length || 1),
+        };
+        const success = await executeWarmTransfer(callSid, targetNumber, leadInfo);
         if (!success) {
           logger.error('stream', 'Transfer failed', { sessionId, route });
           if (analytics) analytics.setOutcome('ended', 'Transfer failed');

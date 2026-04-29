@@ -43,6 +43,7 @@ const featureFlags: CampaignFeatureFlags = {
   scheduled_callbacks: true,
   dynamic_voice_sync: true,
   hardened_campaign_isolation: true,
+  property_validation: false,   // off by default — enable in Settings > Feature Flags to test
 };
 
 const MAX_ENFORCEMENT_LOG = 1000;

@@ -204,4 +204,5 @@ export interface CampaignFeatureFlags {
   scheduled_callbacks: boolean;
   dynamic_voice_sync: boolean;
   hardened_campaign_isolation: boolean;
+  property_validation: boolean;
 }

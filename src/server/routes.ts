@@ -1663,12 +1663,11 @@ async function handleWeblead(req: Request, res: Response) {
           addLeadNote(phone, `Weblead received: ${drivers.length} driver(s), ${vehicles.length} vehicle(s). Current insurer: ${currentInsurer || 'N/A'}. Lead ID: ${body.id || 'N/A'}. Campaign: ${resolvedCampaignId || 'none'}`);
 
           // ── Property Validation (async, non-blocking) ──
-          // If the lead has address info, validate homeownership in the background.
-          // Leads that claim to be homeowners but are NOT verified will be tagged
-          // 'homeowner-mismatch' and will NOT be auto-dialed.
+          // Controlled by feature flag 'property_validation' — off by default.
+          // Enable from Settings > Feature Flags in the dashboard to test.
           const claimedHomeowner = extractClaimedHomeowner(body);
           let propertyValidationResult = null;
-          if (address || zipCode) {
+          if (isCampaignFlagEnabled('property_validation') && (address || zipCode)) {
                   const nameParts = fullName.split(' ');
                   try {
                         propertyValidationResult = await validatePropertyOwnership({

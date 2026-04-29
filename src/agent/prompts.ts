@@ -183,10 +183,6 @@ PERMISSION: "Cool — let me get you over to a licensed agent real quick, they c
 
 Wait for actual yes. If they hesitate: "No rush — want me to text you a link instead?"
 
-WARM HANDOFF: "Hey — got ${lead.first_name} here, with [carrier] for [time], [#] car. ${lead.first_name}, this is the agent — they'll get you squared away. Take care!"
-
-Uninsured: "Got ${lead.first_name}, currently between policies, [#] car. ${lead.first_name}, they'll take care of you."
-
 transfer_call → right route. Don't linger.
 
 ═══════════════════════════════════════════ WHEN THEY CAN'T DO IT NOW ═══════════════════════════════════════════

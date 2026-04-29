@@ -111,6 +111,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let lastSpeechDurationMs = 0;
   let lastRejectReason: string | null = null;
   let lastAcceptedUserText = '';
+  let consecutiveRepromptCount = 0;
 
   // Module instances (created when call starts)
   let analytics: CallAnalytics | null = null;
@@ -1065,12 +1066,22 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   }
 
   function deterministicReprompt(): void {
-    const line = 'Sorry, I didn\'t catch that — could you repeat that?';
+    consecutiveRepromptCount++;
+
+    // After 2 consecutive misses, stay silent — asking again is the loudest bot-tell.
+    if (consecutiveRepromptCount > 1) {
+      logger.info('stream', 'Deterministic reprompt suppressed (consecutive limit)', { sessionId, consecutiveRepromptCount });
+      return;
+    }
+
+    const variants = ['Hmm?', 'Say again?', 'Sorry?'];
+    const line = variants[Math.floor(Math.random() * variants.length)];
+
     if (useElevenLabs) {
       currentElevenLabsText = '';
       sendTextToElevenLabs(line);
       flushElevenLabs();
-      logger.info('stream', 'Deterministic reprompt', { sessionId, line });
+      logger.info('stream', 'Deterministic reprompt', { sessionId, line, consecutiveRepromptCount });
       return;
     }
     sendUserMessage(`[System: Say exactly: "${line}"]`);
@@ -1328,6 +1339,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
 
         lastRejectReason = null;
+        consecutiveRepromptCount = 0;
         if (normalizedUser) {
           lastUserTurnNorm = normalizedUser;
           lastUserTurnAt = Date.now();

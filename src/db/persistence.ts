@@ -38,13 +38,24 @@ export async function initPostgresPersistence(): Promise<void> {
 
   pgPool = new Pool({
     connectionString: url,
-    ssl: url.includes('render.com') ? { rejectUnauthorized: false } : false,
+    // Accept SSL for both external render.com URLs and internal dpg-* hostnames
+    ssl: { rejectUnauthorized: false },
     max: 5,
     idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5_000,
+    connectionTimeoutMillis: 8_000,
   });
 
-  const client = await pgPool.connect();
+  let client;
+  try {
+    client = await pgPool.connect();
+  } catch (err) {
+    logger.error('persistence', 'Postgres connection failed — falling back to file-based persistence', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    pgPool = null;
+    return;
+  }
+
   try {
     await client.query(`
       CREATE TABLE IF NOT EXISTS kv_store (
@@ -63,6 +74,11 @@ export async function initPostgresPersistence(): Promise<void> {
     logger.info('persistence', `Postgres persistence ready — ${result.rows.length} keys loaded`, {
       keys: result.rows.map(r => r.key),
     });
+  } catch (err) {
+    logger.error('persistence', 'Postgres init query failed — falling back to file-based persistence', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    pgPool = null;
   } finally {
     client.release();
   }

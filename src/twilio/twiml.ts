@@ -44,6 +44,34 @@ export function buildTransferTwiml(targetNumber: string, bridgePhrase: string): 
 </Response>`;
 }
 
+export function buildConferenceProspectTwiml(confName: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial>
+    <Conference startConferenceOnEnter="false" endConferenceOnExit="false" beep="false">${escapeXml(confName)}</Conference>
+  </Dial>
+  <Say voice="Polly.Matthew">We were unable to connect you with an agent. Someone will reach out to you shortly. Goodbye.</Say>
+</Response>`;
+}
+
+export function buildAgentIntroTwiml(
+  confName: string,
+  firstname: string,
+  carrier: string,
+  years: string,
+  vehicleCount: string,
+): string {
+  const yearsPhrase = years ? ` for ${escapeXml(years)} year${years === '1' ? '' : 's'}` : '';
+  const intro = `Hi, I have ${escapeXml(firstname)} on the line. They've been with ${escapeXml(carrier)}${yearsPhrase} and have ${escapeXml(vehicleCount)} vehicle${vehicleCount === '1' ? '' : 's'} they'd like a quote for. Thanks!`;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Matthew">${intro}</Say>
+  <Dial>
+    <Conference startConferenceOnEnter="true" endConferenceOnExit="true" beep="false">${escapeXml(confName)}</Conference>
+  </Dial>
+</Response>`;
+}
+
 export function escapeXml(str: string): string {
   return str
     .replace(/&/g, '&amp;')

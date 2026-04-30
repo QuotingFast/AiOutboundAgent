@@ -23,7 +23,7 @@ import {
   startScheduledCallbackWorker,
 } from '../campaign/scheduled-callbacks';
 import { loadLeadsFromDisk } from '../memory';
-import { flushAll } from '../db/persistence';
+import { flushAll, initPostgresPersistence } from '../db/persistence';
 import { startAudioSocketServer } from '../audiosocket/server';
 import { initOfficeNoise } from '../audio/noise';
 
@@ -61,9 +61,12 @@ export function createServer(): http.Server {
   return server;
 }
 
-export function startServer(): void {
-  // Load persisted data from disk before anything else
-  logger.info('server', 'Loading persisted data from disk...');
+export async function startServer(): Promise<void> {
+  // Init persistence backend (Postgres if DATABASE_URL set, else file-based)
+  await initPostgresPersistence();
+
+  // Load persisted data before anything else
+  logger.info('server', 'Loading persisted data...');
   loadRuntimeFromDisk();
   loadLeadsFromDisk();
   loadCampaignStoreFromDisk();

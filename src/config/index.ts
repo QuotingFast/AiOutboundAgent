@@ -70,4 +70,6 @@ export const config = {
   },
 
   debug: optional('DEBUG', 'false') === 'true',
+
+  databaseUrl: process.env.DATABASE_URL || '',
 };

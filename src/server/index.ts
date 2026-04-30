@@ -62,26 +62,6 @@ export function createServer(): http.Server {
 }
 
 export async function startServer(): Promise<void> {
-  // Init persistence backend (Postgres if DATABASE_URL set, else file-based)
-  await initPostgresPersistence();
-
-  // Load persisted data before anything else
-  logger.info('server', 'Loading persisted data...');
-  loadRuntimeFromDisk();
-  loadLeadsFromDisk();
-  loadCampaignStoreFromDisk();
-  loadRecordingsFromDisk();
-  logger.info('server', 'Persisted data loaded');
-
-  // Seed default campaigns (skips if campaigns already loaded from disk)
-  seedCampaigns();
-
-  // Pre-load the office-ambience buffer (custom WAV/MP3 if present in
-  // assets/, else synthetic). Don't block startup — log on completion.
-  initOfficeNoise()
-    .then(() => logger.info('server', 'Office ambience buffer ready'))
-    .catch((err) => logger.error('server', 'Office ambience init failed', { error: String(err) }));
-
   // Graceful shutdown: flush all pending writes to disk
   const shutdownHandler = (signal: string) => {
     logger.info('server', `Received ${signal}, flushing data to disk...`);
@@ -94,104 +74,126 @@ export async function startServer(): Promise<void> {
 
   const server = createServer();
 
-  server.listen(config.port, () => {
-    logger.info('server', `Server listening on port ${config.port}`);
-    logger.info('server', `Base URL: ${config.baseUrl}`);
-    logger.info('server', `Realtime model: ${config.openai.realtimeModel}`);
-    logger.info('server', `Voice: ${config.openai.voice}`);
-    logger.info('server', `TTS Provider: ${config.ttsProvider}`);
-    logger.info('server', `DeepSeek: ${config.deepseek.apiKey ? 'configured' : 'not configured'}`);
-    logger.info('server', `Debug mode: ${config.debug}`);
-    logger.info('server', `Multi-campaign mode: ${isFeatureFlagEnabled('multi_campaign_mode')}`);
-    logger.info('server', `Hardened isolation: ${isFeatureFlagEnabled('hardened_campaign_isolation')}`);
-    logger.info('server', 'Endpoints:');
-    logger.info('server', `  Dashboard:  ${config.baseUrl}/dashboard`);
-    logger.info('server', `  Outbound:   POST ${config.baseUrl}/call/start`);
-    logger.info('server', `  Inbound:    POST ${config.baseUrl}/twilio/incoming`);
-    logger.info('server', `  Voice:      POST ${config.baseUrl}/twilio/voice`);
-    logger.info('server', `  Stream:     WS   ${config.baseUrl.replace(/^http/, 'ws')}/twilio/stream`);
-    logger.info('server', `  Health:     GET  ${config.baseUrl}/health`);
-    logger.info('server', `  SMS In:     POST ${config.baseUrl}/twilio/sms-incoming`);
-    logger.info('server', `  Campaigns:  GET  ${config.baseUrl}/api/campaigns`);
-    logger.info('server', `  AudioSocket: TCP ${config.audiosocket.host}:${config.audiosocket.port} (${config.audiosocket.enabled ? 'enabled' : 'disabled'})`);
+  // Bind the port FIRST so Render's port-scan health check passes immediately.
+  // Postgres init and store loading happen after — requests during that window
+  // will work with file-based persistence or empty state (harmless at cold start).
+  await new Promise<void>((resolve) => server.listen(config.port, resolve));
+  logger.info('server', `Port ${config.port} open`);
 
-    // Start AudioSocket TCP server for Asterisk/VICIdial integration
-    if (config.audiosocket.enabled) {
-      startAudioSocketServer(config.audiosocket.port, config.audiosocket.host);
+  // Init persistence backend (Postgres if DATABASE_URL set, else file-based)
+  await initPostgresPersistence();
+
+  // Load persisted data
+  logger.info('server', 'Loading persisted data...');
+  loadRuntimeFromDisk();
+  loadLeadsFromDisk();
+  loadCampaignStoreFromDisk();
+  loadRecordingsFromDisk();
+  logger.info('server', 'Persisted data loaded');
+
+  // Seed default campaigns (skips if campaigns already loaded from disk)
+  seedCampaigns();
+
+  // Pre-load the office-ambience buffer
+  initOfficeNoise()
+    .then(() => logger.info('server', 'Office ambience buffer ready'))
+    .catch((err) => logger.error('server', 'Office ambience init failed', { error: String(err) }));
+
+  logger.info('server', `Server listening on port ${config.port}`);
+  logger.info('server', `Base URL: ${config.baseUrl}`);
+  logger.info('server', `Realtime model: ${config.openai.realtimeModel}`);
+  logger.info('server', `Voice: ${config.openai.voice}`);
+  logger.info('server', `TTS Provider: ${config.ttsProvider}`);
+  logger.info('server', `DeepSeek: ${config.deepseek.apiKey ? 'configured' : 'not configured'}`);
+  logger.info('server', `Debug mode: ${config.debug}`);
+  logger.info('server', `Multi-campaign mode: ${isFeatureFlagEnabled('multi_campaign_mode')}`);
+  logger.info('server', `Hardened isolation: ${isFeatureFlagEnabled('hardened_campaign_isolation')}`);
+  logger.info('server', 'Endpoints:');
+  logger.info('server', `  Dashboard:  ${config.baseUrl}/dashboard`);
+  logger.info('server', `  Outbound:   POST ${config.baseUrl}/call/start`);
+  logger.info('server', `  Inbound:    POST ${config.baseUrl}/twilio/incoming`);
+  logger.info('server', `  Voice:      POST ${config.baseUrl}/twilio/voice`);
+  logger.info('server', `  Stream:     WS   ${config.baseUrl.replace(/^http/, 'ws')}/twilio/stream`);
+  logger.info('server', `  Health:     GET  ${config.baseUrl}/health`);
+  logger.info('server', `  SMS In:     POST ${config.baseUrl}/twilio/sms-incoming`);
+  logger.info('server', `  Campaigns:  GET  ${config.baseUrl}/api/campaigns`);
+  logger.info('server', `  AudioSocket: TCP ${config.audiosocket.host}:${config.audiosocket.port} (${config.audiosocket.enabled ? 'enabled' : 'disabled'})`);
+
+  // Start AudioSocket TCP server for Asterisk/VICIdial integration
+  if (config.audiosocket.enabled) {
+    startAudioSocketServer(config.audiosocket.port, config.audiosocket.host);
+  }
+
+  // Backfill any recordings missed while server was down
+  syncRecordingsFromTwilio().then(({ synced, total }) => {
+    if (synced > 0) {
+      logger.info('server', `Recording sync complete: ${synced} new, ${total} total`);
     }
-
-    // Backfill any recordings missed while server was down
-    syncRecordingsFromTwilio().then(({ synced, total }) => {
-      if (synced > 0) {
-        logger.info('server', `Recording sync complete: ${synced} new, ${total} total`);
-      }
-    }).catch(err => {
-      logger.error('server', 'Recording sync failed on startup', { error: String(err) });
-    });
-
-    // Start callback/retry scheduler (legacy)
-    setDialFunction(async (phone: string, leadName: string, state?: string) => {
-      try {
-        const from = config.twilio.fromNumber;
-        if (!from) return false;
-        const result = await startOutboundCall({
-          to: phone,
-          from,
-          lead: { first_name: leadName, state },
-        });
-        registerPendingSession(result.callSid, { first_name: leadName, state }, undefined, phone);
-        recordCall(result.callSid, phone, leadName);
-        logger.info('scheduler', 'Auto-dialed callback/retry', { callSid: result.callSid, phone });
-        return true;
-      } catch (err) {
-        logger.error('scheduler', 'Auto-dial failed', { phone, error: err instanceof Error ? err.message : String(err) });
-        return false;
-      }
-    });
-    startScheduler();
-
-    // Start campaign-locked scheduled callback worker
-    setCampaignDialFunction(async (params) => {
-      try {
-        const campaign = getCampaign(params.campaignId);
-        if (!campaign) return false;
-        const from = campaign.assignedDids[0] || config.twilio.fromNumber;
-        if (!from) return false;
-        const result = await startOutboundCall({
-          to: params.phone,
-          from,
-          lead: { first_name: 'Callback' },
-        });
-        registerPendingSession(result.callSid, { first_name: 'Callback' }, undefined, params.phone);
-        recordCall(result.callSid, params.phone, 'Scheduled Callback');
-        // Record outbound call for campaign tracking
-        recordOutboundCall({
-          callId: result.callSid,
-          leadId: params.leadId,
-          toPhone: params.phone,
-          fromDid: from,
-          campaignId: params.campaignId,
-          aiProfileId: params.aiProfileId,
-          voiceId: params.voiceId,
-          messageProfileId: campaign.smsTemplateSetId,
-          timestamp: new Date().toISOString(),
-          status: 'initiated',
-        });
-        logger.info('scheduler', 'Campaign callback dialed', {
-          callSid: result.callSid,
-          campaignId: params.campaignId,
-          phone: params.phone,
-        });
-        return true;
-      } catch (err) {
-        logger.error('scheduler', 'Campaign callback dial failed', {
-          phone: params.phone,
-          campaignId: params.campaignId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        return false;
-      }
-    });
-    startScheduledCallbackWorker();
+  }).catch(err => {
+    logger.error('server', 'Recording sync failed on startup', { error: String(err) });
   });
+
+  // Start callback/retry scheduler (legacy)
+  setDialFunction(async (phone: string, leadName: string, state?: string) => {
+    try {
+      const from = config.twilio.fromNumber;
+      if (!from) return false;
+      const result = await startOutboundCall({
+        to: phone,
+        from,
+        lead: { first_name: leadName, state },
+      });
+      registerPendingSession(result.callSid, { first_name: leadName, state }, undefined, phone);
+      recordCall(result.callSid, phone, leadName);
+      logger.info('scheduler', 'Auto-dialed callback/retry', { callSid: result.callSid, phone });
+      return true;
+    } catch (err) {
+      logger.error('scheduler', 'Auto-dial failed', { phone, error: err instanceof Error ? err.message : String(err) });
+      return false;
+    }
+  });
+  startScheduler();
+
+  // Start campaign-locked scheduled callback worker
+  setCampaignDialFunction(async (params) => {
+    try {
+      const campaign = getCampaign(params.campaignId);
+      if (!campaign) return false;
+      const from = campaign.assignedDids[0] || config.twilio.fromNumber;
+      if (!from) return false;
+      const result = await startOutboundCall({
+        to: params.phone,
+        from,
+        lead: { first_name: 'Callback' },
+      });
+      registerPendingSession(result.callSid, { first_name: 'Callback' }, undefined, params.phone);
+      recordCall(result.callSid, params.phone, 'Scheduled Callback');
+      recordOutboundCall({
+        callId: result.callSid,
+        leadId: params.leadId,
+        toPhone: params.phone,
+        fromDid: from,
+        campaignId: params.campaignId,
+        aiProfileId: params.aiProfileId,
+        voiceId: params.voiceId,
+        messageProfileId: campaign.smsTemplateSetId,
+        timestamp: new Date().toISOString(),
+        status: 'initiated',
+      });
+      logger.info('scheduler', 'Campaign callback dialed', {
+        callSid: result.callSid,
+        campaignId: params.campaignId,
+        phone: params.phone,
+      });
+      return true;
+    } catch (err) {
+      logger.error('scheduler', 'Campaign callback dial failed', {
+        phone: params.phone,
+        campaignId: params.campaignId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+  });
+  startScheduledCallbackWorker();
 }

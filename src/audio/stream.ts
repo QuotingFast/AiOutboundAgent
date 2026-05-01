@@ -483,7 +483,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     // server_vad, especially with background ambience playing on the line.
     // Older preview models fall back to server_vad with conservative
     // thresholds.
-    const useSemanticVad = /^gpt-realtime/.test(effectiveModel);
+    const useSemanticVad = /^gpt-4o-realtime|^gpt-realtime/.test(effectiveModel);
     // Disable OpenAI's auto-response. We call response.create() ourselves
     // from the input_audio_transcription.completed handler AFTER the
     // rejection gate passes. This is the fix for the duplicate-response

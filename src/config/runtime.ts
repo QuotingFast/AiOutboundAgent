@@ -177,8 +177,8 @@ const settings: RuntimeSettings = {
       // Default ON so a freshly deployed instance (or one with no persisted
       // settings yet) plays the office ambience that's bundled in assets/.
       // Existing deployments keep whatever value is persisted.
-      backgroundNoiseEnabled: true,
-      backgroundNoiseVolume: 0.07,
+      backgroundNoiseEnabled: false,
+      backgroundNoiseVolume: 0.04,
 
       // AMD / Voicemail detection
       amdEnabled: false,

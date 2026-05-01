@@ -130,7 +130,7 @@ export interface CallRecord {
 }
 
 const settings: RuntimeSettings = {
-      voiceProvider: 'elevenlabs',
+      voiceProvider: 'openai',
       voice: config.openai.voice,
       realtimeModel: config.openai.realtimeModel,
       // OpenAI Realtime requires temperature >= 0.6; values below that are
@@ -159,7 +159,7 @@ const settings: RuntimeSettings = {
       // need long debounces here as a defensive moat anymore.
       bargeInDebounceMs: 150,
       echoSuppressionMs: 250,
-      maxResponseTokens: 45,
+      maxResponseTokens: 1024,
       agentName: 'Steve',
       companyName: 'Smart Quotes',
       systemPromptOverride: '',
@@ -251,17 +251,13 @@ export function loadRuntimeFromDisk(): void {
         (settings as any)[key] = value;
       }
     }
-    // Heal persisted state from earlier commits where voiceProvider was
-    // 'openai' — that path silently fails to produce audio over Twilio
-    // because OpenAI Realtime rejects temperature 0.2 and falls back to
-    // pcm16 instead of mulaw. Force back to elevenlabs and persist so the
-    // dashboard reflects reality.
-    if (settings.voiceProvider === 'openai') {
-      settings.voiceProvider = 'elevenlabs';
-      persistSettings();
-    }
     if (typeof settings.temperature === 'number' && settings.temperature < 0.6) {
       settings.temperature = 0.6;
+      persistSettings();
+    }
+    // Heal old 45-token limit set for ElevenLabs text mode — audio mode needs much more.
+    if (typeof settings.maxResponseTokens === 'number' && settings.maxResponseTokens < 200) {
+      settings.maxResponseTokens = 1024;
       persistSettings();
     }
     // Bump legacy preview-alias model to the GA 'gpt-realtime'.

@@ -31,7 +31,7 @@ services:
       - key: ELEVENLABS_VOICE_ID
         sync: false
       - key: TTS_PROVIDER
-        value: "elevenlabs"
+        value: "openai"
       - key: STT_PROVIDER
         value: "openai"
       - key: AUDIOSOCKET_ENABLED

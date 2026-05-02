@@ -116,6 +116,8 @@ export async function startServer(): Promise<void> {
   logger.info('server', `  Stream:     WS   ${config.baseUrl.replace(/^http/, 'ws')}/twilio/stream`);
   logger.info('server', `  Health:     GET  ${config.baseUrl}/health`);
   logger.info('server', `  SMS In:     POST ${config.baseUrl}/twilio/sms-incoming`);
+  logger.info('server', `  Jangl:      POST ${config.baseUrl}/webhooks/jangl`);
+  logger.info('server', `  Weblead:    POST ${config.baseUrl}/webhook/weblead`);
   logger.info('server', `  Campaigns:  GET  ${config.baseUrl}/api/campaigns`);
   logger.info('server', `  AudioSocket: TCP ${config.audiosocket.host}:${config.audiosocket.port} (${config.audiosocket.enabled ? 'enabled' : 'disabled'})`);
 

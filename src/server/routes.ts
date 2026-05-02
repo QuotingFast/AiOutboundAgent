@@ -1497,7 +1497,8 @@ async function handleWeblead(req: Request, res: Response) {
           const meta = body.meta || {};
 
           // ── Campaign resolution (priority: query param > URL path > body field) ──
-          const rawCampaignId = (
+          // Vendors like Jangl send numeric campaign_id, so coerce to string before trim().
+          const rawCampaignId = String(
                   (req.query.campaign_id as string) ||
                   req.params.campaignId ||
                   body.campaign_id ||

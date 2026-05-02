@@ -1827,6 +1827,11 @@ async function handleWeblead(req: Request, res: Response) {
 router.post('/webhook/weblead/:campaignId', handleWeblead);
 router.post('/webhook/weblead', handleWeblead);
 
+// Vendor-named aliases for the same Jangl/QuotingFast nested-payload format.
+// Jangl's UI labels the intake as "JSON Webhook" — point it at /webhooks/jangl.
+router.post('/webhooks/jangl/:campaignId', handleWeblead);
+router.post('/webhooks/jangl', handleWeblead);
+
 // ── AMD Status Webhook ──────────────────────────────────────────────
 
 router.post('/twilio/amd-status', (req: Request, res: Response) => {

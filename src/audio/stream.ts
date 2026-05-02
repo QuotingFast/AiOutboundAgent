@@ -1060,7 +1060,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   function isFillerOnly(text: string): boolean {
     const normalized = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     if (!normalized) return true;
-    const filler = new Set(['uh', 'um', 'hmm', 'hm', 'yeah', 'ok', 'okay']);
+    // "yeah", "ok", "okay" intentionally NOT included — those are valid
+    // affirmative answers and dropping them caused the agent to sit silent
+    // after the caller answered a yes/no question.
+    const filler = new Set(['uh', 'um', 'hmm', 'hm']);
     const parts = normalized.split(' ').filter(Boolean);
     return parts.length > 0 && parts.every(p => filler.has(p));
   }
@@ -1242,9 +1245,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           logger.debug('stream', 'Speech stopped before debounce — ignored', { sessionId });
         }
 
-        // Minimal response delay: just enough jitter to avoid robotic instant replies.
+        // Minimal response delay: tiny jitter only. Anything bigger here
+        // adds perceptible lag to every turn.
         {
-          const humanDelayMs = 50 + Math.floor(Math.random() * 100);
+          const humanDelayMs = Math.floor(Math.random() * 40);
           logger.debug('stream', 'Adding human response delay', { sessionId, delayMs: humanDelayMs });
           responseRequestedAt = Date.now() + humanDelayMs; // Adjust baseline for latency tracking
           firstAudioAt = 0;
@@ -1310,14 +1314,18 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           confidence,
         });
 
-        // Phase 2: hard acceptance gate (minimal)
+        // Acceptance gate. Tuned loose: phone audio rarely exceeds 0.85
+        // confidence and single-word answers ("yes", "no", "Toyota") run
+        // ~250-450ms — rejecting them caused the agent to sit silent after
+        // the caller already answered the question. Keep only the gates
+        // that catch genuine click/pop noise and exact duplicate turns.
         let rejectReason: string | null = null;
         if (!cleanedText && speechDurationMs === 0) rejectReason = 'empty_no_speech';
-        else if (speechDurationMs > 0 && speechDurationMs < 650) rejectReason = 'short_speech';
-        else if (typeof confidence === 'number' && confidence < 0.9) rejectReason = 'low_conf';
+        else if (speechDurationMs > 0 && speechDurationMs < 200) rejectReason = 'short_speech';
+        else if (typeof confidence === 'number' && confidence < 0.4) rejectReason = 'low_conf';
         else if (fillerOnly) rejectReason = 'filler_only';
-        else if (meaningfulWords < 2 && cleanedText.length < 4) rejectReason = 'low_quality';
-        else if (normalizedUser && normalizedUser === lastUserTurnNorm && (Date.now() - lastUserTurnAt) < 4500) rejectReason = 'duplicate_user_turn';
+        else if (!cleanedText) rejectReason = 'low_quality';
+        else if (normalizedUser && normalizedUser === lastUserTurnNorm && (Date.now() - lastUserTurnAt) < 2000) rejectReason = 'duplicate_user_turn';
 
         if (rejectReason) {
           lastRejectReason = rejectReason;

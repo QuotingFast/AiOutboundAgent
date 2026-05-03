@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { startOutboundCall, StartCallParams, sendSms, endCall, fetchRecentRecordings } from '../twilio/client';
-import { buildMediaStreamTwiml, buildTransferTwiml, escapeXml } from '../twilio/twiml';
+import { buildMediaStreamTwiml, buildTransferTwiml, buildTransferWhisperTwiml, escapeXml } from '../twilio/twiml';
 import { registerPendingSession, hasPendingSession } from '../audio/stream';
 import { TransferConfig, buildSystemPrompt } from '../agent/prompts';
 import { getSettings, updateSettings, recordCall, getCallHistory } from '../config/runtime';
@@ -435,14 +435,35 @@ router.post('/twilio/incoming', (req: Request, res: Response) => {
 router.post('/twilio/transfer', (req: Request, res: Response) => {
   const target = req.query.target as string;
   const phrase = req.query.phrase as string || 'Connecting you now.';
+  const whisper = (req.query.whisper as string) || '';
 
   if (!target) {
     res.status(400).send('Missing target parameter');
     return;
   }
 
-  logger.info('routes', 'Transfer TwiML requested', { target });
-  const twiml = buildTransferTwiml(target, phrase);
+  let whisperUrl: string | undefined;
+  if (whisper && whisper.trim().length > 0) {
+    const w = new URL('/twilio/transfer-whisper', config.baseUrl);
+    w.searchParams.set('briefing', whisper);
+    whisperUrl = w.toString();
+  }
+
+  logger.info('routes', 'Transfer TwiML requested', { target, hasWhisper: Boolean(whisperUrl) });
+  const twiml = buildTransferTwiml(target, phrase, whisperUrl);
+  res.type('text/xml');
+  res.send(twiml);
+});
+
+/**
+ * POST /twilio/transfer-whisper
+ * Played to the receiving agent only (via the <Number url=...> attribute) before the
+ * caller is bridged in. Provides a brief warm introduction with lead context.
+ */
+router.post('/twilio/transfer-whisper', (req: Request, res: Response) => {
+  const briefing = (req.query.briefing as string) || 'You have an incoming transfer.';
+  logger.info('routes', 'Whisper TwiML requested');
+  const twiml = buildTransferWhisperTwiml(briefing);
   res.type('text/xml');
   res.send(twiml);
 });

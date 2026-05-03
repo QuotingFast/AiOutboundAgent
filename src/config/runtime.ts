@@ -2,8 +2,8 @@ import { config } from './index';
 import { loadData, scheduleSave } from '../db/persistence';
 
 export interface RuntimeSettings {
-      // Voice provider: 'openai' = Realtime speech-to-speech, 'elevenlabs' = OpenAI LLM + EL TTS, 'deepseek' = DeepSeek LLM + EL TTS
-  voiceProvider: 'openai' | 'elevenlabs' | 'deepseek';
+      // Voice provider: 'openai' = Realtime speech-to-speech, 'elevenlabs' = OpenAI LLM + EL TTS, 'deepseek' = DeepSeek LLM + EL TTS, 'deepgram' = OpenAI LLM + Deepgram Aura TTS
+  voiceProvider: 'openai' | 'elevenlabs' | 'deepseek' | 'deepgram';
 
   // Voice & Model (OpenAI)
   voice: string;
@@ -21,6 +21,9 @@ export interface RuntimeSettings {
 
   // DeepSeek settings
   deepseekModel: string;
+
+  // Deepgram TTS settings
+  deepgramTtsModel: string;
 
   // VAD & Barge-in
   vadThreshold: number;
@@ -145,6 +148,7 @@ const settings: RuntimeSettings = {
       elevenlabsUseSpeakerBoost: true,
       elevenlabsSpeed: 0.97,
       deepseekModel: config.deepseek.model || 'deepseek-chat',
+      deepgramTtsModel: config.deepgram?.ttsModel || 'aura-2-thalia-en',
       // VAD tuning. Note: with the GA gpt-realtime model the agent now uses
       // semantic_vad and these fields are unused. They only matter when the
       // model is one of the legacy preview aliases. silenceDurationMs was

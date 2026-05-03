@@ -82,6 +82,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   // Pending text buffer for ElevenLabs lazy reconnect
   let elevenLabsPendingText: string[] = [];
 
+  // Deepgram TTS state — when true, the four "ElevenLabs" dispatch
+  // functions route to the Deepgram Aura streaming endpoint instead.
+  // Keeps useElevenLabs semantics (= "external TTS, OpenAI Realtime is
+  // text-only LLM") so the rest of the pipeline doesn't branch.
+  let useDeepgram = false;
+  let deepgramWs: WebSocket | null = null;
+  let deepgramPendingText: string[] = [];
+
   // DeepSeek state
   let useDeepSeek = false;
   let deepseekHistory: Array<any> = [];
@@ -321,6 +329,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     const effectiveVoiceProvider = campaignVoice?.voiceProvider || s.voiceProvider;
     const model = activeCampaign?.aiProfile?.realtimeModel || s.realtimeModel;
     useDeepSeek = effectiveVoiceProvider === 'deepseek';
+    useDeepgram = effectiveVoiceProvider === 'deepgram';
 
     // Fall back to ElevenLabs mode if DeepSeek selected but API key missing
     if (useDeepSeek && !config.deepseek.apiKey) {
@@ -328,7 +337,18 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       useDeepSeek = false;
     }
 
-    useElevenLabs = effectiveVoiceProvider === 'elevenlabs' || effectiveVoiceProvider === 'deepseek';
+    // Fall back to ElevenLabs mode if Deepgram selected but API key missing
+    if (useDeepgram && !config.deepgram?.apiKey) {
+      logger.warn('stream', 'Deepgram selected but no API key configured — falling back to ElevenLabs mode', { sessionId });
+      useDeepgram = false;
+    }
+
+    // useElevenLabs means "external TTS, OpenAI Realtime stays text-only".
+    // Deepgram mode also satisfies this — the four ElevenLabs dispatch
+    // functions route to Deepgram when useDeepgram is true.
+    useElevenLabs = effectiveVoiceProvider === 'elevenlabs'
+      || effectiveVoiceProvider === 'deepseek'
+      || (effectiveVoiceProvider === 'deepgram' && useDeepgram);
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
 
     logger.info('stream', 'Connecting to OpenAI Realtime', {
@@ -650,6 +670,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   // --- ElevenLabs WebSocket streaming TTS ---
 
   function connectElevenLabs(): void {
+    if (useDeepgram) return connectDeepgram();
     const s = getSettings();
     // Use campaign voice config for ElevenLabs voice ID, model, and tuning
     const campaignVoice = activeCampaign?.voiceConfig;
@@ -767,6 +788,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   }
 
   function sendTextToElevenLabs(text: string): void {
+    if (useDeepgram) return sendTextToDeepgram(text);
     currentElevenLabsText += text;
     if (analytics) analytics.addElevenLabsCharacters(text.length);
 
@@ -786,6 +808,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   }
 
   function flushElevenLabs(): void {
+    if (useDeepgram) return flushDeepgram();
     if (!elevenLabsWs || elevenLabsWs.readyState !== WebSocket.OPEN) {
       // If not connected, add flush marker to pending buffer
       if (elevenLabsPendingText.length > 0) {
@@ -797,11 +820,130 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   }
 
   function resetElevenLabs(): void {
+    if (useDeepgram) return resetDeepgram();
     if (elevenLabsWs) {
       elevenLabsWs.close();
       elevenLabsWs = null;
     }
     connectElevenLabs();
+  }
+
+  // --- Deepgram Aura streaming TTS ---
+
+  function connectDeepgram(): void {
+    const s = getSettings();
+    const model = activeCampaign?.voiceConfig?.deepgramTtsModel || s.deepgramTtsModel || 'aura-2-thalia-en';
+    const apiKey = config.deepgram?.apiKey || '';
+    if (!apiKey) {
+      logger.error('stream', 'Deepgram MISSING api key', { sessionId });
+      return;
+    }
+
+    // mulaw 8kHz so Twilio can play frames directly without resampling.
+    // container=none gives us raw audio bytes (no WAV header) which is
+    // what we need to forward to Twilio in 160-byte frames.
+    const url = `wss://api.deepgram.com/v1/speak?model=${encodeURIComponent(model)}&encoding=mulaw&sample_rate=8000&container=none`;
+
+    logger.info('stream', 'Deepgram TTS connecting', { sessionId, model, campaignId: activeCampaign?.id || 'none' });
+
+    const ws = new WebSocket(url, { headers: { Authorization: `Token ${apiKey}` } });
+    deepgramWs = ws;
+
+    ws.on('open', () => {
+      if (deepgramWs !== ws) {
+        logger.debug('stream', 'Stale Deepgram open event, ignoring', { sessionId });
+        ws.close();
+        return;
+      }
+      logger.info('stream', 'Deepgram WS connected', { sessionId });
+
+      // Flush any pending text that was buffered while connecting
+      if (deepgramPendingText.length > 0) {
+        logger.info('stream', 'Flushing pending Deepgram text', { sessionId, chunks: deepgramPendingText.length });
+        let pendingFlush = false;
+        for (const chunk of deepgramPendingText) {
+          if (chunk === '') {
+            pendingFlush = true;
+          } else {
+            ws.send(JSON.stringify({ type: 'Speak', text: chunk }));
+          }
+        }
+        deepgramPendingText = [];
+        if (pendingFlush) ws.send(JSON.stringify({ type: 'Flush' }));
+      }
+    });
+
+    ws.on('message', (data: WebSocket.Data, isBinary: boolean) => {
+      if (isBinary) {
+        const buf = data instanceof Buffer ? data : Buffer.from(data as ArrayBuffer);
+        responseIsPlaying = true;
+        lastAudioSentAt = Date.now();
+        sendAudioToTwilio(buf.toString('base64'));
+        if (firstAudioAt === 0) {
+          firstAudioAt = Date.now();
+          if (analytics && responseRequestedAt > 0) {
+            analytics.recordTTSLatency(firstAudioAt - responseRequestedAt);
+          }
+        }
+        audioChunkCount++;
+        if (analytics) analytics.addAudioOutputSeconds(buf.length / 8000);
+        return;
+      }
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === 'Flushed') {
+          responseIsPlaying = false;
+          if (analytics) analytics.agentFinishedSpeaking(currentElevenLabsText);
+          currentElevenLabsText = '';
+        } else if (msg.type === 'Warning') {
+          logger.warn('stream', 'Deepgram warning', { sessionId, message: msg.description || msg });
+        }
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logger.error('stream', 'Deepgram message error', { sessionId, error: errMsg });
+      }
+    });
+
+    ws.on('close', () => {
+      logger.debug('stream', 'Deepgram WS closed', { sessionId });
+      if (deepgramWs === ws) deepgramWs = null;
+    });
+
+    ws.on('error', (err) => {
+      logger.error('stream', 'Deepgram WS error', { sessionId, error: err.message });
+    });
+  }
+
+  function sendTextToDeepgram(text: string): void {
+    currentElevenLabsText += text;
+
+    if (deepgramWs && deepgramWs.readyState === WebSocket.OPEN) {
+      deepgramWs.send(JSON.stringify({ type: 'Speak', text }));
+      return;
+    }
+
+    deepgramPendingText.push(text);
+    if (!deepgramWs || deepgramWs.readyState === WebSocket.CLOSED || deepgramWs.readyState === WebSocket.CLOSING) {
+      logger.info('stream', 'Deepgram WS not open, reconnecting on demand', { sessionId });
+      connectDeepgram();
+    }
+  }
+
+  function flushDeepgram(): void {
+    if (!deepgramWs || deepgramWs.readyState !== WebSocket.OPEN) {
+      if (deepgramPendingText.length > 0) deepgramPendingText.push('');
+      return;
+    }
+    deepgramWs.send(JSON.stringify({ type: 'Flush' }));
+  }
+
+  function resetDeepgram(): void {
+    if (deepgramWs) {
+      try { deepgramWs.send(JSON.stringify({ type: 'Clear' })); } catch {}
+      deepgramWs.close();
+      deepgramWs = null;
+    }
+    connectDeepgram();
   }
 
   // --- DeepSeek streaming LLM ---
@@ -1105,10 +1247,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         initialGreetingDone = true;
         if (useElevenLabs) {
           connectElevenLabs();
-          // Wait for ElevenLabs to connect before triggering greeting
+          // Wait for the active TTS WS to connect before triggering greeting
           let greetingSent = false;
           const waitForEl = setInterval(() => {
-            if (!greetingSent && elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
+            const activeWs = useDeepgram ? deepgramWs : elevenLabsWs;
+            if (!greetingSent && activeWs && activeWs.readyState === WebSocket.OPEN) {
               clearInterval(waitForEl);
               greetingSent = true;
               triggerGreeting();
@@ -1221,6 +1364,12 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             elevenLabsWs.close();
             elevenLabsWs = null;
             elevenLabsPendingText = [];
+          }
+          if (useDeepgram && deepgramWs) {
+            try { deepgramWs.send(JSON.stringify({ type: 'Clear' })); } catch {}
+            deepgramWs.close();
+            deepgramWs = null;
+            deepgramPendingText = [];
           }
           if (useDeepSeek && deepseekAbortController) {
             deepseekAbortController.abort();

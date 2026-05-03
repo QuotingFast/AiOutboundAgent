@@ -64,7 +64,7 @@ export interface CampaignAIProfile {
 }
 
 export interface CampaignVoiceConfig {
-  voiceProvider: 'openai' | 'elevenlabs' | 'deepseek';
+  voiceProvider: 'openai' | 'elevenlabs' | 'deepseek' | 'deepgram';
   openaiVoice: string;
   elevenlabsVoiceId: string;
   elevenlabsModelId: string;
@@ -74,6 +74,7 @@ export interface CampaignVoiceConfig {
   elevenlabsUseSpeakerBoost: boolean;
   elevenlabsSpeed: number;
   deepseekModel: string;
+  deepgramTtsModel?: string;
 }
 
 export interface CampaignTransferRouting {
@@ -125,7 +126,7 @@ export interface CampaignContext {
   campaignName: string;
   aiProfileId: string;
   voiceId: string;
-  voiceProvider: 'openai' | 'elevenlabs' | 'deepseek';
+  voiceProvider: 'openai' | 'elevenlabs' | 'deepseek' | 'deepgram';
   smsTemplateSetId: string;
   emailTemplateSetId: string;
   transferRouting: CampaignTransferRouting;

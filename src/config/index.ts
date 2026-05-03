@@ -45,6 +45,11 @@ export const config = {
     model: optional('DEEPSEEK_MODEL', 'deepseek-chat'),
   },
 
+  deepgram: {
+    apiKey: optional('DEEPGRAM_API_KEY', ''),
+    ttsModel: optional('DEEPGRAM_TTS_MODEL', 'aura-2-thalia-en'),
+  },
+
   sendgrid: {
     apiKey: optional('SENDGRID_API_KEY', ''),
   },
@@ -55,7 +60,7 @@ export const config = {
     senderEmail: optional('NOTIFICATION_SENDER_EMAIL', 'notifications@quotingfast.com'),
   },
 
-  ttsProvider: optional('TTS_PROVIDER', 'elevenlabs') as 'openai' | 'elevenlabs' | 'deepseek',
+  ttsProvider: optional('TTS_PROVIDER', 'elevenlabs') as 'openai' | 'elevenlabs' | 'deepseek' | 'deepgram',
   sttProvider: optional('STT_PROVIDER', 'openai') as 'openai' | 'deepgram',
 
   recording: {

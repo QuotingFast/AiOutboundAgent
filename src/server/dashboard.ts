@@ -3597,16 +3597,21 @@ async function loadCampaignConfig(id) {
     document.getElementById('campSmsFollowUps').checked = c.features?.smsFollowUps || false;
     document.getElementById('campEmailFollowUps').checked = c.features?.emailFollowUps || false;
     document.getElementById('campInboundEnabled').checked = c.features?.inboundEnabled || false;
-    // Voice
-    setCampProvider(c.voiceConfig?.voiceProvider || 'elevenlabs');
+    // Voice — setCampProvider stashes the provider and renders the right picker.
+    // For Deepgram it renders an Aura dropdown directly; for ElevenLabs/DeepSeek
+    // we still need to fetch the EL voice list so the cards have data.
+    var resolvedProvider = c.voiceConfig?.voiceProvider || 'elevenlabs';
+    setCampProvider(resolvedProvider);
     // Transfer routes
     renderTransferRoutes(c.transferRouting?.routes || []);
     // DIDs
     renderCampaignDids(c.assignedDids || []);
     // SMS Templates
     loadCampaignSmsTemplates(id);
-    // Voices
-    loadCampaignVoices(id, c.voiceConfig);
+    // Voices — only fetch ElevenLabs list when EL/DeepSeek; Deepgram has its own dropdown
+    if (resolvedProvider === 'elevenlabs' || resolvedProvider === 'deepseek') {
+      loadCampaignVoices(id, c.voiceConfig);
+    }
   } catch (e) { console.error('loadCampaignConfig', e); }
 }
 
@@ -3615,6 +3620,48 @@ function setCampProvider(provider) {
     var btn = document.getElementById('campProv' + p.charAt(0).toUpperCase() + p.slice(1));
     if (btn) { btn.className = 'btn btn-sm ' + (p === provider ? 'btn-primary' : 'btn-secondary'); }
   });
+  // Stash the active provider so saveCampaignConfig knows which fields to send
+  var hidden = document.getElementById('campSelectedProvider');
+  if (!hidden) {
+    hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.id = 'campSelectedProvider';
+    document.body.appendChild(hidden);
+  }
+  hidden.value = provider;
+  // Swap the voice picker UI for the active provider
+  renderCampVoicePicker(provider);
+}
+
+function renderCampVoicePicker(provider) {
+  var container = document.getElementById('campVoiceCards');
+  if (!container) return;
+  if (provider === 'deepgram') {
+    var c = campaignData[currentCampaignId];
+    var current = c?.voiceConfig?.deepgramTtsModel || 'aura-2-thalia-en';
+    container.innerHTML = '<div style="grid-column:1/-1;padding:14px;background:var(--surface2);border-radius:12px">'
+      + '<div style="font-size:13px;font-weight:600;margin-bottom:6px">Deepgram Aura voice</div>'
+      + '<div style="font-size:11px;color:var(--text2);margin-bottom:10px">Lowest TTS first-byte latency in our tests (~150-300ms).</div>'
+      + '<select id="campDeepgramTtsModel" style="width:100%;max-width:380px">'
+      + '<option value="aura-2-thalia-en">Thalia &mdash; Female, warm, conversational</option>'
+      + '<option value="aura-2-andromeda-en">Andromeda &mdash; Female, friendly, articulate</option>'
+      + '<option value="aura-2-luna-en">Luna &mdash; Female, energetic, youthful</option>'
+      + '<option value="aura-2-stella-en">Stella &mdash; Female, smooth, mature</option>'
+      + '<option value="aura-2-orion-en">Orion &mdash; Male, confident, professional</option>'
+      + '<option value="aura-2-perseus-en">Perseus &mdash; Male, smooth, professional</option>'
+      + '<option value="aura-2-arcas-en">Arcas &mdash; Male, deep, authoritative</option>'
+      + '<option value="aura-2-asteria-en">Asteria &mdash; Female, clear, articulate (v1)</option>'
+      + '</select>'
+      + '</div>';
+    var sel = document.getElementById('campDeepgramTtsModel');
+    if (sel) sel.value = current;
+  } else if (provider === 'elevenlabs' || provider === 'deepseek') {
+    // ElevenLabs voice cards (also used by DeepSeek mode since it uses EL TTS)
+    var c2 = campaignData[currentCampaignId];
+    if (c2) loadCampaignVoices(currentCampaignId, c2.voiceConfig);
+  } else {
+    container.innerHTML = '<div class="empty-state" style="grid-column:1/-1">OpenAI native voice selection happens in the global Settings tab.</div>';
+  }
 }
 
 async function loadCampaignVoices(campaignId, voiceConfig) {
@@ -3701,8 +3748,16 @@ async function removeCampaignDid(did) {
 async function saveCampaignConfig() {
   var c = campaignData[currentCampaignId];
   if (!c) { toast('Load campaign first', 'error'); return; }
-  var selectedVoice = document.querySelector('#campVoiceCards .voice-card-el.selected');
-  var voiceId = selectedVoice ? selectedVoice.dataset.voiceId : c.voiceConfig.elevenlabsVoiceId;
+  var providerEl = document.getElementById('campSelectedProvider');
+  var provider = (providerEl && providerEl.value) || c.voiceConfig.voiceProvider || 'elevenlabs';
+  var voicePayload = { voiceProvider: provider };
+  if (provider === 'deepgram') {
+    var dgModel = document.getElementById('campDeepgramTtsModel');
+    voicePayload.deepgramTtsModel = (dgModel && dgModel.value) || 'aura-2-thalia-en';
+  } else if (provider === 'elevenlabs' || provider === 'deepseek') {
+    var selectedVoice = document.querySelector('#campVoiceCards .voice-card-el.selected');
+    voicePayload.elevenlabsVoiceId = selectedVoice ? selectedVoice.dataset.voiceId : c.voiceConfig.elevenlabsVoiceId;
+  }
   var routes = c.transferRouting.routes.map(function(r) {
     var input = document.querySelector('.camp-route-number[data-route-id="' + r.id + '"]');
     return Object.assign({}, r, { destinationNumber: input ? input.value : r.destinationNumber });
@@ -3729,10 +3784,10 @@ async function saveCampaignConfig() {
         inboundEnabled: document.getElementById('campInboundEnabled').checked,
       })
     });
-    // Update voice
+    // Update voice (provider + provider-specific fields)
     await fetch('/api/campaigns/' + currentCampaignId + '/voice', {
       method: 'PUT', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ elevenlabsVoiceId: voiceId })
+      body: JSON.stringify(voicePayload)
     });
     // Update transfer routing
     await fetch('/api/campaigns/' + currentCampaignId + '/transfer-routing', {

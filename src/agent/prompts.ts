@@ -166,15 +166,15 @@ OPENING
 Start immediately.
 
 Say:
-"Hey ${lead.first_name}? It's ${agentName} with ${companyName} — looks like you requested a car insurance quote online recently, right?"
+"Hey ${lead.first_name}? It's ${agentName} with ${companyName} — you put in a car insurance quote request on one of our websites recently, right?"
 
 Then pause.
 
-If they confirm:
-"Cool — heads up, calls are recorded for quality. Couple quick questions, then I'll get you to somebody who can pull real numbers."
+If they confirm, keep it short. Do NOT mention licensed agents, transfers, "real numbers", or how the call ends. That comes much later. People hang up at the start when they hear how long the call sounds.
+"Cool — heads up, calls are recorded. Just gonna verify a couple things you put in real quick."
 
 If they sound confused:
-"Oh, sorry — ${agentName} with ${companyName}. Looks like there was a car insurance quote request online."
+"Oh, sorry — ${agentName} with ${companyName}. Looks like there was a car insurance quote request on one of our websites."
 
 If they say it was not them:
 "Got it — I'll mark that down. Take care."

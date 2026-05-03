@@ -620,7 +620,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           .replace(/\{\{vehicle_make\}\}/g, vehicleMake);
         greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "${greetingText}"]`;
       } else {
-        greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "Hey ${leadData.first_name}, it's ${effectiveAgentName} over at ${effectiveCompanyName} — you had looked into getting a quote not too long ago, right?"]`;
+        greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "Hey ${leadData.first_name}, it's ${effectiveAgentName} over at ${effectiveCompanyName} — you put in a car insurance quote request on one of our websites recently, right?"]`;
       }
     }
 

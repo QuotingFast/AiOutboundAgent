@@ -44,6 +44,42 @@ function normalizeCarrierForSpeech(carrier?: string): string {
   return raw;
 }
 
+function buildWhisperBriefing(
+  lead: LeadData,
+  route: string,
+  toolArgs: Record<string, any>,
+): string {
+  const name = lead.first_name && lead.first_name.toLowerCase() !== 'there' ? lead.first_name : 'a prospect';
+  const state = lead.state ? ` in ${lead.state}` : '';
+
+  const carrier = normalizeCarrierForSpeech(
+    toolArgs.current_carrier || toolArgs.carrier || lead.current_insurer,
+  );
+  const tenure = (toolArgs.tenure || toolArgs.duration || '').toString().trim();
+  const vehicleCount = (lead.vehicles || []).length || Number(toolArgs.vehicle_count) || 0;
+
+  const parts: string[] = [`Warm transfer for ${name}${state}.`];
+
+  if (carrier) {
+    parts.push(tenure ? `Currently with ${carrier} for ${tenure}.` : `Currently with ${carrier}.`);
+  } else {
+    parts.push('Currently uninsured or carrier not provided.');
+  }
+
+  if (vehicleCount > 0) {
+    parts.push(vehicleCount === 1 ? 'One vehicle to quote.' : `${vehicleCount} vehicles to quote.`);
+  }
+
+  if (route === 'allstate') {
+    parts.push('Routed to Allstate based on tenure and clean record.');
+  } else {
+    parts.push('Routed to non-Allstate pool.');
+  }
+
+  parts.push('Connecting now.');
+  return parts.join(' ');
+}
+
 export function registerPendingSession(callSid: string, lead: LeadData, transfer?: TransferConfig, toPhone?: string, campaignId?: string): void {
   pendingSessions.set(callSid, { lead, transfer, toPhone, campaignId });
 }
@@ -1685,18 +1721,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       if (targetNumber) {
         await new Promise(r => setTimeout(r, 1500));
-        logger.info('stream', 'Executing warm transfer', { sessionId, route, target: targetNumber });
-        const leadInfo = {
-          firstname: leadData?.first_name || 'the prospect',
-          carrier: args.carrier || normalizeCarrierForSpeech(leadData?.current_insurer) || undefined,
-          years: args.years_with_carrier != null
-            ? args.years_with_carrier
-            : (leadData?.continuous_months ? Math.round(leadData.continuous_months / 12) : undefined),
-          vehicleCount: args.vehicle_count != null
-            ? args.vehicle_count
-            : (leadData?.vehicles?.length || 1),
-        };
-        const success = await executeWarmTransfer(callSid, targetNumber, leadInfo);
+        const whisperBriefing = buildWhisperBriefing(leadData, route, args);
+        logger.info('stream', 'Executing warm transfer', {
+          sessionId,
+          route,
+          target: targetNumber,
+          briefing: whisperBriefing,
+        });
+        const success = await executeWarmTransfer(callSid, targetNumber, whisperBriefing);
         if (!success) {
           logger.error('stream', 'Transfer failed', { sessionId, route });
           if (analytics) analytics.setOutcome('ended', 'Transfer failed');

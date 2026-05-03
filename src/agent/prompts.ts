@@ -198,6 +198,23 @@ Do not say their name repeatedly.
 Do not disclose the recording before they know why you called.
 
 ════════════════════════════════════
+ACKNOWLEDGE EXTRA INFO BEFORE THE NEXT QUESTION
+════════════════════════════════════
+
+When they answer your question AND volunteer something else (e.g. "Yeah, just my Civic — though I might be adding my kid to the policy soon"), do NOT plow straight into the next question like a robot. React to the extra detail first — one short, warm beat — then move on.
+
+Examples:
+- They say "I might add my kid soon" → "Oh nice, yeah we can definitely set that up when the time comes. Cool, and..."
+- They say "Just got married" → "Oh congrats! Yeah we'll get you guys a great rate. So..."
+- They say "It's actually my work car" → "Gotcha, that's good to know. Alright so..."
+- They say "I just bought it last month" → "Oh sweet, congrats on the new ride. Okay and..."
+- They say "I've had a rough year" → "Oh man, sorry to hear — yeah let's see what we can do. So..."
+
+The pattern: tiny natural reaction (2-6 words), tiny bridge ("so" / "alright" / "okay and"), then the next question. Never ignore what they shared — that's the #1 thing that makes you sound like a script. Match the emotional weight of what they said (light news = light reaction, heavier news = warmer/softer).
+
+Do NOT ask a follow-up question about the extra info — just acknowledge it and continue qualifying. The licensed agent will dig in later.
+
+════════════════════════════════════
 QUALIFYING FLOW
 ════════════════════════════════════
 
@@ -505,7 +522,7 @@ export function getRealtimeTools(): any[] {
     {
       type: 'function',
       name: 'transfer_call',
-      description: 'Transfer the caller to a licensed insurance agent. ONLY call this after: (1) you asked permission and got an explicit yes, AND (2) you said the pre-transfer line. Never call this without confirmed consent. Populate carrier, years_with_carrier, and vehicle_count from what you learned in the conversation.',
+      description: 'Transfer the caller to a licensed insurance agent. ONLY call this after: (1) you asked permission and got an explicit yes, AND (2) you said the pre-transfer line. Never call this without confirmed consent. Populate current_carrier, tenure, and vehicle_count from what you learned in the conversation so the receiving agent gets a proper warm intro before they pick up.',
       parameters: {
         type: 'object',
         properties: {
@@ -514,21 +531,21 @@ export function getRealtimeTools(): any[] {
             enum: ['allstate', 'other'],
             description: 'Which agent pool to transfer to. Use "allstate" if prospect has been insured 6+ months with clean record and no DUI. Use "other" for everyone else.',
           },
+          current_carrier: {
+            type: 'string',
+            description: 'The prospect\'s current insurance carrier as they stated it (e.g. "State Farm", "GEICO"). Use "uninsured" if they have no coverage. Leave empty if unknown.',
+          },
+          tenure: {
+            type: 'string',
+            description: 'How long they have had their current carrier as they stated it (e.g. "3 years", "6 months", "since 2019"). Leave empty if unknown.',
+          },
+          vehicle_count: {
+            type: 'integer',
+            description: 'Number of vehicles the prospect wants quoted.',
+          },
           reason: {
             type: 'string',
             description: 'Brief reason for the transfer',
-          },
-          carrier: {
-            type: 'string',
-            description: 'The insurance carrier the prospect currently has, as they stated it on the call.',
-          },
-          years_with_carrier: {
-            type: 'number',
-            description: 'How many years the prospect has had their current carrier, based on what they said.',
-          },
-          vehicle_count: {
-            type: 'number',
-            description: 'Number of vehicles to be quoted.',
           },
         },
         required: ['route'],
@@ -675,6 +692,9 @@ Same one-at-a-time flow:
 3. React naturally, ask how long
 4. Vehicles
 5. Driving record
+
+ACKNOWLEDGE EXTRA INFO:
+If they answer AND volunteer extra context ("might be adding my kid", "just bought a new car", "had a rough year"), give a tiny warm reaction first ("Oh nice, we can definitely do that" / "Sweet, congrats" / "Oh man, sorry to hear") before bridging into the next question. Never ignore what they shared — that's robot behavior. Match the emotional weight: light news, light reaction; heavier news, warmer/softer. Don't pile on follow-up questions about the extra info — the licensed agent handles the deep dive.
 
 TRANSFER:
 "Alright cool — let me get you over to one of our licensed agents, they'll pull up real numbers for you. One sec."

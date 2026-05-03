@@ -450,6 +450,7 @@ export function getDashboardHtml(): string {
         <button class="btn btn-sm" id="campProvOpenai" onclick="setCampProvider('openai')">OpenAI</button>
         <button class="btn btn-sm" id="campProvElevenlabs" onclick="setCampProvider('elevenlabs')">ElevenLabs</button>
         <button class="btn btn-sm" id="campProvDeepseek" onclick="setCampProvider('deepseek')">DeepSeek</button>
+        <button class="btn btn-sm" id="campProvDeepgram" onclick="setCampProvider('deepgram')">Deepgram</button>
       </div>
       <div id="campVoiceCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;max-height:300px;overflow-y:auto;padding:4px"></div>
     </div>
@@ -888,6 +889,10 @@ export function getDashboardHtml(): string {
         <span class="prov-label">DeepSeek</span>
         <span class="prov-sub">(DeepSeek LLM + EL TTS)</span>
       </button>
+      <button id="provDeepgram" onclick="setProvider('deepgram')">
+        <span class="prov-label">Deepgram</span>
+        <span class="prov-sub">(OpenAI LLM + Aura TTS)</span>
+      </button>
     </div>
 
     <div id="openaiVoiceSection" style="margin-top:16px;display:none">
@@ -1314,6 +1319,29 @@ export function getDashboardHtml(): string {
           </div>
         </div>
       </div>
+    </div>
+
+    <div id="deepgramVoiceSection" style="margin-top:16px;display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="width:8px;height:8px;background:var(--green);border-radius:50%"></div>
+        <span style="font-size:14px;font-weight:600;color:var(--text)">OpenAI LLM</span>
+        <span style="font-size:12px;color:var(--text2)">+</span>
+        <span style="font-size:14px;font-weight:600;color:var(--text)">Deepgram Aura TTS</span>
+      </div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:14px">
+        Deepgram Aura streaming has the lowest TTS first-byte latency in our tests (~150-300ms vs 800ms+ for ElevenLabs Flash). Pick a voice below.
+      </p>
+      <label>Aura Voice</label>
+      <select id="deepgramTtsModel" style="max-width:380px">
+        <option value="aura-2-thalia-en">Thalia &mdash; Female, warm, conversational</option>
+        <option value="aura-2-andromeda-en">Andromeda &mdash; Female, friendly, articulate</option>
+        <option value="aura-2-luna-en">Luna &mdash; Female, energetic, youthful</option>
+        <option value="aura-2-stella-en">Stella &mdash; Female, smooth, mature</option>
+        <option value="aura-2-orion-en">Orion &mdash; Male, confident, professional</option>
+        <option value="aura-2-perseus-en">Perseus &mdash; Male, smooth, professional</option>
+        <option value="aura-2-arcas-en">Arcas &mdash; Male, deep, authoritative</option>
+        <option value="aura-2-asteria-en">Asteria &mdash; Female, clear, articulate (v1)</option>
+      </select>
     </div>
 
     <div id="elevenlabsVoiceSection" class="el-settings">
@@ -2101,7 +2129,7 @@ var SETTINGS_FIELDS = [
   'prefixPaddingMs','bargeInDebounceMs','echoSuppressionMs','maxResponseTokens',
   'agentName','companyName','systemPromptOverride','inboundPromptOverride','allstateNumber','nonAllstateNumber',
   'elevenlabsVoiceId','elevenlabsModelId','elevenlabsStability','elevenlabsSimilarityBoost','elevenlabsStyle','elevenlabsSpeed',
-  'deepseekModel','backgroundNoiseVolume','amdAction','maxCallDurationSec','callDurationWarnPct','silenceTimeoutSec',
+  'deepseekModel','deepgramTtsModel','backgroundNoiseVolume','amdAction','maxCallDurationSec','callDurationWarnPct','silenceTimeoutSec',
   'maxCallsPerPhonePerDay','autoRetryMaxAttempts',
   'retryDelay1Min','retryDelay2Min','retryDelay3Min','latencyAlertThresholdMs','dailyReportHour'
 ];
@@ -2135,9 +2163,13 @@ function setProvider(provider) {
   document.getElementById('provOpenai').classList.toggle('active', provider === 'openai');
   document.getElementById('provElevenlabs').classList.toggle('active', provider === 'elevenlabs');
   document.getElementById('provDeepseek').classList.toggle('active', provider === 'deepseek');
+  var dgBtn = document.getElementById('provDeepgram');
+  if (dgBtn) dgBtn.classList.toggle('active', provider === 'deepgram');
   document.getElementById('openaiVoiceSection').style.display = provider === 'openai' ? '' : 'none';
   document.getElementById('elevenlabsVoiceSection').style.display = provider === 'elevenlabs' ? '' : 'none';
   document.getElementById('deepseekVoiceSection').style.display = provider === 'deepseek' ? '' : 'none';
+  var dgSection = document.getElementById('deepgramVoiceSection');
+  if (dgSection) dgSection.style.display = provider === 'deepgram' ? '' : 'none';
 }
 function updateVoiceAvailability() {
   var allowed = getCompatibleVoices();
@@ -3579,7 +3611,7 @@ async function loadCampaignConfig(id) {
 }
 
 function setCampProvider(provider) {
-  ['openai','elevenlabs','deepseek'].forEach(function(p) {
+  ['openai','elevenlabs','deepseek','deepgram'].forEach(function(p) {
     var btn = document.getElementById('campProv' + p.charAt(0).toUpperCase() + p.slice(1));
     if (btn) { btn.className = 'btn btn-sm ' + (p === provider ? 'btn-primary' : 'btn-secondary'); }
   });

@@ -31,7 +31,7 @@ export const config = {
   openai: {
     apiKey: required('OPENAI_API_KEY'),
     model: optional('OPENAI_MODEL', 'gpt-4o'),
-    realtimeModel: optional('OPENAI_REALTIME_MODEL', 'gpt-4o-realtime-preview'),
+    realtimeModel: optional('OPENAI_REALTIME_MODEL', 'gpt-realtime'),
     voice: optional('OPENAI_VOICE', 'coral'),
   },
 
@@ -45,6 +45,11 @@ export const config = {
     model: optional('DEEPSEEK_MODEL', 'deepseek-chat'),
   },
 
+  deepgram: {
+    apiKey: optional('DEEPGRAM_API_KEY', ''),
+    ttsModel: optional('DEEPGRAM_TTS_MODEL', 'aura-2-thalia-en'),
+  },
+
   sendgrid: {
     apiKey: optional('SENDGRID_API_KEY', ''),
   },
@@ -55,7 +60,7 @@ export const config = {
     senderEmail: optional('NOTIFICATION_SENDER_EMAIL', 'notifications@quotingfast.com'),
   },
 
-  ttsProvider: optional('TTS_PROVIDER', 'elevenlabs') as 'openai' | 'elevenlabs' | 'deepseek',
+  ttsProvider: optional('TTS_PROVIDER', 'elevenlabs') as 'openai' | 'elevenlabs' | 'deepseek' | 'deepgram',
   sttProvider: optional('STT_PROVIDER', 'openai') as 'openai' | 'deepgram',
 
   recording: {
@@ -70,4 +75,6 @@ export const config = {
   },
 
   debug: optional('DEBUG', 'false') === 'true',
+
+  databaseUrl: process.env.DATABASE_URL || '',
 };

@@ -72,8 +72,66 @@ function persistDidMappings(): void {
 export function loadCampaignStoreFromDisk(): void {
   const campaignData = loadData<Record<string, CampaignConfig>>(CAMPAIGNS_KEY);
   if (campaignData) {
+    let migratedVoiceProvider = 0;
+    let migratedTemperature = 0;
+    let migratedRealtimeModel = 0;
+    let migratedGreetingText = 0;
+    let migratedSystemPrompt = 0;
     for (const [key, value] of Object.entries(campaignData)) {
+      // Migration: the OpenAI Realtime native voice path produces no audible
+      // audio for legacy persisted campaigns (because temperature 0.2 is
+      // rejected by the API and output_audio_format silently falls back to
+      // pcm16 instead of mulaw). Force-revert any persisted 'openai' voice
+      // provider to 'elevenlabs' so existing deployments don't go silent.
+      if (value?.voiceConfig && value.voiceConfig.voiceProvider === 'openai') {
+        value.voiceConfig.voiceProvider = 'elevenlabs';
+        migratedVoiceProvider++;
+      }
+      // Migration: clamp legacy persisted temperatures into the OpenAI
+      // Realtime range [0.6, 1.2] so a future switch back to OpenAI native
+      // voice doesn't reproduce the same silent-call bug.
+      if (value?.aiProfile && typeof value.aiProfile.temperature === 'number' && value.aiProfile.temperature < 0.6) {
+        value.aiProfile.temperature = 0.6;
+        migratedTemperature++;
+      }
+      // Migration: bump persisted legacy realtime model aliases to the GA
+      // 'gpt-realtime' model. The preview aliases still work but the GA
+      // model has measurably better prosody, instruction following, and
+      // VAD behavior — and the alias will eventually deprecate.
+      if (value?.aiProfile && value.aiProfile.realtimeModel === 'gpt-4o-realtime-preview') {
+        value.aiProfile.realtimeModel = 'gpt-realtime';
+        migratedRealtimeModel++;
+      }
+      // Migration: heal old greeting/opener wording so callers hear the
+      // updated "car insurance quote request on one of our websites"
+      // phrasing without manually re-seeding the campaign.
+      if (value?.aiProfile?.greetingText && /You requested a quote online/i.test(value.aiProfile.greetingText)) {
+        value.aiProfile.greetingText = 'Hey {{first_name}}, this is Steve with Smart Quotes — you put in a car insurance quote request on one of our websites for your {{vehicle_make}}, right?';
+        migratedGreetingText++;
+      }
+      // Migration: refresh persisted system prompts that were generated
+      // with the old opener so they pick up the new wording and the
+      // chained-acknowledgment rules.
+      if (value?.aiProfile?.systemPrompt && /looks like you requested a car insurance quote online recently/i.test(value.aiProfile.systemPrompt)) {
+        const profile = value.aiProfile;
+        profile.systemPrompt = buildSystemPrompt(
+          { first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}', vehicles: [{ year: '{{vehicle_year}}', make: '{{vehicle_make}}', model: '{{vehicle_model}}' }] },
+          { agentName: profile.agentName, companyName: profile.companyName },
+        );
+        migratedSystemPrompt++;
+      }
       campaigns.set(key, value);
+    }
+    if (migratedVoiceProvider > 0 || migratedTemperature > 0 || migratedRealtimeModel > 0 || migratedGreetingText > 0 || migratedSystemPrompt > 0) {
+      logger.info('campaign-store', 'Migrated persisted campaign configs', {
+        voiceProviderUpdates: migratedVoiceProvider,
+        temperatureUpdates: migratedTemperature,
+        realtimeModelUpdates: migratedRealtimeModel,
+        greetingTextUpdates: migratedGreetingText,
+        systemPromptUpdates: migratedSystemPrompt,
+      });
+      // Persist the migration so we don't repeat it on every restart.
+      scheduleSave(CAMPAIGNS_KEY, () => Object.fromEntries(campaigns));
     }
     logger.info('campaign-store', `Loaded ${campaigns.size} campaigns from disk`);
   }
@@ -355,12 +413,12 @@ export function seedCampaigns(): void {
     campaignId: 'campaign-consumer-auto',
     agentName: 'Steve',
     companyName: 'Smart Quotes',
-    temperature: 0.2,
+    temperature: 0.6,
     maxResponseTokens: 45,
-    realtimeModel: 'gpt-4o-realtime-preview',
+    realtimeModel: 'gpt-realtime',
     systemPrompt: buildSystemPrompt({ first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}', vehicles: [{ year: '{{vehicle_year}}', make: '{{vehicle_make}}', model: '{{vehicle_model}}' }] }, { agentName: 'Steve', companyName: 'Smart Quotes' }),
     inboundPrompt: '',
-    greetingText: 'Hi {{first_name}}, this is Steve with Smart Quotes. You requested a quote online for your {{vehicle_make}} — is now a bad time?',
+    greetingText: 'Hey {{first_name}}, this is Steve with Smart Quotes — you put in a car insurance quote request on one of our websites for your {{vehicle_make}}, right?',
     inboundGreetingText: 'Thanks for calling Smart Quotes, this is Steve. How can I help you today?',
     tools: [],
   };
@@ -450,7 +508,7 @@ export function seedCampaigns(): void {
     companyName: 'Quoting Fast',
     temperature: 0.7,
     maxResponseTokens: 200,
-    realtimeModel: 'gpt-4o-realtime-preview',
+    realtimeModel: 'gpt-realtime',
     systemPrompt: `You ARE Brook. Real person, real phone call. You're a biz dev rep at Quoting Fast. Mid-20s, sharp, know the insurance industry cold. Calling agencies because that's your job and you're good at it.
 
 ═══════════════════════════════════════════

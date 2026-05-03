@@ -1,23 +1,32 @@
 import { logger } from '../utils/logger';
+import fs from 'fs';
+import path from 'path';
 
 // ── Background Noise Injection ─────────────────────────────────────
 // Generates a synthetic office ambiance buffer in 8kHz µ-law format
 // and mixes it into outgoing TTS audio at a configurable volume
 // (~10-15% default) to make the AI sound like it's in a real office.
 
-// µ-law encoding/decoding helpers
+// G.711 µ-law encoding/decoding (standard 16-bit linear range).
+// The previous implementation clipped at 14-bit (MULAW_MAX = 0x1FFF), which
+// matched what the synthetic noise generator produced internally but
+// catastrophically squashed any 16-bit input — including TTS audio passed
+// through mixNoiseIntoAudio() and any custom WAV/MP3 normalized to full
+// scale. That's why both the synthetic ambience and the user's ElevenLabs
+// office WAV came out as quiet "static": ~75% of the dynamic range was
+// clipped away on every audio frame. Fixed to the standard G.711 range.
+const MULAW_CLIP = 32635;
+const MULAW_BIAS = 0x84;
+
 function linearToMulaw(sample: number): number {
-  const MULAW_MAX = 0x1FFF;
-  const MULAW_BIAS = 33;
   const sign = sample < 0 ? 0x80 : 0;
-  if (sample < 0) sample = -sample;
-  if (sample > MULAW_MAX) sample = MULAW_MAX;
+  if (sign) sample = -sample;
+  if (sample > MULAW_CLIP) sample = MULAW_CLIP;
   sample += MULAW_BIAS;
   let exponent = 7;
   for (let expMask = 0x4000; (sample & expMask) === 0 && exponent > 0; exponent--, expMask >>= 1) { /* find exponent */ }
   const mantissa = (sample >> (exponent + 3)) & 0x0F;
-  const mulawByte = ~(sign | (exponent << 4) | mantissa) & 0xFF;
-  return mulawByte;
+  return ~(sign | (exponent << 4) | mantissa) & 0xFF;
 }
 
 function mulawToLinear(mulawByte: number): number {
@@ -25,8 +34,8 @@ function mulawToLinear(mulawByte: number): number {
   const sign = mulawByte & 0x80;
   const exponent = (mulawByte >> 4) & 0x07;
   const mantissa = mulawByte & 0x0F;
-  let sample = ((mantissa << 3) + 0x84) << exponent;
-  sample -= 0x84;
+  let sample = ((mantissa << 3) + MULAW_BIAS) << exponent;
+  sample -= MULAW_BIAS;
   return sign ? -sample : sample;
 }
 
@@ -49,6 +58,21 @@ class PRNG {
 // ── Noise Buffer ──
 
 let officeNoiseBuffer: Buffer | null = null;
+// Diagnostic state — exposed via /api/debug/noise to figure out why a custom
+// asset isn't loading (file missing in image, decode failure, async race, etc).
+const noiseLoadDiagnostics = {
+  startedAt: 0 as number,
+  finishedAt: 0 as number,
+  source: 'pending' as 'pending' | 'custom' | 'synthetic',
+  customPath: null as string | null,
+  customExists: false as boolean,
+  customExtension: null as string | null,
+  customByteSize: 0,
+  decodeError: null as string | null,
+  bufferLengthBytes: 0,
+  loaderCwd: '' as string,
+  assetsDirContents: [] as string[],
+};
 const SAMPLE_RATE = 8000;
 const BUFFER_DURATION_SEC = 30; // 30-second loopable buffer (longer = harder to detect repetition)
 const BUFFER_LENGTH = SAMPLE_RATE * BUFFER_DURATION_SEC;
@@ -135,12 +159,295 @@ function generateOfficeNoiseBuffer(): Buffer {
   return mulaw;
 }
 
-export function getOfficeNoiseBuffer(): Buffer {
-  if (!officeNoiseBuffer) {
-    officeNoiseBuffer = generateOfficeNoiseBuffer();
-    logger.info('noise', `Office noise buffer generated: ${officeNoiseBuffer.length} bytes (${BUFFER_DURATION_SEC}s @ ${SAMPLE_RATE}Hz mulaw)`);
+// ── Custom audio loader (WAV + MP3) ───────────────────────────────
+// Replaces the synthetic noise with a real recording (e.g. an
+// ElevenLabs office-ambience export). Source resolution order:
+//   1. process.env.BACKGROUND_NOISE_FILE (absolute path, any extension)
+//   2. <repo>/assets/office-ambience.wav (canonical path)
+//   3. The first .wav or .mp3 found in <repo>/assets/ (alphabetical;
+//      .wav preferred over .mp3 because no async decode).
+// Loaded once on init: decoded → downmixed to mono → resampled to 8 kHz →
+// cross-faded for seamless looping → converted to mulaw. Failure at any
+// stage logs an error and falls back to the synthetic generator.
+
+function findCustomNoiseFile(): string | null {
+  const envPath = process.env.BACKGROUND_NOISE_FILE;
+  if (envPath && fs.existsSync(envPath)) return envPath;
+
+  const assetsDir = path.join(process.cwd(), 'assets');
+  const canonical = path.join(assetsDir, 'office-ambience.wav');
+  if (fs.existsSync(canonical)) return canonical;
+
+  if (!fs.existsSync(assetsDir)) return null;
+  const entries = fs.readdirSync(assetsDir);
+  const wavs = entries.filter((f) => f.toLowerCase().endsWith('.wav')).sort();
+  const mp3s = entries.filter((f) => f.toLowerCase().endsWith('.mp3')).sort();
+  const pick = wavs[0] || mp3s[0];
+  return pick ? path.join(assetsDir, pick) : null;
+}
+
+function decodeWav(buf: Buffer, sourcePath: string): { mono: Float32Array; sampleRate: number; channels: number; bitsPerSample: number } | null {
+  if (buf.length < 44 || buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') {
+    logger.error('noise', 'Not a valid RIFF/WAVE file', { path: sourcePath });
+    return null;
   }
-  return officeNoiseBuffer;
+  let format = 0, channels = 0, sampleRate = 0, bitsPerSample = 0;
+  let dataOffset = -1, dataSize = 0;
+  let offset = 12;
+  while (offset + 8 <= buf.length) {
+    const chunkId = buf.toString('ascii', offset, offset + 4);
+    const chunkSize = buf.readUInt32LE(offset + 4);
+    if (chunkId === 'fmt ') {
+      format = buf.readUInt16LE(offset + 8);
+      channels = buf.readUInt16LE(offset + 10);
+      sampleRate = buf.readUInt32LE(offset + 12);
+      bitsPerSample = buf.readUInt16LE(offset + 22);
+    } else if (chunkId === 'data') {
+      dataOffset = offset + 8;
+      dataSize = chunkSize;
+      break;
+    }
+    offset += 8 + chunkSize + (chunkSize & 1);
+  }
+  if (dataOffset < 0 || channels < 1 || sampleRate < 1 || (format !== 1 && format !== 3)) {
+    logger.error('noise', 'Unsupported WAV format', { path: sourcePath, format, channels, sampleRate, bitsPerSample });
+    return null;
+  }
+  const bytesPerSample = bitsPerSample / 8;
+  const frameSize = bytesPerSample * channels;
+  const totalFrames = Math.floor(dataSize / frameSize);
+  const mono = new Float32Array(totalFrames);
+  for (let i = 0; i < totalFrames; i++) {
+    let sum = 0;
+    for (let c = 0; c < channels; c++) {
+      const sOff = dataOffset + (i * channels + c) * bytesPerSample;
+      let v: number;
+      if (format === 3 && bitsPerSample === 32) v = buf.readFloatLE(sOff);
+      else if (bitsPerSample === 16) v = buf.readInt16LE(sOff) / 32768;
+      else if (bitsPerSample === 24) {
+        const b0 = buf[sOff], b1 = buf[sOff + 1], b2 = buf[sOff + 2];
+        let raw = (b2 << 16) | (b1 << 8) | b0;
+        if (raw & 0x800000) raw |= ~0xFFFFFF;
+        v = raw / 8388608;
+      }
+      else if (bitsPerSample === 32 && format === 1) v = buf.readInt32LE(sOff) / 2147483648;
+      else if (bitsPerSample === 8) v = (buf[sOff] - 128) / 128;
+      else { logger.error('noise', 'Unsupported bit depth', { bitsPerSample }); return null; }
+      sum += v;
+    }
+    mono[i] = sum / channels;
+  }
+  return { mono, sampleRate, channels, bitsPerSample };
+}
+
+async function decodeMp3(buf: Buffer, sourcePath: string): Promise<{ mono: Float32Array; sampleRate: number; channels: number; bitsPerSample: number } | null> {
+  try {
+    // mpg123-decoder ships as ESM; require it dynamically so Node's CJS loader
+    // gets the named exports and we don't pay WASM init cost unless used.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { MPEGDecoder } = require('mpg123-decoder');
+    const decoder = new MPEGDecoder();
+    await decoder.ready;
+    const result = decoder.decode(buf);
+    decoder.free();
+
+    const channels: Float32Array[] = result.channelData;
+    const numChannels = channels.length;
+    const numFrames = channels[0]?.length || 0;
+    if (!numFrames || !numChannels) {
+      logger.error('noise', 'MP3 decoder returned empty audio', { path: sourcePath });
+      return null;
+    }
+    const mono = new Float32Array(numFrames);
+    if (numChannels === 1) {
+      mono.set(channels[0]);
+    } else {
+      for (let i = 0; i < numFrames; i++) {
+        let s = 0;
+        for (let c = 0; c < numChannels; c++) s += channels[c][i];
+        mono[i] = s / numChannels;
+      }
+    }
+    return { mono, sampleRate: result.sampleRate, channels: numChannels, bitsPerSample: 32 };
+  } catch (err) {
+    logger.error('noise', 'MP3 decode failed', { path: sourcePath, error: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
+
+function finalizeNoiseBuffer(mono: Float32Array, sourceSampleRate: number, label: { path: string; channels: number; bitsPerSample: number }): Buffer | null {
+  if (mono.length < sourceSampleRate) {
+    logger.error('noise', 'Custom noise file too short (<1s)', { path: label.path, frames: mono.length });
+    return null;
+  }
+
+  // Resample to 8 kHz with linear interpolation (good enough for ambience).
+  let resampled: Float32Array;
+  if (sourceSampleRate === SAMPLE_RATE) {
+    resampled = mono;
+  } else {
+    const ratio = sourceSampleRate / SAMPLE_RATE;
+    const outLen = Math.floor(mono.length / ratio);
+    resampled = new Float32Array(outLen);
+    for (let i = 0; i < outLen; i++) {
+      const src = i * ratio;
+      const i0 = Math.floor(src);
+      const i1 = Math.min(i0 + 1, mono.length - 1);
+      const frac = src - i0;
+      resampled[i] = mono[i0] * (1 - frac) + mono[i1] * frac;
+    }
+  }
+
+  // Cross-fade head and tail for seamless looping (100 ms).
+  const fadeLen = Math.min(Math.floor(SAMPLE_RATE * 0.1), Math.floor(resampled.length / 4));
+  for (let i = 0; i < fadeLen; i++) {
+    const w = i / fadeLen;
+    resampled[i] = resampled[i] * w + resampled[resampled.length - fadeLen + i] * (1 - w);
+  }
+
+  // Peak-normalize. ElevenLabs ambience exports tend to sit at very low
+  // levels (peaks ~2% of full scale), which the volume slider then scales
+  // *further* down — total result was inaudible at typical settings. After
+  // normalizing the loop's peak to 0.6 of full scale, the dashboard volume
+  // slider has meaningful range (0.0–1.0 maps to silent–loud-but-not-clip).
+  let peak = 0;
+  for (let i = 0; i < resampled.length; i++) {
+    const a = Math.abs(resampled[i]);
+    if (a > peak) peak = a;
+  }
+  const normGain = peak > 0.001 ? (0.6 / peak) : 1;
+  const SCALE = MULAW_CLIP * 0.85;
+  const mulaw = Buffer.alloc(resampled.length);
+  for (let i = 0; i < resampled.length; i++) {
+    const s = Math.max(-1, Math.min(1, resampled[i] * normGain));
+    mulaw[i] = linearToMulaw(Math.round(s * SCALE));
+  }
+
+  logger.info('noise', 'Loaded custom office ambience', {
+    path: label.path,
+    sourceSampleRate,
+    sourceChannels: label.channels,
+    sourceBitsPerSample: label.bitsPerSample,
+    frames: mulaw.length,
+    durationSec: Math.round(mulaw.length / SAMPLE_RATE),
+    sourcePeak: Number(peak.toFixed(4)),
+    normGain: Number(normGain.toFixed(2)),
+  });
+  return mulaw;
+}
+
+async function loadCustomNoiseFile(): Promise<Buffer | null> {
+  noiseLoadDiagnostics.loaderCwd = process.cwd();
+  const assetsDir = path.join(process.cwd(), 'assets');
+  try {
+    noiseLoadDiagnostics.assetsDirContents = fs.existsSync(assetsDir) ? fs.readdirSync(assetsDir) : [];
+  } catch { noiseLoadDiagnostics.assetsDirContents = []; }
+
+  const customPath = findCustomNoiseFile();
+  noiseLoadDiagnostics.customPath = customPath;
+  if (!customPath) {
+    logger.warn('noise', 'No custom noise file found anywhere — using synthetic', {
+      cwd: noiseLoadDiagnostics.loaderCwd,
+      checkedAssetsDir: assetsDir,
+      assetsDirContents: noiseLoadDiagnostics.assetsDirContents,
+      envPath: process.env.BACKGROUND_NOISE_FILE || null,
+    });
+    return null;
+  }
+
+  try {
+    const stat = fs.statSync(customPath);
+    noiseLoadDiagnostics.customExists = true;
+    noiseLoadDiagnostics.customByteSize = stat.size;
+    noiseLoadDiagnostics.customExtension = path.extname(customPath).toLowerCase();
+
+    const buf = fs.readFileSync(customPath);
+    const ext = path.extname(customPath).toLowerCase();
+    logger.info('noise', 'Decoding custom noise file', {
+      path: customPath,
+      bytes: buf.length,
+      ext,
+    });
+    const decoded = ext === '.mp3'
+      ? await decodeMp3(buf, customPath)
+      : decodeWav(buf, customPath);
+    if (!decoded) {
+      noiseLoadDiagnostics.decodeError = 'decoder returned null (see prior log)';
+      return null;
+    }
+    return finalizeNoiseBuffer(decoded.mono, decoded.sampleRate, {
+      path: customPath,
+      channels: decoded.channels,
+      bitsPerSample: decoded.bitsPerSample,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    noiseLoadDiagnostics.decodeError = msg;
+    logger.error('noise', 'Failed to load custom noise file — falling back to synthetic', {
+      path: customPath,
+      error: msg,
+    });
+    return null;
+  }
+}
+
+export function getNoiseDiagnostics() {
+  return {
+    ...noiseLoadDiagnostics,
+    cachedBufferLengthBytes: officeNoiseBuffer ? officeNoiseBuffer.length : 0,
+    cachedSource: noiseLoadDiagnostics.source,
+    initStarted,
+    initSettled: !!noiseLoadDiagnostics.finishedAt,
+  };
+}
+
+let initStarted = false;
+let initPromise: Promise<void> | null = null;
+
+/**
+ * Pre-load and cache the office-ambience buffer. Call from server startup
+ * before accepting calls so the first call already has the custom audio
+ * (rather than briefly serving synthetic while the WASM MP3 decoder spins
+ * up). Idempotent — safe to call multiple times.
+ */
+export function initOfficeNoise(): Promise<void> {
+  if (initPromise) return initPromise;
+  initStarted = true;
+  noiseLoadDiagnostics.startedAt = Date.now();
+  initPromise = (async () => {
+    const custom = await loadCustomNoiseFile();
+    if (custom) {
+      officeNoiseBuffer = custom;
+      noiseLoadDiagnostics.source = 'custom';
+    } else {
+      officeNoiseBuffer = generateOfficeNoiseBuffer();
+      noiseLoadDiagnostics.source = 'synthetic';
+      logger.info('noise', `Synthetic office noise buffer generated: ${officeNoiseBuffer.length} bytes (${BUFFER_DURATION_SEC}s @ ${SAMPLE_RATE}Hz mulaw)`);
+    }
+    noiseLoadDiagnostics.finishedAt = Date.now();
+    noiseLoadDiagnostics.bufferLengthBytes = officeNoiseBuffer.length;
+  })();
+  return initPromise;
+}
+
+// Reusable transient synthetic buffer used while async init is still in flight.
+// Lives separately from officeNoiseBuffer so a pre-init call doesn't poison
+// the cache and prevent the real custom buffer from being installed once
+// initOfficeNoise() resolves.
+let transientSyntheticBuffer: Buffer | null = null;
+
+export function getOfficeNoiseBuffer(): Buffer {
+  if (officeNoiseBuffer) return officeNoiseBuffer;
+
+  // Init hasn't completed yet. Kick it off if nothing has, then serve a
+  // transient synthetic buffer for the brief window until it resolves.
+  if (!initStarted) {
+    initOfficeNoise().catch(() => { /* logged inside */ });
+  }
+  if (!transientSyntheticBuffer) {
+    transientSyntheticBuffer = generateOfficeNoiseBuffer();
+  }
+  return transientSyntheticBuffer;
 }
 
 // ── Mixer ──

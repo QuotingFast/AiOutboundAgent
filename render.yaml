@@ -2,7 +2,13 @@ services:
   - type: web
     name: ai-outbound-agent
     runtime: docker
-    plan: starter
+    # Virginia is closest to OpenAI Realtime, ElevenLabs us-east edge,
+    # and Twilio's primary US POP — minimizes every network leg of the
+    # audio pipeline for callers in the eastern US.
+    region: virginia
+    # Standard tier (2 GB / 1 vCPU) avoids the CPU throttling spikes
+    # that produce 5–10 s tail-latency turns on starter (0.5 vCPU).
+    plan: standard
     envVars:
       - key: PORT
         value: "3000"
@@ -18,12 +24,14 @@ services:
         sync: false
       - key: OPENAI_MODEL
         value: "gpt-4o"
+      - key: OPENAI_REALTIME_MODEL
+        value: "gpt-realtime"
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: ELEVENLABS_VOICE_ID
         sync: false
       - key: TTS_PROVIDER
-        value: "elevenlabs"
+        value: "openai"
       - key: STT_PROVIDER
         value: "openai"
       - key: AUDIOSOCKET_ENABLED

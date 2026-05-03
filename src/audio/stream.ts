@@ -118,6 +118,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   // Pending text buffer for ElevenLabs lazy reconnect
   let elevenLabsPendingText: string[] = [];
 
+  // Deepgram TTS state — when true, the four "ElevenLabs" dispatch
+  // functions route to the Deepgram Aura streaming endpoint instead.
+  // Keeps useElevenLabs semantics (= "external TTS, OpenAI Realtime is
+  // text-only LLM") so the rest of the pipeline doesn't branch.
+  let useDeepgram = false;
+  let deepgramWs: WebSocket | null = null;
+  let deepgramPendingText: string[] = [];
+
   // DeepSeek state
   let useDeepSeek = false;
   let deepseekHistory: Array<any> = [];
@@ -147,6 +155,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let lastSpeechDurationMs = 0;
   let lastRejectReason: string | null = null;
   let lastAcceptedUserText = '';
+  let consecutiveRepromptCount = 0;
 
   // Module instances (created when call starts)
   let analytics: CallAnalytics | null = null;
@@ -356,6 +365,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     const effectiveVoiceProvider = campaignVoice?.voiceProvider || s.voiceProvider;
     const model = activeCampaign?.aiProfile?.realtimeModel || s.realtimeModel;
     useDeepSeek = effectiveVoiceProvider === 'deepseek';
+    useDeepgram = effectiveVoiceProvider === 'deepgram';
 
     // Fall back to ElevenLabs mode if DeepSeek selected but API key missing
     if (useDeepSeek && !config.deepseek.apiKey) {
@@ -363,7 +373,18 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       useDeepSeek = false;
     }
 
-    useElevenLabs = effectiveVoiceProvider === 'elevenlabs' || effectiveVoiceProvider === 'deepseek';
+    // Fall back to ElevenLabs mode if Deepgram selected but API key missing
+    if (useDeepgram && !config.deepgram?.apiKey) {
+      logger.warn('stream', 'Deepgram selected but no API key configured — falling back to ElevenLabs mode', { sessionId });
+      useDeepgram = false;
+    }
+
+    // useElevenLabs means "external TTS, OpenAI Realtime stays text-only".
+    // Deepgram mode also satisfies this — the four ElevenLabs dispatch
+    // functions route to Deepgram when useDeepgram is true.
+    useElevenLabs = effectiveVoiceProvider === 'elevenlabs'
+      || effectiveVoiceProvider === 'deepseek'
+      || (effectiveVoiceProvider === 'deepgram' && useDeepgram);
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
 
     logger.info('stream', 'Connecting to OpenAI Realtime', {
@@ -500,11 +521,52 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       }
     }
 
-    // Use campaign-specific temperature and max tokens if available
-    const effectiveTemperature = activeCampaign?.aiProfile?.temperature ?? s.temperature;
+    // Use campaign-specific temperature and max tokens if available.
+    // OpenAI Realtime API requires temperature in [0.6, 1.2]; values outside
+    // this range cause session.update to be silently rejected, which leaves
+    // output_audio_format at the pcm16 default and breaks audio playback to
+    // Twilio (mulaw expected). Clamp here so any persisted lower temperature
+    // from older configs (commonly 0.2) doesn't silently kill the call audio.
+    const rawTemperature = activeCampaign?.aiProfile?.temperature ?? s.temperature;
+    const effectiveTemperature = Math.min(1.2, Math.max(0.6, rawTemperature));
     const effectiveMaxTokens = activeCampaign?.aiProfile?.maxResponseTokens ?? s.maxResponseTokens;
 
     const effectiveModel = activeCampaign?.aiProfile?.realtimeModel || s.realtimeModel;
+
+    // Pick turn-detection strategy based on model. The GA 'gpt-realtime'
+    // model supports semantic_vad, which uses the model itself to decide
+    // when the user is done speaking — much more robust than energy-based
+    // server_vad, especially with background ambience playing on the line.
+    // Older preview models fall back to server_vad with conservative
+    // thresholds.
+    const useSemanticVad = /^gpt-4o-realtime|^gpt-realtime/.test(effectiveModel);
+    // Disable OpenAI's auto-response. We call response.create() ourselves
+    // from the input_audio_transcription.completed handler AFTER the
+    // rejection gate passes. This is the fix for the duplicate-response
+    // bug where a transient sound (line noise, echo, breathing) triggered
+    // a phantom VAD commit, OpenAI auto-fired a response, our barge-in
+    // cancelled it — then the next real commit auto-fired *another*
+    // response on the same user turn. Net: two agent replies played for
+    // one thing the caller said, making them feel unheard and repeat
+    // themselves. With auto-create off, every response is gated on a
+    // real, accepted transcript: one user utterance → one reply, period.
+    const turnDetection: any = useSemanticVad
+      ? {
+          type: 'semantic_vad',
+          eagerness: 'high',
+          create_response: false,
+          interrupt_response: true,
+        }
+      : {
+          type: 'server_vad',
+          threshold: s.vadThreshold,
+          prefix_padding_ms: s.prefixPaddingMs,
+          silence_duration_ms: s.silenceDurationMs,
+          // See note on semantic_vad branch above — auto-response off,
+          // we trigger response.create() manually post-transcription.
+          create_response: false,
+          interrupt_response: true,
+        };
 
     logger.info('stream', 'Configuring session', {
       sessionId,
@@ -512,14 +574,15 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       voiceProvider: campaignVoice?.voiceProvider || s.voiceProvider,
       voice: useElevenLabs ? `elevenlabs:${campaignVoice?.elevenlabsVoiceId || s.elevenlabsVoiceId}` : s.voice,
       model: effectiveModel,
+      turnDetectionType: turnDetection.type,
       vadThreshold: s.vadThreshold,
       silenceDurationMs: s.silenceDurationMs,
       maxTokens: effectiveMaxTokens,
     });
 
     if (useDeepSeek) {
-      // DeepSeek mode: OpenAI Realtime is STT-only (no auto-response)
-      // Store instructions for DeepSeek API calls
+      // DeepSeek mode: OpenAI Realtime is STT-only (no auto-response).
+      // Force create_response=false on the unified turnDetection.
       deepseekInstructions = instructions;
       openaiWs.send(JSON.stringify({
         type: 'session.update',
@@ -528,14 +591,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           instructions: 'You are a speech-to-text transcription relay. Do not generate responses.',
           input_audio_format: 'g711_ulaw',
           input_audio_transcription: { model: 'gpt-4o-transcribe' },
-          turn_detection: {
-            type: 'server_vad',
-            threshold: s.vadThreshold,
-            prefix_padding_ms: s.prefixPaddingMs,
-            silence_duration_ms: s.silenceDurationMs,
-            create_response: false,
-            interrupt_response: true,
-          },
+          turn_detection: { ...turnDetection, create_response: false },
           tools: [],
           max_response_output_tokens: 1,
           temperature: 0.6,
@@ -549,14 +605,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           instructions,
           input_audio_format: 'g711_ulaw',
           input_audio_transcription: { model: 'gpt-4o-transcribe' },
-          turn_detection: {
-            type: 'server_vad',
-            threshold: s.vadThreshold,
-            prefix_padding_ms: s.prefixPaddingMs,
-            silence_duration_ms: s.silenceDurationMs,
-            create_response: true,
-            interrupt_response: true,
-          },
+          turn_detection: turnDetection,
           tools: getRealtimeTools(),
           max_response_output_tokens: effectiveMaxTokens,
           temperature: effectiveTemperature,
@@ -572,14 +621,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           input_audio_format: 'g711_ulaw',
           output_audio_format: 'g711_ulaw',
           input_audio_transcription: { model: 'gpt-4o-transcribe' },
-          turn_detection: {
-            type: 'server_vad',
-            threshold: s.vadThreshold,
-            prefix_padding_ms: s.prefixPaddingMs,
-            silence_duration_ms: s.silenceDurationMs,
-            create_response: true,
-            interrupt_response: true,
-          },
+          turn_detection: turnDetection,
           tools: getRealtimeTools(),
           max_response_output_tokens: effectiveMaxTokens,
           temperature: effectiveTemperature,
@@ -634,7 +676,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           .replace(/\{\{vehicle_make\}\}/g, vehicleMake);
         greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "${greetingText}"]`;
       } else {
-        greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "Hey ${leadData.first_name}, it's ${effectiveAgentName} over at ${effectiveCompanyName} — you had looked into getting a quote not too long ago, right?"]`;
+        greetingInstruction = `[The outbound call to ${leadData.first_name} has just connected. Greet them now. Start with: "Hey ${leadData.first_name}, it's ${effectiveAgentName} over at ${effectiveCompanyName} — you put in a car insurance quote request on one of our websites recently, right?"]`;
       }
     }
 
@@ -664,6 +706,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   // --- ElevenLabs WebSocket streaming TTS ---
 
   function connectElevenLabs(): void {
+    if (useDeepgram) return connectDeepgram();
     const s = getSettings();
     // Use campaign voice config for ElevenLabs voice ID, model, and tuning
     const campaignVoice = activeCampaign?.voiceConfig;
@@ -690,7 +733,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     const voiceId = effectiveVoiceId;
     logger.info('stream', 'ElevenLabs connecting', { sessionId, voiceId, campaignId: activeCampaign?.id || 'none' });
     const modelId = effectiveModelId;
-    const url = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=${modelId}&output_format=ulaw_8000`;
+    // optimize_streaming_latency=3 trades a tiny bit of audio quality for
+    // ~30-40% faster first-byte. Inaudible on a phone line.
+    // inactivity_timeout=180 keeps the WS alive 3 minutes between turns
+    // so we don't pay reconnect cost mid-call.
+    const url = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=${modelId}&output_format=ulaw_8000&optimize_streaming_latency=3&inactivity_timeout=180`;
 
     const ws = new WebSocket(url);
     elevenLabsWs = ws;
@@ -712,7 +759,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           use_speaker_boost: effectiveUseSpeakerBoost,
         },
         generation_config: {
-          chunk_length_schedule: [120, 160, 250, 290],
+          // auto_mode triggers TTS on every text chunk we send instead of
+          // waiting for chunk_length_schedule (was buffering the first 120
+          // characters before starting). Each token from OpenAI now
+          // immediately produces audio. Cuts ~200-400 ms off first audio.
+          auto_mode: true,
           ...(effectiveSpeed !== 1.0 ? { speed: effectiveSpeed } : {}),
         },
         xi_api_key: config.elevenlabs.apiKey,
@@ -773,6 +824,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   }
 
   function sendTextToElevenLabs(text: string): void {
+    if (useDeepgram) return sendTextToDeepgram(text);
     currentElevenLabsText += text;
     if (analytics) analytics.addElevenLabsCharacters(text.length);
 
@@ -792,6 +844,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   }
 
   function flushElevenLabs(): void {
+    if (useDeepgram) return flushDeepgram();
     if (!elevenLabsWs || elevenLabsWs.readyState !== WebSocket.OPEN) {
       // If not connected, add flush marker to pending buffer
       if (elevenLabsPendingText.length > 0) {
@@ -803,11 +856,130 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   }
 
   function resetElevenLabs(): void {
+    if (useDeepgram) return resetDeepgram();
     if (elevenLabsWs) {
       elevenLabsWs.close();
       elevenLabsWs = null;
     }
     connectElevenLabs();
+  }
+
+  // --- Deepgram Aura streaming TTS ---
+
+  function connectDeepgram(): void {
+    const s = getSettings();
+    const model = activeCampaign?.voiceConfig?.deepgramTtsModel || s.deepgramTtsModel || 'aura-2-thalia-en';
+    const apiKey = config.deepgram?.apiKey || '';
+    if (!apiKey) {
+      logger.error('stream', 'Deepgram MISSING api key', { sessionId });
+      return;
+    }
+
+    // mulaw 8kHz so Twilio can play frames directly without resampling.
+    // container=none gives us raw audio bytes (no WAV header) which is
+    // what we need to forward to Twilio in 160-byte frames.
+    const url = `wss://api.deepgram.com/v1/speak?model=${encodeURIComponent(model)}&encoding=mulaw&sample_rate=8000&container=none`;
+
+    logger.info('stream', 'Deepgram TTS connecting', { sessionId, model, campaignId: activeCampaign?.id || 'none' });
+
+    const ws = new WebSocket(url, { headers: { Authorization: `Token ${apiKey}` } });
+    deepgramWs = ws;
+
+    ws.on('open', () => {
+      if (deepgramWs !== ws) {
+        logger.debug('stream', 'Stale Deepgram open event, ignoring', { sessionId });
+        ws.close();
+        return;
+      }
+      logger.info('stream', 'Deepgram WS connected', { sessionId });
+
+      // Flush any pending text that was buffered while connecting
+      if (deepgramPendingText.length > 0) {
+        logger.info('stream', 'Flushing pending Deepgram text', { sessionId, chunks: deepgramPendingText.length });
+        let pendingFlush = false;
+        for (const chunk of deepgramPendingText) {
+          if (chunk === '') {
+            pendingFlush = true;
+          } else {
+            ws.send(JSON.stringify({ type: 'Speak', text: chunk }));
+          }
+        }
+        deepgramPendingText = [];
+        if (pendingFlush) ws.send(JSON.stringify({ type: 'Flush' }));
+      }
+    });
+
+    ws.on('message', (data: WebSocket.Data, isBinary: boolean) => {
+      if (isBinary) {
+        const buf = data instanceof Buffer ? data : Buffer.from(data as ArrayBuffer);
+        responseIsPlaying = true;
+        lastAudioSentAt = Date.now();
+        sendAudioToTwilio(buf.toString('base64'));
+        if (firstAudioAt === 0) {
+          firstAudioAt = Date.now();
+          if (analytics && responseRequestedAt > 0) {
+            analytics.recordTTSLatency(firstAudioAt - responseRequestedAt);
+          }
+        }
+        audioChunkCount++;
+        if (analytics) analytics.addAudioOutputSeconds(buf.length / 8000);
+        return;
+      }
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === 'Flushed') {
+          responseIsPlaying = false;
+          if (analytics) analytics.agentFinishedSpeaking(currentElevenLabsText);
+          currentElevenLabsText = '';
+        } else if (msg.type === 'Warning') {
+          logger.warn('stream', 'Deepgram warning', { sessionId, message: msg.description || msg });
+        }
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logger.error('stream', 'Deepgram message error', { sessionId, error: errMsg });
+      }
+    });
+
+    ws.on('close', () => {
+      logger.debug('stream', 'Deepgram WS closed', { sessionId });
+      if (deepgramWs === ws) deepgramWs = null;
+    });
+
+    ws.on('error', (err) => {
+      logger.error('stream', 'Deepgram WS error', { sessionId, error: err.message });
+    });
+  }
+
+  function sendTextToDeepgram(text: string): void {
+    currentElevenLabsText += text;
+
+    if (deepgramWs && deepgramWs.readyState === WebSocket.OPEN) {
+      deepgramWs.send(JSON.stringify({ type: 'Speak', text }));
+      return;
+    }
+
+    deepgramPendingText.push(text);
+    if (!deepgramWs || deepgramWs.readyState === WebSocket.CLOSED || deepgramWs.readyState === WebSocket.CLOSING) {
+      logger.info('stream', 'Deepgram WS not open, reconnecting on demand', { sessionId });
+      connectDeepgram();
+    }
+  }
+
+  function flushDeepgram(): void {
+    if (!deepgramWs || deepgramWs.readyState !== WebSocket.OPEN) {
+      if (deepgramPendingText.length > 0) deepgramPendingText.push('');
+      return;
+    }
+    deepgramWs.send(JSON.stringify({ type: 'Flush' }));
+  }
+
+  function resetDeepgram(): void {
+    if (deepgramWs) {
+      try { deepgramWs.send(JSON.stringify({ type: 'Clear' })); } catch {}
+      deepgramWs.close();
+      deepgramWs = null;
+    }
+    connectDeepgram();
   }
 
   // --- DeepSeek streaming LLM ---
@@ -1066,18 +1238,31 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   function isFillerOnly(text: string): boolean {
     const normalized = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     if (!normalized) return true;
-    const filler = new Set(['uh', 'um', 'hmm', 'hm', 'yeah', 'ok', 'okay']);
+    // "yeah", "ok", "okay" intentionally NOT included — those are valid
+    // affirmative answers and dropping them caused the agent to sit silent
+    // after the caller answered a yes/no question.
+    const filler = new Set(['uh', 'um', 'hmm', 'hm']);
     const parts = normalized.split(' ').filter(Boolean);
     return parts.length > 0 && parts.every(p => filler.has(p));
   }
 
   function deterministicReprompt(): void {
-    const line = 'Sorry, I didn\'t catch that — could you repeat that?';
+    consecutiveRepromptCount++;
+
+    // After 2 consecutive misses, stay silent — asking again is the loudest bot-tell.
+    if (consecutiveRepromptCount > 1) {
+      logger.info('stream', 'Deterministic reprompt suppressed (consecutive limit)', { sessionId, consecutiveRepromptCount });
+      return;
+    }
+
+    const variants = ['Hmm?', 'Say again?', 'Sorry?'];
+    const line = variants[Math.floor(Math.random() * variants.length)];
+
     if (useElevenLabs) {
       currentElevenLabsText = '';
       sendTextToElevenLabs(line);
       flushElevenLabs();
-      logger.info('stream', 'Deterministic reprompt', { sessionId, line });
+      logger.info('stream', 'Deterministic reprompt', { sessionId, line, consecutiveRepromptCount });
       return;
     }
     sendUserMessage(`[System: Say exactly: "${line}"]`);
@@ -1098,10 +1283,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         initialGreetingDone = true;
         if (useElevenLabs) {
           connectElevenLabs();
-          // Wait for ElevenLabs to connect before triggering greeting
+          // Wait for the active TTS WS to connect before triggering greeting
           let greetingSent = false;
           const waitForEl = setInterval(() => {
-            if (!greetingSent && elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
+            const activeWs = useDeepgram ? deepgramWs : elevenLabsWs;
+            if (!greetingSent && activeWs && activeWs.readyState === WebSocket.OPEN) {
               clearInterval(waitForEl);
               greetingSent = true;
               triggerGreeting();
@@ -1215,6 +1401,12 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             elevenLabsWs = null;
             elevenLabsPendingText = [];
           }
+          if (useDeepgram && deepgramWs) {
+            try { deepgramWs.send(JSON.stringify({ type: 'Clear' })); } catch {}
+            deepgramWs.close();
+            deepgramWs = null;
+            deepgramPendingText = [];
+          }
           if (useDeepSeek && deepseekAbortController) {
             deepseekAbortController.abort();
             deepseekAbortController = null;
@@ -1238,9 +1430,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           logger.debug('stream', 'Speech stopped before debounce — ignored', { sessionId });
         }
 
-        // Minimal response delay: just enough jitter to avoid robotic instant replies.
+        // Minimal response delay: tiny jitter only. Anything bigger here
+        // adds perceptible lag to every turn.
         {
-          const humanDelayMs = 50 + Math.floor(Math.random() * 100);
+          const humanDelayMs = Math.floor(Math.random() * 40);
           logger.debug('stream', 'Adding human response delay', { sessionId, delayMs: humanDelayMs });
           responseRequestedAt = Date.now() + humanDelayMs; // Adjust baseline for latency tracking
           firstAudioAt = 0;
@@ -1306,14 +1499,18 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           confidence,
         });
 
-        // Phase 2: hard acceptance gate (minimal)
+        // Acceptance gate. Tuned loose: phone audio rarely exceeds 0.85
+        // confidence and single-word answers ("yes", "no", "Toyota") run
+        // ~250-450ms — rejecting them caused the agent to sit silent after
+        // the caller already answered the question. Keep only the gates
+        // that catch genuine click/pop noise and exact duplicate turns.
         let rejectReason: string | null = null;
         if (!cleanedText && speechDurationMs === 0) rejectReason = 'empty_no_speech';
-        else if (speechDurationMs > 0 && speechDurationMs < 650) rejectReason = 'short_speech';
-        else if (typeof confidence === 'number' && confidence < 0.9) rejectReason = 'low_conf';
+        else if (speechDurationMs > 0 && speechDurationMs < 200) rejectReason = 'short_speech';
+        else if (typeof confidence === 'number' && confidence < 0.4) rejectReason = 'low_conf';
         else if (fillerOnly) rejectReason = 'filler_only';
-        else if (meaningfulWords < 2 && cleanedText.length < 4) rejectReason = 'low_quality';
-        else if (normalizedUser && normalizedUser === lastUserTurnNorm && (Date.now() - lastUserTurnAt) < 4500) rejectReason = 'duplicate_user_turn';
+        else if (!cleanedText) rejectReason = 'low_quality';
+        else if (normalizedUser && normalizedUser === lastUserTurnNorm && (Date.now() - lastUserTurnAt) < 2000) rejectReason = 'duplicate_user_turn';
 
         if (rejectReason) {
           lastRejectReason = rejectReason;
@@ -1335,6 +1532,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
 
         lastRejectReason = null;
+        consecutiveRepromptCount = 0;
         if (normalizedUser) {
           lastUserTurnNorm = normalizedUser;
           lastUserTurnAt = Date.now();
@@ -1364,7 +1562,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
         emitTranscript('user', userText);
 
-        // Auto-DNC detection: if user says "stop calling", add to DNC
+        // Auto-DNC detection: if user says "stop calling", add to DNC.
+        // DNC takes over the response — we return early so the normal
+        // response.create path below doesn't fire a second time.
         if (userText && callerNumber) {
           const autoDncSettings = getSettings();
           if (autoDncSettings.autoDncEnabled && handleAutoDnc(callerNumber, userText)) {
@@ -1379,6 +1579,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             } else {
               sendUserMessage(dncMsg);
             }
+            break;
           }
         }
 
@@ -1396,6 +1597,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             audioChunkCount = 0;
             callDeepSeekStreaming(userText);
           }
+        } else if (!useDeepSeek && userText.trim() && openaiWs?.readyState === WebSocket.OPEN) {
+          // OpenAI Realtime mode (ElevenLabs or native voice): auto-response
+          // is OFF in session config to prevent duplicates from phantom VAD
+          // commits. Trigger one response per accepted user transcript here.
+          responseRequestedAt = Date.now();
+          firstAudioAt = 0;
+          audioChunkCount = 0;
+          openaiWs.send(JSON.stringify({ type: 'response.create' }));
         }
         break;
       }
@@ -1554,8 +1763,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         logger.error('stream', 'Failed to end call via Twilio API', { sessionId, error: errMsg });
       }
     } else if (name === 'send_scheduling_text') {
-      // Send a text with Zoom scheduling link to the prospect
-      // Safety guardrail: always send only to current caller number, never an arbitrary spoken number.
+      // Send a text with the scheduling link to the prospect.
+      // TCPA safety guardrails:
+      //   1. Always send to the live caller number — never an arbitrary number
+      //      the model or prospect may speak aloud.
+      //   2. Require explicit verbal consent on the most recent user turn
+      //      before sending. If consent isn't on the latest turn, prompt the
+      //      agent to ask first and abort this tool call.
       const prospectName = args.prospect_name || leadData.first_name || 'there';
       const targetPhone = callerNumber;
       if (args.phone || args.phone_number || args.to) {
@@ -1564,6 +1778,28 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           provided: args.phone || args.phone_number || args.to,
           enforced: targetPhone,
         });
+      }
+
+      // SMS consent gate — block unless the most recent caller turn contained
+      // an affirmative response. Mirrors the transfer_call confirmation gate.
+      const smsConsentText = (lastAcceptedUserText || '').toLowerCase();
+      const smsHasNegative = /\b(no|nope|don't|do not|stop|wait|hold on|not now|later)\b/.test(smsConsentText);
+      const smsHasAffirmative = /\b(yes|yeah|yep|sure|ok|okay|please|go ahead|sounds good|that works|do it|send it|text it|fine)\b/.test(smsConsentText);
+      if (smsHasNegative || !smsHasAffirmative) {
+        logger.warn('stream', 'Blocked send_scheduling_text without explicit SMS consent', {
+          sessionId,
+          targetPhone,
+          lastAcceptedUserText: redactPII(lastAcceptedUserText),
+          hasNegative: smsHasNegative,
+          hasAffirmative: smsHasAffirmative,
+        });
+        if (!useDeepSeek) {
+          sendFunctionOutput(call_id, { status: 'consent_required', reason: 'no_explicit_sms_consent_on_last_turn' });
+        }
+        const consentMsg = '[System: Do NOT text yet. Ask one short yes/no question only: "Is it cool if I shoot you a quick text with the link to this number?" Wait for an explicit yes before calling send_scheduling_text. Never send to any number other than the one currently on the line.]';
+        if (useDeepSeek) callDeepSeekStreaming(consentMsg);
+        else sendUserMessage(consentMsg);
+        return;
       }
 
       logger.info('stream', 'Sending scheduling text', { sessionId, prospectName, targetPhone });
@@ -1683,11 +1919,20 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         }
       }
     } else if (name === 'schedule_callback') {
-      // Schedule a callback to call the prospect back later
+      // Schedule a callback to call the prospect back later.
+      // TCPA safety: callbacks ALWAYS go to the live caller number — never
+      // an arbitrary number the model or prospect speaks aloud during the call.
       const callbackTime = args.callback_time || '';
       const prospectName = args.prospect_name || leadData.first_name || 'Unknown';
       const reason = args.reason || '';
       const targetPhone = callerNumber;
+      if (args.phone || args.phone_number || args.to || args.callback_phone) {
+        logger.warn('stream', 'Ignored model-provided phone override for callback', {
+          sessionId,
+          provided: args.phone || args.phone_number || args.to || args.callback_phone,
+          enforced: targetPhone,
+        });
+      }
 
       logger.info('stream', 'Scheduling callback', { sessionId, prospectName, callbackTime, targetPhone });
 

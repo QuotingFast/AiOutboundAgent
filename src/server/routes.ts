@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { startOutboundCall, StartCallParams, sendSms, endCall, fetchRecentRecordings } from '../twilio/client';
-import { buildMediaStreamTwiml, buildTransferTwiml, buildTransferWhisperTwiml, escapeXml } from '../twilio/twiml';
+import { buildMediaStreamTwiml, buildTransferTwiml, buildTransferWhisperTwiml, buildConferenceProspectTwiml, buildAgentIntroTwiml, escapeXml } from '../twilio/twiml';
 import { registerPendingSession, hasPendingSession } from '../audio/stream';
 import { TransferConfig, buildSystemPrompt } from '../agent/prompts';
 import { getSettings, updateSettings, recordCall, getCallHistory } from '../config/runtime';
@@ -469,6 +469,43 @@ router.post('/twilio/transfer-whisper', (req: Request, res: Response) => {
 });
 
 /**
+ * POST /twilio/conference-prospect
+ * Puts the prospect into a named Conference room to wait for the agent.
+ */
+router.post('/twilio/conference-prospect', (req: Request, res: Response) => {
+  const conf = (req.query.conf as string) || '';
+  if (!conf) {
+    res.status(400).send('Missing conf parameter');
+    return;
+  }
+  logger.info('routes', 'Conference prospect TwiML requested', { conf });
+  const twiml = buildConferenceProspectTwiml(conf);
+  res.type('text/xml').send(twiml);
+});
+
+/**
+ * POST /twilio/agent-intro
+ * Serves TwiML for the agent leg of a warm conference transfer.
+ * Says the lead intro to the agent alone, then joins them into the waiting conference.
+ */
+router.post('/twilio/agent-intro', (req: Request, res: Response) => {
+  const conf = (req.query.conf as string) || '';
+  const firstname = (req.query.firstname as string) || 'the prospect';
+  const carrier = (req.query.carrier as string) || 'their current carrier';
+  const years = (req.query.years as string) || '';
+  const vehicles = (req.query.vehicles as string) || '1';
+
+  if (!conf) {
+    res.status(400).send('Missing conf parameter');
+    return;
+  }
+
+  logger.info('routes', 'Agent intro TwiML requested', { conf, firstname });
+  const twiml = buildAgentIntroTwiml(conf, firstname, carrier, years, vehicles);
+  res.type('text/xml').send(twiml);
+});
+
+/**
  * POST /twilio/status
  */
 router.post('/twilio/status', (req: Request, res: Response) => {
@@ -523,6 +560,14 @@ router.post('/twilio/recording-status', (req: Request, res: Response) => {
 router.get('/health', (_req: Request, res: Response) => {
   const health = getSystemHealth();
   res.json({ status: 'ok', timestamp: new Date().toISOString(), system: health });
+});
+
+// Diagnostic endpoint for the office-ambience loader. Returns where the loader
+// looked, what it found, whether decoding succeeded, and which buffer is live.
+router.get('/api/debug/noise', (_req: Request, res: Response) => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { getNoiseDiagnostics } = require('../audio/noise');
+  res.json(getNoiseDiagnostics());
 });
 
 router.get('/dashboard', (_req: Request, res: Response) => {
@@ -1473,7 +1518,8 @@ async function handleWeblead(req: Request, res: Response) {
           const meta = body.meta || {};
 
           // ── Campaign resolution (priority: query param > URL path > body field) ──
-          const rawCampaignId = (
+          // Vendors like Jangl send numeric campaign_id, so coerce to string before trim().
+          const rawCampaignId = String(
                   (req.query.campaign_id as string) ||
                   req.params.campaignId ||
                   body.campaign_id ||
@@ -1802,6 +1848,11 @@ async function handleWeblead(req: Request, res: Response) {
 // Parameterized route must be registered first so Express matches it before the bare path
 router.post('/webhook/weblead/:campaignId', handleWeblead);
 router.post('/webhook/weblead', handleWeblead);
+
+// Vendor-named aliases for the same Jangl/QuotingFast nested-payload format.
+// Jangl's UI labels the intake as "JSON Webhook" — point it at /webhooks/jangl.
+router.post('/webhooks/jangl/:campaignId', handleWeblead);
+router.post('/webhooks/jangl', handleWeblead);
 
 // ── AMD Status Webhook ──────────────────────────────────────────────
 

@@ -2,8 +2,8 @@ import { config } from './index';
 import { loadData, scheduleSave } from '../db/persistence';
 
 export interface RuntimeSettings {
-      // Voice provider: 'openai' = Realtime speech-to-speech, 'elevenlabs' = OpenAI LLM + EL TTS, 'deepseek' = DeepSeek LLM + EL TTS
-  voiceProvider: 'openai' | 'elevenlabs' | 'deepseek';
+      // Voice provider: 'openai' = Realtime speech-to-speech, 'elevenlabs' = OpenAI LLM + EL TTS, 'deepseek' = DeepSeek LLM + EL TTS, 'deepgram' = OpenAI LLM + Deepgram Aura TTS
+  voiceProvider: 'openai' | 'elevenlabs' | 'deepseek' | 'deepgram';
 
   // Voice & Model (OpenAI)
   voice: string;
@@ -21,6 +21,9 @@ export interface RuntimeSettings {
 
   // DeepSeek settings
   deepseekModel: string;
+
+  // Deepgram TTS settings
+  deepgramTtsModel: string;
 
   // VAD & Barge-in
   vadThreshold: number;
@@ -130,10 +133,13 @@ export interface CallRecord {
 }
 
 const settings: RuntimeSettings = {
-      voiceProvider: 'elevenlabs',
+      voiceProvider: 'openai',
       voice: config.openai.voice,
       realtimeModel: config.openai.realtimeModel,
-      temperature: 0.2,
+      // OpenAI Realtime requires temperature >= 0.6; values below that are
+      // silently rejected and the API falls back to pcm16 audio output,
+      // which Twilio can't play (mulaw expected) — call goes silent.
+      temperature: 0.6,
       elevenlabsVoiceId: config.elevenlabs.voiceId || 'jn34bTlmmOgOJU9XfPuy', // Steve
       elevenlabsModelId: 'eleven_flash_v2_5',
       elevenlabsStability: 0.45,
@@ -142,12 +148,21 @@ const settings: RuntimeSettings = {
       elevenlabsUseSpeakerBoost: true,
       elevenlabsSpeed: 0.97,
       deepseekModel: config.deepseek.model || 'deepseek-chat',
-      vadThreshold: 0.85,
-      silenceDurationMs: 800,
+      deepgramTtsModel: config.deepgram?.ttsModel || 'aura-2-thalia-en',
+      // VAD tuning. Note: with the GA gpt-realtime model the agent now uses
+      // semantic_vad and these fields are unused. They only matter when the
+      // model is one of the legacy preview aliases. silenceDurationMs was
+      // 1400ms which added a noticeable lag before the agent replied on
+      // server_vad fallback; 500ms is snappy without cutting mid-thought.
+      vadThreshold: 0.55,
+      silenceDurationMs: 500,
       prefixPaddingMs: 200,
-      bargeInDebounceMs: 200,
-      echoSuppressionMs: 300,
-      maxResponseTokens: 45,
+      // Aggressive barge-in for snappy turn-taking. With semantic_vad
+      // handling phantom-speech rejection at the model level we don't
+      // need long debounces here as a defensive moat anymore.
+      bargeInDebounceMs: 150,
+      echoSuppressionMs: 250,
+      maxResponseTokens: 1024,
       agentName: 'Steve',
       companyName: 'Smart Quotes',
       systemPromptOverride: '',
@@ -162,8 +177,11 @@ const settings: RuntimeSettings = {
       defaultToNumber: '',
 
       // Background noise
+      // Default ON so a freshly deployed instance (or one with no persisted
+      // settings yet) plays the office ambience that's bundled in assets/.
+      // Existing deployments keep whatever value is persisted.
       backgroundNoiseEnabled: false,
-      backgroundNoiseVolume: 0.07,
+      backgroundNoiseVolume: 0.04,
 
       // AMD / Voicemail detection
       amdEnabled: false,
@@ -236,6 +254,47 @@ export function loadRuntimeFromDisk(): void {
         (settings as any)[key] = value;
       }
     }
+    if (typeof settings.temperature === 'number' && settings.temperature < 0.6) {
+      settings.temperature = 0.6;
+      persistSettings();
+    }
+    // Heal old 45-token limit set for ElevenLabs text mode — audio mode needs much more.
+    if (typeof settings.maxResponseTokens === 'number' && settings.maxResponseTokens < 200) {
+      settings.maxResponseTokens = 1024;
+      persistSettings();
+    }
+    // Bump legacy preview-alias model to the GA 'gpt-realtime'.
+    if (settings.realtimeModel === 'gpt-4o-realtime-preview') {
+      settings.realtimeModel = 'gpt-realtime';
+      persistSettings();
+    }
+    // Heal pathological VAD thresholds. The previous 0.92 default was too
+    // strict and made the agent unable to hear normal phone speech; the
+    // older 0.85 was too eager. Anything outside [0.5, 0.85] gets reset to
+    // the safe 0.65 default. Note: only applies when the legacy server_vad
+    // path is used (preview models); gpt-realtime ignores this entirely
+    // and uses semantic_vad instead.
+    let vadMigrated = false;
+    if (typeof settings.vadThreshold === 'number' && (settings.vadThreshold < 0.4 || settings.vadThreshold > 0.85)) {
+      settings.vadThreshold = 0.55;
+      vadMigrated = true;
+    }
+    // Heal sluggish persisted silence_duration values (prior default was
+    // 1400ms which felt like the agent was hanging after every answer).
+    if (typeof settings.silenceDurationMs === 'number' && settings.silenceDurationMs > 700) {
+      settings.silenceDurationMs = 500;
+      vadMigrated = true;
+    }
+    // Heal sluggish barge-in/echo windows from the prior over-correction.
+    if (typeof settings.bargeInDebounceMs === 'number' && settings.bargeInDebounceMs > 250) {
+      settings.bargeInDebounceMs = 150;
+      vadMigrated = true;
+    }
+    if (typeof settings.echoSuppressionMs === 'number' && settings.echoSuppressionMs > 350) {
+      settings.echoSuppressionMs = 250;
+      vadMigrated = true;
+    }
+    if (vadMigrated) persistSettings();
   }
 }
 

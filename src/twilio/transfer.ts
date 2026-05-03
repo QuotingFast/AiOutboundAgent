@@ -19,7 +19,7 @@ export async function executeWarmTransfer(
     return true;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error('transfer', 'Transfer failed', { callSid, targetNumber, error: message });
+    logger.error('transfer', 'Warm transfer failed', { callSid, targetNumber, error: message });
     return false;
   }
 }

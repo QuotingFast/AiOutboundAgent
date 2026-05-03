@@ -514,7 +514,7 @@ export function getDashboardHtml(): string {
     <div class="call-row">
       <div class="field">
         <label>To Number</label>
-        <input type="text" id="callTo" placeholder="+19547905093">
+        <input type="text" id="callTo" value="+13073183551" placeholder="+13073183551">
       </div>
       <div class="field">
         <label>From Number</label>
@@ -522,7 +522,7 @@ export function getDashboardHtml(): string {
       </div>
       <div class="field">
         <label>Lead Name</label>
-        <input type="text" id="callName" value="Justin">
+        <input type="text" id="callName" value="Thomas">
       </div>
       <div class="field">
         <label>Lead State</label>
@@ -1684,8 +1684,10 @@ export function getDashboardHtml(): string {
       <div>
         <label>Realtime Model</label>
         <select id="realtimeModel" onchange="updateVoiceAvailability()">
-          <option value="gpt-4o-realtime-preview">gpt-4o-realtime-preview</option>
-          <option value="gpt-4o-mini-realtime-preview">gpt-4o-mini-realtime-preview</option>
+          <option value="gpt-realtime">gpt-realtime (GA — recommended)</option>
+          <option value="gpt-realtime-mini">gpt-realtime-mini (cheaper, faster)</option>
+          <option value="gpt-4o-realtime-preview">gpt-4o-realtime-preview (legacy)</option>
+          <option value="gpt-4o-mini-realtime-preview">gpt-4o-mini-realtime-preview (legacy)</option>
         </select>
       </div>
       <div>
@@ -2117,6 +2119,8 @@ var NUMBER_FIELDS = [
   'retryDelay1Min','retryDelay2Min','retryDelay3Min','latencyAlertThresholdMs','dailyReportHour'
 ];
 var MODEL_VOICES = {
+  'gpt-realtime': ['alloy','ash','ballad','cedar','coral','echo','marin','sage','shimmer','verse'],
+  'gpt-realtime-mini': ['alloy','ash','ballad','cedar','coral','echo','marin','sage','shimmer','verse'],
   'gpt-4o-realtime-preview': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar','fable','nova','onyx'],
   'gpt-4o-mini-realtime-preview': ['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar','fable','nova','onyx'],
 };

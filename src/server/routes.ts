@@ -213,7 +213,7 @@ router.post('/call/start', async (req: Request, res: Response) => {
       }
     }
 
-    const compliance = runPreCallComplianceCheck(to, lead.state, settings.tcpaOverride);
+    const compliance = runPreCallComplianceCheck(to, lead.state, settings.tcpaOverride, settings.tcpaWhitelist);
     if (!compliance.allowed) {
       const reasons = [
         !compliance.checks.dnc.passed ? compliance.checks.dnc.reason : null,
@@ -1496,7 +1496,16 @@ router.put('/api/routing/strategy', (req: Request, res: Response) => {
 
 // ── Helper: Normalize phone number ────────────────────────────────────
 function normalizePhone(phone: string): string {
-    return phone.replace(/[^0-9+]/g, '');
+    const cleaned = phone.replace(/[^0-9+]/g, '');
+    if (!cleaned) return '';
+    // Already E.164 (starts with +)
+    if (cleaned.startsWith('+')) return cleaned;
+    // 10-digit US number → prepend +1
+    if (cleaned.length === 10) return `+1${cleaned}`;
+    // 11-digit starting with 1 → US with country code, just prepend +
+    if (cleaned.length === 11 && cleaned.startsWith('1')) return `+${cleaned}`;
+    // Anything else (international, malformed): leave as-is so audits show the raw input
+    return cleaned;
 }
 
 function isKnownLeadPhone(phone: string): boolean {
@@ -1715,7 +1724,7 @@ async function handleWeblead(req: Request, res: Response) {
                         return;
                   }
 
-                  const compliance = runPreCallComplianceCheck(phone, state, settings.tcpaOverride);
+                  const compliance = runPreCallComplianceCheck(phone, state, settings.tcpaOverride, settings.tcpaWhitelist);
 
                   if (compliance.allowed) {
                             // Campaign enforcement for auto-dial (soft — never blocks the call)

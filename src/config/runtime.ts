@@ -147,13 +147,12 @@ const settings: RuntimeSettings = {
       deepseekModel: config.deepseek.model || 'deepseek-chat',
       // VAD tuning. Note: with the GA gpt-realtime model the agent now uses
       // semantic_vad and these fields are unused. They only matter when the
-      // model is one of the legacy preview aliases.
-      // 0.65 is a safe phone-call threshold (lower = more sensitive). The
-      // long silence_duration prevents cutting users off mid-pause; the
-      // strict threshold avoids triggering on ambient noise/breathing.
-      vadThreshold: 0.65,
-      silenceDurationMs: 1400,
-      prefixPaddingMs: 250,
+      // model is one of the legacy preview aliases. silenceDurationMs was
+      // 1400ms which added a noticeable lag before the agent replied on
+      // server_vad fallback; 500ms is snappy without cutting mid-thought.
+      vadThreshold: 0.55,
+      silenceDurationMs: 500,
+      prefixPaddingMs: 200,
       // Aggressive barge-in for snappy turn-taking. With semantic_vad
       // handling phantom-speech rejection at the model level we don't
       // need long debounces here as a defensive moat anymore.
@@ -272,12 +271,14 @@ export function loadRuntimeFromDisk(): void {
     // path is used (preview models); gpt-realtime ignores this entirely
     // and uses semantic_vad instead.
     let vadMigrated = false;
-    if (typeof settings.vadThreshold === 'number' && (settings.vadThreshold < 0.5 || settings.vadThreshold > 0.85)) {
-      settings.vadThreshold = 0.65;
+    if (typeof settings.vadThreshold === 'number' && (settings.vadThreshold < 0.4 || settings.vadThreshold > 0.85)) {
+      settings.vadThreshold = 0.55;
       vadMigrated = true;
     }
-    if (typeof settings.silenceDurationMs === 'number' && settings.silenceDurationMs < 1000) {
-      settings.silenceDurationMs = 1400;
+    // Heal sluggish persisted silence_duration values (prior default was
+    // 1400ms which felt like the agent was hanging after every answer).
+    if (typeof settings.silenceDurationMs === 'number' && settings.silenceDurationMs > 700) {
+      settings.silenceDurationMs = 500;
       vadMigrated = true;
     }
     // Heal sluggish barge-in/echo windows from the prior over-correction.

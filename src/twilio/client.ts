@@ -69,12 +69,24 @@ export async function startOutboundCall(params: StartCallParams): Promise<{ call
   return { callSid: call.sid, status: call.status || 'initiated' };
 }
 
-export async function transferCall(callSid: string, targetNumber: string, bridgePhrase: string): Promise<void> {
+export async function transferCall(
+  callSid: string,
+  targetNumber: string,
+  bridgePhrase: string,
+  whisperBriefing?: string,
+): Promise<void> {
   const twimlUrl = new URL('/twilio/transfer', config.baseUrl);
   twimlUrl.searchParams.set('target', targetNumber);
   twimlUrl.searchParams.set('phrase', bridgePhrase);
+  if (whisperBriefing && whisperBriefing.trim().length > 0) {
+    twimlUrl.searchParams.set('whisper', whisperBriefing);
+  }
 
-  logger.info('twilio-client', 'Initiating transfer', { callSid, targetNumber });
+  logger.info('twilio-client', 'Initiating transfer', {
+    callSid,
+    targetNumber,
+    hasWhisper: Boolean(whisperBriefing),
+  });
 
   await twilioClient.calls(callSid).update({
     url: twimlUrl.toString(),

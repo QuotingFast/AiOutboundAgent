@@ -1463,15 +1463,19 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           confidence,
         });
 
-        // Acceptance gate. Tuned loose: phone audio rarely exceeds 0.85
-        // confidence and single-word answers ("yes", "no", "Toyota") run
-        // ~250-450ms — rejecting them caused the agent to sit silent after
-        // the caller already answered the question. Keep only the gates
-        // that catch genuine click/pop noise and exact duplicate turns.
+        // Acceptance gate. Tuned loose for short answers, but tight on
+        // echo: a transcript that arrives while the bot is still speaking,
+        // or within ~700ms of the last bot audio frame, is almost always
+        // the bot's own voice bouncing back through the line and getting
+        // re-transcribed as garbled text ("Ahem", "Blatt", "Bilisplayers").
+        // Without the echo gate the bot ends up answering itself.
+        const msSinceBotAudio = lastAudioSentAt > 0 ? Date.now() - lastAudioSentAt : Infinity;
         let rejectReason: string | null = null;
         if (!cleanedText && speechDurationMs === 0) rejectReason = 'empty_no_speech';
+        else if (responseIsPlaying) rejectReason = 'echo_during_playback';
+        else if (msSinceBotAudio < 700) rejectReason = 'echo_post_playback';
         else if (speechDurationMs > 0 && speechDurationMs < 200) rejectReason = 'short_speech';
-        else if (typeof confidence === 'number' && confidence < 0.4) rejectReason = 'low_conf';
+        else if (typeof confidence === 'number' && confidence < 0.5) rejectReason = 'low_conf';
         else if (fillerOnly) rejectReason = 'filler_only';
         else if (!cleanedText) rejectReason = 'low_quality';
         else if (normalizedUser && normalizedUser === lastUserTurnNorm && (Date.now() - lastUserTurnAt) < 2000) rejectReason = 'duplicate_user_turn';
@@ -1488,8 +1492,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           });
 
           // Do not advance state, do not send to reasoning history.
-          // For pure no-speech empty events, ignore silently to avoid self-chatter loops.
-          if (rejectReason !== 'empty_no_speech') {
+          // For pure no-speech and echo events, ignore silently — there's
+          // no caller waiting for a response and reprompting would just
+          // make the bot talk on top of itself.
+          const silentReject = rejectReason === 'empty_no_speech'
+            || rejectReason === 'echo_during_playback'
+            || rejectReason === 'echo_post_playback';
+          if (!silentReject) {
             deterministicReprompt();
           }
           break;

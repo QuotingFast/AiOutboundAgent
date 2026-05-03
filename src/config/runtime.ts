@@ -54,8 +54,16 @@ export interface RuntimeSettings {
   // Master pause — halts all automatic dialing (callbacks, retries, weblead auto-dial)
   autoProcessingPaused: boolean;
 
-  // TCPA time-of-day override (bypass 8am-9pm restriction when true)
+  // TCPA time-of-day override (bypass 8am-9pm restriction when true).
+  // This is a power-user override and is force-reset to false on load —
+  // it must never be left on accidentally. For routine testing of one
+  // specific number outside hours, use tcpaWhitelist instead.
   tcpaOverride: boolean;
+
+  // Phone numbers (E.164) that bypass TCPA hours regardless of override.
+  // Intended for the developer's own cell so internal testing isn't
+  // restricted to 8am-9pm. Real lead numbers must NEVER be added here.
+  tcpaWhitelist: string[];
 
   // Transfer numbers
   allstateNumber: string;
@@ -171,6 +179,7 @@ const settings: RuntimeSettings = {
       webleadAutoDialEnabled: false,
       autoProcessingPaused: false,
       tcpaOverride: false,
+      tcpaWhitelist: ['+19547905093'],
       allstateNumber: '',
       nonAllstateNumber: '',
       defaultFromNumber: config.twilio.fromNumber,
@@ -184,7 +193,11 @@ const settings: RuntimeSettings = {
       backgroundNoiseVolume: 0.04,
 
       // AMD / Voicemail detection
-      amdEnabled: false,
+      // Answering machine detection: ON by default. The bot rambling
+      // into voicemail thinking it was a person was a real production
+      // problem; Twilio's AMD + the /twilio/amd-status hangup is the
+      // safe default.
+      amdEnabled: true,
       amdAction: 'hangup',
       amdMessage: 'Hi, this is {{agent_name}} from {{company_name}}. We were calling about your auto insurance quote. Please call us back at your convenience. Thank you!',
 
@@ -292,6 +305,34 @@ export function loadRuntimeFromDisk(): void {
     }
     if (typeof settings.echoSuppressionMs === 'number' && settings.echoSuppressionMs > 350) {
       settings.echoSuppressionMs = 250;
+      vadMigrated = true;
+    }
+    // Force-heal TCPA override: this MUST be off across restarts. We had
+    // a production incident where it was left on overnight and bots
+    // dialed leads at 2am. Real numbers go through the normal 8am-9pm
+    // gate; the test number lives in tcpaWhitelist.
+    if (settings.tcpaOverride === true) {
+      settings.tcpaOverride = false;
+      vadMigrated = true;
+    }
+    // Ensure the developer test number is always whitelisted so
+    // internal testing isn't blocked, even if persistence drops it.
+    const TEST_PHONE = '+19547905093';
+    if (!Array.isArray(settings.tcpaWhitelist)) {
+      settings.tcpaWhitelist = [TEST_PHONE];
+      vadMigrated = true;
+    } else if (!settings.tcpaWhitelist.includes(TEST_PHONE)) {
+      settings.tcpaWhitelist = [TEST_PHONE, ...settings.tcpaWhitelist];
+      vadMigrated = true;
+    }
+    // AMD must default ON for outbound — bot rambling into voicemail
+    // was a real production problem. amdEnabled was previously false.
+    if (settings.amdEnabled !== true) {
+      settings.amdEnabled = true;
+      vadMigrated = true;
+    }
+    if (settings.amdAction !== 'hangup' && settings.amdAction !== 'leave_message') {
+      settings.amdAction = 'hangup';
       vadMigrated = true;
     }
     if (vadMigrated) persistSettings();

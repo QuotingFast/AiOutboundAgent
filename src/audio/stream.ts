@@ -136,6 +136,14 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   // Guard against double greeting on session reconfiguration
   let initialGreetingDone = false;
   let greetingTriggeredAt = 0;
+  // Hold the outbound greeting until the callee actually says something
+  // ("hello?"). Otherwise the bot starts talking the moment Twilio
+  // connects the media stream, which means it rambles over voicemail
+  // greetings or talks over the human before they've finished saying
+  // hello. Inbound calls don't use this — the caller dialed us, so the
+  // greeting fires immediately on their end.
+  let awaitingFirstSpeech = false;
+  let firstSpeechTimer: NodeJS.Timeout | null = null;
 
   // Duplicate suppression (prevents double turns from duplicate STT events)
   let lastUserTurnNorm = '';
@@ -1281,29 +1289,53 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         // Only trigger greeting on the first session.updated (not on reconfiguration fallback)
         if (initialGreetingDone) break;
         initialGreetingDone = true;
-        if (useElevenLabs) {
-          connectElevenLabs();
-          // Wait for the active TTS WS to connect before triggering greeting
-          let greetingSent = false;
-          const waitForEl = setInterval(() => {
-            const activeWs = useDeepgram ? deepgramWs : elevenLabsWs;
-            if (!greetingSent && activeWs && activeWs.readyState === WebSocket.OPEN) {
+
+        // Outbound: hold the greeting until the callee says "hello?" (or a
+        // 6-second safety timeout). Twilio's async AMD runs in parallel and
+        // hangs up the call before the timeout fires when voicemail is
+        // detected, so we don't ramble into voicemail; on a human pickup,
+        // the bot waits for them to speak instead of talking over them.
+        const startGreeting = () => {
+          if (useElevenLabs) {
+            connectElevenLabs();
+            let greetingSent = false;
+            const waitForEl = setInterval(() => {
+              const activeWs = useDeepgram ? deepgramWs : elevenLabsWs;
+              if (!greetingSent && activeWs && activeWs.readyState === WebSocket.OPEN) {
+                clearInterval(waitForEl);
+                greetingSent = true;
+                triggerGreeting();
+              }
+            }, 100);
+            setTimeout(() => {
               clearInterval(waitForEl);
-              greetingSent = true;
-              triggerGreeting();
+              if (!greetingSent) {
+                greetingSent = true;
+                logger.warn('stream', 'ElevenLabs connect timeout, triggering greeting anyway', { sessionId });
+                triggerGreeting();
+              }
+            }, 1500);
+          } else {
+            setTimeout(() => triggerGreeting(), 300);
+          }
+        };
+
+        if (callDirection === 'outbound') {
+          awaitingFirstSpeech = true;
+          // Pre-connect ElevenLabs/Deepgram so audio is ready the instant
+          // the caller speaks — saves 200-400ms off first response.
+          if (useElevenLabs) connectElevenLabs();
+          firstSpeechTimer = setTimeout(() => {
+            if (awaitingFirstSpeech) {
+              awaitingFirstSpeech = false;
+              firstSpeechTimer = null;
+              logger.info('stream', 'No callee speech in 6s — starting greeting anyway', { sessionId });
+              startGreeting();
             }
-          }, 100);
-          // Safety timeout — don't wait forever
-          setTimeout(() => {
-            clearInterval(waitForEl);
-            if (!greetingSent) {
-              greetingSent = true;
-              logger.warn('stream', 'ElevenLabs connect timeout, triggering greeting anyway', { sessionId });
-              triggerGreeting();
-            }
-          }, 1500);
+          }, 6000);
         } else {
-          setTimeout(() => triggerGreeting(), 300);
+          // Inbound: caller dialed us, greet immediately.
+          startGreeting();
         }
         break;
 
@@ -1377,6 +1409,36 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         lastSpeechActivityAt = speechStartedAt;
         if (analytics) analytics.userStartedSpeaking();
         logger.debug('stream', 'speech_started', { sessionId, ts: speechStartedAt });
+
+        // First callee utterance on outbound — release the greeting hold.
+        if (awaitingFirstSpeech) {
+          awaitingFirstSpeech = false;
+          if (firstSpeechTimer) { clearTimeout(firstSpeechTimer); firstSpeechTimer = null; }
+          logger.info('stream', 'Callee spoke — starting greeting', { sessionId });
+          // Trigger via the same path we'd take if the timer had fired.
+          // Inline the connect+wait logic so we don't duplicate code.
+          if (useElevenLabs) {
+            const activeWs = useDeepgram ? deepgramWs : elevenLabsWs;
+            if (activeWs && activeWs.readyState === WebSocket.OPEN) {
+              triggerGreeting();
+            } else {
+              if (!activeWs) connectElevenLabs();
+              const waitForEl = setInterval(() => {
+                const ws = useDeepgram ? deepgramWs : elevenLabsWs;
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                  clearInterval(waitForEl);
+                  triggerGreeting();
+                }
+              }, 50);
+              setTimeout(() => clearInterval(waitForEl), 1500);
+            }
+          } else {
+            triggerGreeting();
+          }
+          // Don't fall through to barge-in handling for this very first
+          // utterance — the bot hasn't said anything yet.
+          break;
+        }
 
         if (!responseIsPlaying) break;
 
@@ -1499,17 +1561,15 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           confidence,
         });
 
-        // Acceptance gate. Tuned loose for short answers, but tight on
-        // echo: a transcript that arrives while the bot is still speaking,
-        // or within ~700ms of the last bot audio frame, is almost always
-        // the bot's own voice bouncing back through the line and getting
-        // re-transcribed as garbled text ("Ahem", "Blatt", "Bilisplayers").
-        // Without the echo gate the bot ends up answering itself.
-        const msSinceBotAudio = lastAudioSentAt > 0 ? Date.now() - lastAudioSentAt : Infinity;
+        // Acceptance gate. The hard echo guard is "bot is currently
+        // speaking": anything captured then is the bot's own audio. The
+        // earlier 700ms post-playback window also rejected real fast
+        // user answers (caller answers right after the bot stops) and
+        // caused dead-air, so it was removed. If echo persists we'll
+        // see it as 'echo_during_playback' rejections, not real misses.
         let rejectReason: string | null = null;
         if (!cleanedText && speechDurationMs === 0) rejectReason = 'empty_no_speech';
         else if (responseIsPlaying) rejectReason = 'echo_during_playback';
-        else if (msSinceBotAudio < 700) rejectReason = 'echo_post_playback';
         else if (speechDurationMs > 0 && speechDurationMs < 200) rejectReason = 'short_speech';
         else if (typeof confidence === 'number' && confidence < 0.5) rejectReason = 'low_conf';
         else if (fillerOnly) rejectReason = 'filler_only';
@@ -1532,8 +1592,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           // no caller waiting for a response and reprompting would just
           // make the bot talk on top of itself.
           const silentReject = rejectReason === 'empty_no_speech'
-            || rejectReason === 'echo_during_playback'
-            || rejectReason === 'echo_post_playback';
+            || rejectReason === 'echo_during_playback';
           if (!silentReject) {
             deterministicReprompt();
           }
@@ -2159,6 +2218,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       clearInterval(silenceCheckInterval);
       silenceCheckInterval = null;
     }
+    if (firstSpeechTimer) {
+      clearTimeout(firstSpeechTimer);
+      firstSpeechTimer = null;
+    }
+    awaitingFirstSpeech = false;
     if (openaiWs) {
       openaiWs.close();
       openaiWs = null;
@@ -2166,6 +2230,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     if (elevenLabsWs) {
       elevenLabsWs.close();
       elevenLabsWs = null;
+    }
+    if (deepgramWs) {
+      try { deepgramWs.close(); } catch {}
+      deepgramWs = null;
     }
     if (deepseekAbortController) {
       deepseekAbortController.abort();

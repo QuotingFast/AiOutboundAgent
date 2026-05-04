@@ -170,7 +170,15 @@ const settings: RuntimeSettings = {
       // need long debounces here as a defensive moat anymore.
       bargeInDebounceMs: 150,
       echoSuppressionMs: 250,
-      maxResponseTokens: 1024,
+      // Voice = fragments. The system prompt says "1 sentence, sometimes 2,
+      // never 3." Backing it up at the API level prevents the model from
+      // ever generating a long response when reasoning gets verbose.
+      // 250 covers a 2-sentence response with comfortable margin; the model
+      // will naturally stay shorter most of the time. Bumping above ~400
+      // starts to risk monologue-style turns that ruin the conversational
+      // rhythm. Increase only for very specific use cases (e.g. an explainer
+      // workflow where the agent legitimately needs to read out longer info).
+      maxResponseTokens: 250,
       agentName: 'Steve',
       companyName: 'Smart Quotes',
       systemPromptOverride: '',

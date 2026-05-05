@@ -2101,9 +2101,18 @@ function switchTab(name) {
   // Load tab data
   refreshActiveTab(name);
 }
-function refreshActiveTab(name) {
+function refreshActiveTab(name, opts) {
   name = name || activeTab;
-  if (name === 'campaigns') { loadCampaignConfig(currentCampaignId); loadCampaignStats(); }
+  var fromPoll = !!(opts && opts.fromPoll);
+  if (name === 'campaigns') {
+    // The campaign editor holds in-progress edits (voice provider toggle,
+    // prompt text, transfer numbers, etc.). Reloading from the server on
+    // a 15s poll wiped unsaved changes — most visibly the new Deepgram
+    // provider button, which snapped back to ElevenLabs. Skip the editor
+    // reload during polling and only refresh the stats.
+    if (!fromPoll) loadCampaignConfig(currentCampaignId);
+    loadCampaignStats();
+  }
   if (name === 'calls') loadCallHistory();
   if (name === 'recordings') loadRecordings();
   if (name === 'analytics') { loadAnalytics(); loadABTests(); }
@@ -2120,7 +2129,7 @@ setInterval(function() {
   }).catch(function() {});
   // Don't poll settings (no need) or while user might be editing
   if (activeTab === 'settings') return;
-  refreshActiveTab();
+  refreshActiveTab(null, { fromPoll: true });
 }, 15000);
 
 // ── Settings ──

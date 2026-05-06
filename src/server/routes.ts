@@ -1832,8 +1832,20 @@ async function handleWeblead(req: Request, res: Response) {
                   return;
           }
 
-          // Auto-dial disabled or no from number configured
-          logger.info('routes', 'Weblead stored (no auto-dial)', { phone, leadId: body.id, campaignId: resolvedCampaignId });
+          // Auto-dial disabled or no from number configured. Warn so this is
+          // visible in production logs — the previous info-level log meant
+          // operators didn't notice that every weblead was being silently
+          // stored without ever triggering a call.
+          const skipReason = autoDialEnabled ? 'no_from_number' : 'auto_dial_disabled';
+          logger.warn('routes', 'Weblead stored (no auto-dial)', {
+                  phone,
+                  leadId: body.id,
+                  campaignId: resolvedCampaignId,
+                  reason: skipReason,
+                  hint: skipReason === 'auto_dial_disabled'
+                          ? 'Set webleadAutoDialEnabled=true in dashboard Settings'
+                          : 'Set defaultFromNumber in dashboard Settings or TWILIO_FROM env var',
+          });
           res.json({
                   success: true,
                   phone,
@@ -1841,7 +1853,7 @@ async function handleWeblead(req: Request, res: Response) {
                   state,
                   call: null,
                   autoDialed: false,
-                  reason: autoDialEnabled ? 'no_from_number' : 'auto_dial_disabled',
+                  reason: skipReason,
                   campaignId: resolvedCampaignId,
                   campaignResolved,
                   formData: formDataSummary,

@@ -110,9 +110,20 @@ export function loadCampaignStoreFromDisk(): void {
         migratedGreetingText++;
       }
       // Migration: refresh persisted system prompts that were generated
-      // with the old opener so they pick up the new wording and the
-      // chained-acknowledgment rules.
-      if (value?.aiProfile?.systemPrompt && /looks like you requested a car insurance quote online recently/i.test(value.aiProfile.systemPrompt)) {
+      // with any prior version of buildSystemPrompt so they pick up the
+      // new Steve script (state-machine call flow, anti-tells, tighter
+      // identity rules). Both the very-old "looks like you requested a
+      // car insurance quote online recently" wording AND the previous
+      // "calling people who submitted an online request for a car
+      // insurance quote" opener get rebuilt from the new template. Once
+      // a prompt has been rebuilt it contains the new "Qualification &
+      // Transfer Agent (Optimized)" header and won't match again.
+      const persistedPrompt = value?.aiProfile?.systemPrompt;
+      const isLegacyPrompt = !!persistedPrompt && (
+        /looks like you requested a car insurance quote online recently/i.test(persistedPrompt) ||
+        /calling people who submitted an online request for a car insurance quote/i.test(persistedPrompt)
+      );
+      if (isLegacyPrompt && value?.aiProfile) {
         const profile = value.aiProfile;
         profile.systemPrompt = buildSystemPrompt(
           { first_name: '{{first_name}}', state: '{{state}}', current_insurer: '{{current_insurer}}', vehicles: [{ year: '{{vehicle_year}}', make: '{{vehicle_make}}', model: '{{vehicle_model}}' }] },

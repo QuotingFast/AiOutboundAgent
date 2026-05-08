@@ -48,8 +48,16 @@ export interface RuntimeSettings {
   // Whether inbound calls are enabled
   inboundEnabled: boolean;
 
-  // Whether weblead auto-dial is enabled
+  // Whether weblead auto-dial is enabled. Defaults to true: this app exists to
+  // dial inbound webleads, so the toggle being off was a frequent footgun —
+  // every weblead silently fell through to "Weblead stored (no auto-dial)" and
+  // the phone never rang.
   webleadAutoDialEnabled?: boolean;
+
+  // One-shot migration flag: ensures the false-by-default → true-by-default
+  // upgrade only flips a persisted explicit `false` once. After that, the user
+  // can turn auto-dial off in the dashboard and it stays off across restarts.
+  webleadAutoDialMigrated?: boolean;
 
   // Master pause — halts all automatic dialing (callbacks, retries, weblead auto-dial)
   autoProcessingPaused: boolean;
@@ -157,19 +165,30 @@ const settings: RuntimeSettings = {
       elevenlabsSpeed: 0.97,
       deepseekModel: config.deepseek.model || 'deepseek-chat',
       deepgramTtsModel: config.deepgram?.ttsModel || 'aura-2-thalia-en',
-      // VAD tuning. Note: with the GA gpt-realtime model the agent now uses
-      // semantic_vad and these fields are unused. They only matter when the
-      // model is one of the legacy preview aliases. silenceDurationMs was
-      // 1400ms which added a noticeable lag before the agent replied on
-      // server_vad fallback; 500ms is snappy without cutting mid-thought.
+      // VAD tuning. With the GA gpt-realtime model the agent uses semantic_vad
+      // and silenceDurationMs / prefixPaddingMs are unused — they only matter
+      // on the legacy server_vad path. bargeInDebounceMs and echoSuppressionMs
+      // apply on every model. The values below are tuned for snappy turn-
+      // taking; each one was a deliberate latency cut.
       vadThreshold: 0.55,
-      silenceDurationMs: 500,
-      prefixPaddingMs: 200,
-      // Aggressive barge-in for snappy turn-taking. With semantic_vad
-      // handling phantom-speech rejection at the model level we don't
-      // need long debounces here as a defensive moat anymore.
-      bargeInDebounceMs: 150,
-      echoSuppressionMs: 250,
+      // 300ms post-utterance silence before the model decides the user is done
+      // (legacy server_vad only). Was 500ms; saves ~200ms per turn on that
+      // path while still tolerating natural mid-sentence pauses.
+      silenceDurationMs: 300,
+      // 100ms of pre-speech audio buffered for cleaner VAD onset (legacy
+      // server_vad only). Was 200ms.
+      prefixPaddingMs: 100,
+      // Aggressive barge-in for snappy turn-taking. With semantic_vad handling
+      // phantom-speech rejection at the model level we don't need long
+      // debounces as a defensive moat. Was 150ms; 100ms is the sweet spot
+      // before false-positive interruptions creep in.
+      bargeInDebounceMs: 100,
+      // Post-playback rejection window — speech captured within this many ms
+      // of the bot's last audio frame is treated as echo. Was 250ms; lowering
+      // to 150ms accepts real fast user answers ("yes", "Toyota") sooner
+      // without re-introducing the echo bug we saw before. The harder rule —
+      // reject any transcript while responseIsPlaying is true — still holds.
+      echoSuppressionMs: 150,
       // Voice = fragments. The system prompt says "1 sentence, sometimes 2,
       // never 3." Backing it up at the API level prevents the model from
       // ever generating a long response when reasoning gets verbose.
@@ -184,7 +203,8 @@ const settings: RuntimeSettings = {
       systemPromptOverride: '',
       inboundPromptOverride: '',
       inboundEnabled: true,
-      webleadAutoDialEnabled: false,
+      webleadAutoDialEnabled: true,
+      webleadAutoDialMigrated: false,
       autoProcessingPaused: false,
       tcpaOverride: false,
       tcpaWhitelist: ['+19547905093'],
@@ -300,19 +320,38 @@ export function loadRuntimeFromDisk(): void {
       settings.vadThreshold = 0.55;
       vadMigrated = true;
     }
-    // Heal sluggish persisted silence_duration values (prior default was
-    // 1400ms which felt like the agent was hanging after every answer).
-    if (typeof settings.silenceDurationMs === 'number' && settings.silenceDurationMs > 700) {
-      settings.silenceDurationMs = 500;
+    // Heal sluggish persisted silence_duration values down to the current
+    // default. Older defaults were 1400ms then 500ms; 300ms is snappier while
+    // still tolerating natural pauses on the legacy server_vad path.
+    if (typeof settings.silenceDurationMs === 'number' && settings.silenceDurationMs > 400) {
+      settings.silenceDurationMs = 300;
       vadMigrated = true;
     }
-    // Heal sluggish barge-in/echo windows from the prior over-correction.
-    if (typeof settings.bargeInDebounceMs === 'number' && settings.bargeInDebounceMs > 250) {
-      settings.bargeInDebounceMs = 150;
+    // Heal sluggish prefix-padding from the older 200ms default down to 100ms.
+    if (typeof settings.prefixPaddingMs === 'number' && settings.prefixPaddingMs > 150) {
+      settings.prefixPaddingMs = 100;
       vadMigrated = true;
     }
-    if (typeof settings.echoSuppressionMs === 'number' && settings.echoSuppressionMs > 350) {
-      settings.echoSuppressionMs = 250;
+    // Heal sluggish barge-in/echo windows down to the current defaults.
+    if (typeof settings.bargeInDebounceMs === 'number' && settings.bargeInDebounceMs > 130) {
+      settings.bargeInDebounceMs = 100;
+      vadMigrated = true;
+    }
+    if (typeof settings.echoSuppressionMs === 'number' && settings.echoSuppressionMs > 200) {
+      settings.echoSuppressionMs = 150;
+      vadMigrated = true;
+    }
+    // One-shot weblead auto-dial heal: the toggle used to default to false,
+    // which silently dropped every weblead at the "Weblead stored (no auto-
+    // dial)" branch — phones never rang. Flip a persisted explicit `false`
+    // exactly once so existing deployments get the new default-on behavior.
+    // After this runs, webleadAutoDialMigrated stays true forever and the
+    // user's dashboard toggle is the source of truth.
+    if (settings.webleadAutoDialMigrated !== true) {
+      if (settings.webleadAutoDialEnabled !== true) {
+        settings.webleadAutoDialEnabled = true;
+      }
+      settings.webleadAutoDialMigrated = true;
       vadMigrated = true;
     }
     // Force-heal TCPA override: this MUST be off across restarts. We had

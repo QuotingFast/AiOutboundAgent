@@ -399,10 +399,15 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       sessionId, model, voiceProvider: s.voiceProvider,
     });
 
+    // GA Realtime API: do NOT send the 'OpenAI-Beta: realtime=v1' header.
+    // OpenAI sunset the Realtime Beta API ("beta_api_shape_disabled"); with
+    // the beta header + beta session shape, OpenAI rejects session.update and
+    // closes the socket (code 4000) during setup — which left every call
+    // silent (no greeting, no audio). The GA API uses the bare connection
+    // plus the GA session shape built in sendSessionUpdate().
     openaiWs = new WebSocket(url, {
       headers: {
         'Authorization': `Bearer ${config.openai.apiKey}`,
-        'OpenAI-Beta': 'realtime=v1',
       },
     });
 
@@ -588,6 +593,21 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       maxTokens: effectiveMaxTokens,
     });
 
+    // GA Realtime session shape. Differences from the sunset Beta shape:
+    //  - session.type: 'realtime' is required
+    //  - 'modalities' → 'output_modalities'
+    //  - audio config nests under audio.input / audio.output
+    //  - g711_ulaw → format { type: 'audio/pcmu' }
+    //  - voice → audio.output.voice; transcription → audio.input.transcription
+    //  - turn_detection → audio.input.turn_detection
+    //  - 'max_response_output_tokens' → 'max_output_tokens'
+    //  - 'temperature' is no longer a session field (sending it is rejected)
+    const gaInputAudio: any = {
+      format: { type: 'audio/pcmu' },
+      turn_detection: turnDetection,
+      transcription: { model: 'gpt-4o-transcribe' },
+    };
+
     if (useDeepSeek) {
       // DeepSeek mode: OpenAI Realtime is STT-only (no auto-response).
       // Force create_response=false on the unified turnDetection.
@@ -595,44 +615,41 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
-          modalities: ['text'],
+          type: 'realtime',
+          output_modalities: ['text'],
           instructions: 'You are a speech-to-text transcription relay. Do not generate responses.',
-          input_audio_format: 'g711_ulaw',
-          input_audio_transcription: { model: 'gpt-4o-transcribe' },
-          turn_detection: { ...turnDetection, create_response: false },
+          audio: { input: { ...gaInputAudio, turn_detection: { ...turnDetection, create_response: false } } },
           tools: [],
-          max_response_output_tokens: 1,
-          temperature: 0.6,
+          max_output_tokens: 1,
         },
       }));
     } else if (useElevenLabs) {
+      // External-TTS mode (ElevenLabs/Deepgram): OpenAI is the text LLM only.
       openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
-          modalities: ['text'],
+          type: 'realtime',
+          output_modalities: ['text'],
           instructions,
-          input_audio_format: 'g711_ulaw',
-          input_audio_transcription: { model: 'gpt-4o-transcribe' },
-          turn_detection: turnDetection,
+          audio: { input: gaInputAudio },
           tools: getRealtimeTools(),
-          max_response_output_tokens: effectiveMaxTokens,
-          temperature: effectiveTemperature,
+          max_output_tokens: effectiveMaxTokens,
         },
       }));
     } else {
+      // Native OpenAI speech-to-speech: OpenAI generates the audio directly.
       openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
-          modalities: ['text', 'audio'],
+          type: 'realtime',
+          output_modalities: ['audio'],
           instructions,
-          voice: campaignVoice?.openaiVoice || s.voice,
-          input_audio_format: 'g711_ulaw',
-          output_audio_format: 'g711_ulaw',
-          input_audio_transcription: { model: 'gpt-4o-transcribe' },
-          turn_detection: turnDetection,
+          audio: {
+            input: gaInputAudio,
+            output: { format: { type: 'audio/pcmu' }, voice: campaignVoice?.openaiVoice || s.voice },
+          },
           tools: getRealtimeTools(),
-          max_response_output_tokens: effectiveMaxTokens,
-          temperature: effectiveTemperature,
+          max_output_tokens: effectiveMaxTokens,
         },
       }));
     }
@@ -1002,21 +1019,25 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     openaiWs.send(JSON.stringify({
       type: 'session.update',
       session: {
-        modalities: ['text'],
+        type: 'realtime',
+        output_modalities: ['text'],
         instructions: deepseekInstructions,
-        input_audio_format: 'g711_ulaw',
-        input_audio_transcription: { model: 'gpt-4o-transcribe' },
-        turn_detection: {
-          type: 'server_vad',
-          threshold: s.vadThreshold,
-          prefix_padding_ms: s.prefixPaddingMs,
-          silence_duration_ms: s.silenceDurationMs,
-          create_response: true,
-          interrupt_response: true,
+        audio: {
+          input: {
+            format: { type: 'audio/pcmu' },
+            turn_detection: {
+              type: 'server_vad',
+              threshold: s.vadThreshold,
+              prefix_padding_ms: s.prefixPaddingMs,
+              silence_duration_ms: s.silenceDurationMs,
+              create_response: true,
+              interrupt_response: true,
+            },
+            transcription: { model: 'gpt-4o-transcribe' },
+          },
         },
         tools: getRealtimeTools(),
-        max_response_output_tokens: s.maxResponseTokens,
-        temperature: Math.max(s.temperature, 0.6),
+        max_output_tokens: s.maxResponseTokens,
       },
     }));
   }
@@ -1387,6 +1408,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       // --- Text output (for ElevenLabs mode + transcript) ---
       // DeepSeek mode handles its own text→ElevenLabs path, skip OpenAI text events
       case 'response.text.delta':
+      case 'response.output_text.delta':
         if (useElevenLabs && !useDeepSeek && event.delta) {
           responseIsPlaying = true;
           lastSpeechActivityAt = Date.now();
@@ -1402,6 +1424,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         break;
 
       case 'response.text.done':
+      case 'response.output_text.done':
         if (useElevenLabs && !useDeepSeek) {
           flushElevenLabs();
           const agentText = event.text || currentElevenLabsText;

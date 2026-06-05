@@ -20,6 +20,7 @@ import {
   getAuditLog, getAuditLogCount,
   requiresRecordingDisclosure,
   checkPhoneRateLimit,
+  isTestNumber,
 } from '../compliance';
 import {
   getActiveSessions, getActiveSessionCount, getQueue, getQueueSize,
@@ -227,13 +228,24 @@ router.post('/call/start', async (req: Request, res: Response) => {
       return;
     }
 
+    // A call to a whitelisted test number (your own cell) must never be
+    // killed by answering-machine detection. On a self-test you typically
+    // answer and wait silently for the agent — which, combined with the
+    // outbound greeting-hold, is exactly what Twilio's AMD reads as a
+    // voicemail greeting, hanging the call up before you hear anything.
+    // Real lead calls keep AMD so the bot doesn't ramble into voicemail.
+    const isTest = isTestNumber(to, settings.tcpaWhitelist);
+    if (isTest && settings.amdEnabled) {
+      logger.info('routes', 'Test number — disabling AMD for this call', { to });
+    }
+
     const result = await startOutboundCall({
       to,
       from,
       lead,
       transfer,
       campaign_id: campaignEnforcement.context?.campaignId || campaign_id,
-      amdEnabled: settings.amdEnabled,
+      amdEnabled: settings.amdEnabled && !isTest,
     });
 
     // Register session data so the WebSocket handler can pick it up when the call connects

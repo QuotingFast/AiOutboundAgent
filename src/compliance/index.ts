@@ -34,6 +34,22 @@ function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '').replace(/^1/, '');
 }
 
+/**
+ * True when `phone` is in the TCPA whitelist. Whitelisted numbers are the
+ * developer's own cell, used for internal self-tests, so we treat them as
+ * "test numbers" and exempt them from behaviors that quietly break a call to
+ * yourself — chiefly Twilio AMD auto-hangup (a human answering into the
+ * agent's silent greeting-hold gets misclassified as voicemail and the call
+ * is dropped before you hear anything) and the outbound greeting-hold itself.
+ * Matching uses the same normalization as the TCPA whitelist check.
+ */
+export function isTestNumber(phone: string, whitelist?: string[]): boolean {
+  if (!phone || !whitelist || whitelist.length === 0) return false;
+  const normalized = normalizePhone(phone);
+  if (!normalized) return false;
+  return whitelist.map(normalizePhone).includes(normalized);
+}
+
 // ── Time-of-day enforcement (TCPA) ─────────────────────────────────
 
 // TCPA: No calls before 8am or after 9pm LOCAL time

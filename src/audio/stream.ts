@@ -14,7 +14,7 @@ import { buildLeadContext, recordCallToLead, addLeadNote } from '../memory';
 import { runPostCallWorkflow } from '../workflows';
 import { redactPII } from '../security';
 import { mixNoiseIntoAudio, resetNoisePosition, getNoiseOnlyFrames } from './noise';
-import { handleAutoDnc, recordPhoneCall } from '../compliance';
+import { handleAutoDnc, recordPhoneCall, isTestNumber } from '../compliance';
 import { logSms } from '../sms';
 import {
   notifySchedulingTextSent,
@@ -1320,7 +1320,18 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           }
         };
 
-        if (callDirection === 'outbound') {
+        // Self-tests to a whitelisted number greet immediately, just like
+        // inbound. On a call to yourself you sit silent waiting to hear the
+        // bot, so the "wait for the callee to say hello" hold reads as dead
+        // air — and you conclude the agent is broken. Real leads keep the
+        // hold so the bot doesn't talk over them or ramble into voicemail.
+        const isSelfTest = callDirection === 'outbound'
+          && isTestNumber(callerNumber, getSettings().tcpaWhitelist);
+        if (isSelfTest) {
+          logger.info('stream', 'Test number — greeting immediately (no speech-hold)', { sessionId, callerNumber });
+        }
+
+        if (callDirection === 'outbound' && !isSelfTest) {
           awaitingFirstSpeech = true;
           // Pre-connect ElevenLabs/Deepgram so audio is ready the instant
           // the caller speaks — saves 200-400ms off first response.
@@ -1334,7 +1345,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             }
           }, 6000);
         } else {
-          // Inbound: caller dialed us, greet immediately.
+          // Inbound (caller dialed us) or a self-test: greet immediately.
           startGreeting();
         }
         break;

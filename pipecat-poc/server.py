@@ -38,6 +38,7 @@ from twilio.rest import Client as TwilioClient
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import EndFrame, LLMRunFrame, TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -64,10 +65,10 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-DEEPGRAM_VOICE = os.getenv("DEEPGRAM_TTS_MODEL", "aura-2-arcas-en")
+DEEPGRAM_VOICE = os.getenv("DEEPGRAM_TTS_MODEL", "aura-2-apollo-en")
 AGENT_NAME = os.getenv("AGENT_NAME", "Steve")
 COMPANY_NAME = os.getenv("COMPANY_NAME", "Smart Quotes")
-TRANSFER_NUMBER = os.getenv("TRANSFER_NUMBER", "9548242010")
+TRANSFER_NUMBER = os.getenv("TRANSFER_NUMBER", "9548182888")
 SCHEDULE_LINK = os.getenv("SCHEDULE_LINK", "https://quotingfast.com/schedule")
 # Production Node service — used to record scheduled callbacks in the real system.
 NODE_API = os.getenv("NODE_API", "https://ai-outbound-agent-florida.onrender.com")
@@ -197,7 +198,15 @@ async def websocket_endpoint(websocket: WebSocket):
     stt = DeepgramSTTService(api_key=DEEPGRAM_API_KEY)
     llm = OpenAILLMService(api_key=OPENAI_API_KEY, model=OPENAI_MODEL)
     tts = DeepgramTTSService(api_key=DEEPGRAM_API_KEY, voice=DEEPGRAM_VOICE, sample_rate=8000)
-    vad = VADProcessor(vad_analyzer=SileroVADAnalyzer())
+    # Less-twitchy VAD so telephone-line noise / the bot's own echo doesn't
+    # trigger false barge-ins (which chopped the previous call's speech into
+    # erratic fragments). Higher confidence + min_volume + a longer start
+    # window mean only real, sustained speech interrupts the bot.
+    vad = VADProcessor(
+        vad_analyzer=SileroVADAnalyzer(
+            params=VADParams(confidence=0.8, start_secs=0.3, stop_secs=0.4, min_volume=0.7)
+        )
+    )
 
     # ── Tools ────────────────────────────────────────────────────────────
     tools = ToolsSchema(

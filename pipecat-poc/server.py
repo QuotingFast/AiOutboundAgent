@@ -81,7 +81,8 @@ SYSTEM_PROMPT = (
     "connect them to a licensed agent.\n\n"
     "Use your tools to take real action — do NOT just say you will do something:\n"
     "- When the caller agrees to be connected/transferred, call the transfer_call function. "
-    "Say one short bridge line like 'Perfect, connecting you now' and the transfer happens automatically.\n"
+    "Say one short bridge line like 'Perfect, connecting you now' and the transfer happens automatically. "
+    "After calling transfer_call, do NOT call any other tool — the hand-off is automatic.\n"
     "- If the caller would rather be called back later, call schedule_callback with their preferred time.\n"
     "- If the caller would rather get the info by text, call send_text.\n"
     "- When the conversation is over or they're not interested, call end_call.\n"
@@ -258,10 +259,22 @@ async def websocket_endpoint(websocket: WebSocket):
     )
 
     # ── Tool handlers ────────────────────────────────────────────────────
+    # Once a transfer starts, the Twilio call leg is handed off to <Dial>.
+    # Guard so a stray end_call (the model sometimes fires both in one turn)
+    # doesn't hang up the call mid-transfer.
+    session_state = {"transferring": False}
+
     def _twilio_update(**kwargs):
         twilio_rest.calls(call_sid).update(**kwargs)
 
     async def handle_transfer(p: FunctionCallParams):
+        if session_state["transferring"]:
+            await p.result_callback(
+                {"status": "already_transferring"},
+                properties=FunctionCallResultProperties(run_llm=False),
+            )
+            return
+        session_state["transferring"] = True
         target = normalize_e164(TRANSFER_NUMBER)
         logger.info(f"[tool] transfer_call -> {target} (call {call_sid})")
         await task.queue_frames([TTSSpeakFrame("Perfect — connecting you to a licensed agent now, one moment.")])
@@ -285,6 +298,13 @@ async def websocket_endpoint(websocket: WebSocket):
         asyncio.create_task(_redirect())
 
     async def handle_end_call(p: FunctionCallParams):
+        if session_state["transferring"]:
+            logger.info("[tool] end_call ignored — transfer in progress")
+            await p.result_callback(
+                {"status": "transfer_in_progress"},
+                properties=FunctionCallResultProperties(run_llm=False),
+            )
+            return
         logger.info(f"[tool] end_call (call {call_sid})")
         await task.queue_frames([TTSSpeakFrame("Thanks so much for your time — have a great day!")])
         await p.result_callback({"status": "ending"}, properties=FunctionCallResultProperties(run_llm=False))

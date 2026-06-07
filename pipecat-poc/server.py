@@ -56,7 +56,11 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
-from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
+from pipecat.processors.aggregators.llm_response_universal import (
+    LLMContextAggregatorPair,
+    LLMUserAggregatorParams,
+)
+from pipecat.turns.user_mute import AlwaysUserMuteStrategy
 from pipecat.processors.audio.vad_processor import VADProcessor
 from pipecat.serializers.twilio import TwilioFrameSerializer
 from pipecat.services.deepgram.stt import DeepgramSTTService
@@ -309,7 +313,13 @@ async def websocket_endpoint(websocket: WebSocket):
     )
 
     context = LLMContext([{"role": "system", "content": SYSTEM_PROMPT}], tools=tools)
-    aggregators = LLMContextAggregatorPair(context)
+    # Mute the caller's audio while the bot is speaking so the bot never
+    # transcribes its own voice echoing back down the phone line ("hearing
+    # things") or false-interrupts itself.
+    aggregators = LLMContextAggregatorPair(
+        context,
+        user_params=LLMUserAggregatorParams(user_mute_strategies=[AlwaysUserMuteStrategy()]),
+    )
 
     # ── Call guard state + activity tracker ───────────────────────────────
     # Without this the call runs forever (burning credits) if the caller goes

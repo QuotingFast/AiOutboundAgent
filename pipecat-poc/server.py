@@ -27,6 +27,7 @@ import datetime
 import json
 import os
 import time
+import urllib.parse
 import urllib.request
 
 import uvicorn
@@ -112,9 +113,10 @@ SYSTEM_PROMPT = (
     "takes a few minutes. Is that okay with you?\"\n"
     "These wordings are examples; use them or close, natural variations.\n\n"
     "Use your tools to take real action — do NOT just say you will do something:\n"
-    "- When the caller agrees to be connected/transferred, call the transfer_call function. "
-    "Say one short bridge line like 'Perfect, connecting you now' and the transfer happens automatically. "
-    "After calling transfer_call, do NOT call any other tool — the hand-off is automatic.\n"
+    "- When the caller agrees to be connected/transferred, call the transfer_call function and "
+    "pass the current_carrier, tenure, and vehicle_count you gathered (so the agent gets a warm "
+    "intro before they pick up). Say one short bridge line like 'Perfect, connecting you now' and "
+    "the transfer happens automatically. After calling transfer_call, do NOT call any other tool.\n"
     "- If the caller would rather be called back later, call schedule_callback with their preferred time.\n"
     "- If the caller would rather get the info by text, call send_text.\n"
     "- When it's time to end (caller not interested, rude, disengaged, wasting time, or you've "
@@ -213,8 +215,22 @@ async def twiml(request: Request):
         f'<Stream url="wss://{host}/ws">'
         f'<Parameter name="leadName" value="{lead_name}"/>'
         f'<Parameter name="to" value="{to}"/>'
+        f'<Parameter name="host" value="{host}"/>'
         "</Stream>"
         "</Connect></Response>"
+    )
+    return Response(content=xml, media_type="application/xml")
+
+
+@app.post("/whisper")
+async def whisper(request: Request):
+    """Warm-transfer whisper: TwiML played to the licensed agent BEFORE the
+    caller is bridged in, briefing them on the lead."""
+    text = request.query_params.get("text", "You have a warm transfer coming in.")
+    safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<Response><Say voice="Polly.Matthew">{safe}</Say></Response>'
     )
     return Response(content=xml, media_type="application/xml")
 
@@ -247,6 +263,7 @@ async def websocket_endpoint(websocket: WebSocket):
     params = start["start"].get("customParameters", {}) or {}
     lead_name = params.get("leadName", "there")
     phone = normalize_e164(params.get("to", ""))
+    public_host = params.get("host", "") or "pipecat-poc.onrender.com"
     logger.info(f"WS start stream_sid={stream_sid} call_sid={call_sid} lead={lead_name} phone={phone}")
 
     serializer = TwilioFrameSerializer(
@@ -284,8 +301,17 @@ async def websocket_endpoint(websocket: WebSocket):
         standard_tools=[
             FunctionSchema(
                 name="transfer_call",
-                description="Connect/transfer the caller to a live licensed agent. Call this only after the caller agrees to be connected.",
-                properties={"reason": {"type": "string", "description": "Brief reason for the transfer"}},
+                description=(
+                    "Warm-transfer the caller to a live licensed agent. Call only after the caller "
+                    "agrees to be connected. Populate the fields from what you learned so the agent "
+                    "gets a proper warm hand-off before they pick up."
+                ),
+                properties={
+                    "current_carrier": {"type": "string", "description": "Caller's current auto insurance carrier as they stated it; 'uninsured' if none; leave empty if unknown"},
+                    "tenure": {"type": "string", "description": "How long they've had that carrier, e.g. '3 years', '6 months'"},
+                    "vehicle_count": {"type": "string", "description": "Number of vehicles to quote"},
+                    "reason": {"type": "string", "description": "Brief reason for the transfer"},
+                },
                 required=[],
             ),
             FunctionSchema(
@@ -425,22 +451,41 @@ async def websocket_endpoint(websocket: WebSocket):
             return
         session_state["transferring"] = True
         target = normalize_e164(TRANSFER_NUMBER)
-        logger.info(f"[tool] transfer_call -> {target} (call {call_sid})")
+
+        # Build the warm-transfer whisper briefing from what we learned.
+        carrier = (p.arguments.get("current_carrier") or "").strip()
+        tenure = (p.arguments.get("tenure") or "").strip()
+        vehicles = (p.arguments.get("vehicle_count") or "").strip()
+        parts = [f"Warm transfer for {lead_name}."]
+        if carrier and carrier.lower() not in ("unknown", "n/a", "none", ""):
+            parts.append(f"Currently with {carrier} for {tenure}." if tenure else f"Currently with {carrier}.")
+        else:
+            parts.append("Currently uninsured or carrier not given.")
+        if vehicles:
+            parts.append(f"{vehicles} vehicle{'' if vehicles.strip()=='1' else 's'} to quote.")
+        parts.append("They're interested in lowering their auto rate. Connecting them now.")
+        briefing = " ".join(parts)
+        whisper_url = f"https://{public_host}/whisper?text=" + urllib.parse.quote(briefing)
+        logger.info(f"[tool] transfer_call -> {target} (call {call_sid}) whisper={briefing!r}")
+
         await task.queue_frames([TTSSpeakFrame("Perfect — connecting you to a licensed agent now, one moment.")])
         # Don't let the LLM speak again; the redirect takes over.
         await p.result_callback({"status": "transferring"}, properties=FunctionCallResultProperties(run_llm=False))
 
         async def _redirect():
             await asyncio.sleep(5)  # let the bridge line finish playing
+            # answerOnBridge keeps the caller hearing ringback while the agent
+            # hears the whisper; <Number url=...> plays the briefing to the
+            # agent only, then Twilio bridges the caller in.
             dial = (
                 '<?xml version="1.0" encoding="UTF-8"?>'
                 f'<Response><Dial answerOnBridge="true" callerId="{TWILIO_FROM_NUMBER}">'
-                f"<Number>{target}</Number></Dial>"
+                f'<Number url="{whisper_url}" method="POST">{target}</Number></Dial>'
                 '<Say voice="Polly.Matthew">Sorry, the line did not connect. Goodbye.</Say></Response>'
             )
             try:
                 await asyncio.to_thread(_twilio_update, twiml=dial)
-                logger.info(f"[tool] transfer redirect sent for {call_sid}")
+                logger.info(f"[tool] warm transfer redirect sent for {call_sid}")
             except Exception as e:
                 logger.error(f"[tool] transfer failed: {e}")
 

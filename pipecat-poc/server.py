@@ -101,12 +101,50 @@ SYSTEM_PROMPT = (
     "After calling transfer_call, do NOT call any other tool — the hand-off is automatic.\n"
     "- If the caller would rather be called back later, call schedule_callback with their preferred time.\n"
     "- If the caller would rather get the info by text, call send_text.\n"
-    "- When the conversation is over, the caller is not interested, is rude, won't engage, "
-    "or is clearly wasting time, say one short polite closing line and call end_call. Do not "
-    "keep re-asking the same question or stall — wrap up and end.\n"
+    "- When it's time to end (caller not interested, rude, disengaged, wasting time, or you've "
+    "wrapped up), call end_call IMMEDIATELY. Do NOT say goodbye in your own words and do NOT "
+    "keep talking — end_call says one goodbye and hangs up for you. Never repeat goodbyes, never "
+    "say 'bye' and then keep talking, and never re-ask a question you already asked.\n"
     "Only transfer, text, or schedule after the caller clearly agrees. "
     "Your output is spoken aloud over the phone, so no lists, markdown, or special characters."
 )
+
+
+_WORD_NUM = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+             "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "fifteen": 15,
+             "twenty": 20, "thirty": 30, "forty": 40, "forty-five": 45, "sixty": 60}
+
+
+def parse_callback_time(text: str) -> datetime.datetime:
+    """Best-effort parse of a spoken callback time into a UTC datetime.
+    Handles 'in N minutes/hours/days' (digit or word), 'tomorrow', 'tonight',
+    'this afternoon/evening', and an hour-from-now default."""
+    import re
+    now = datetime.datetime.utcnow()
+    t = (text or "").lower().strip()
+    m = re.search(r"in\s+([a-z0-9\-]+)\s*(minute|min|hour|hr|day)", t)
+    if m:
+        tok = m.group(1)
+        n = int(tok) if tok.isdigit() else _WORD_NUM.get(tok)
+        unit = m.group(2)
+        if n:
+            if unit.startswith("min"):
+                return now + datetime.timedelta(minutes=n)
+            if unit.startswith("hour") or unit == "hr":
+                return now + datetime.timedelta(hours=n)
+            if unit == "day":
+                return now + datetime.timedelta(days=n)
+    if "tomorrow" in t:
+        return now + datetime.timedelta(days=1)
+    if "tonight" in t or "evening" in t:
+        return now.replace(hour=23, minute=0, second=0, microsecond=0)  # ~7pm ET
+    if "afternoon" in t:
+        return now.replace(hour=19, minute=0, second=0, microsecond=0)  # ~3pm ET
+    if "hour" in t:
+        return now + datetime.timedelta(hours=1)
+    if "minute" in t or "few min" in t:
+        return now + datetime.timedelta(minutes=5)
+    return now + datetime.timedelta(hours=1)
 
 
 def normalize_e164(num: str) -> str:
@@ -395,13 +433,21 @@ async def websocket_endpoint(websocket: WebSocket):
             )
             return
         logger.info(f"[tool] end_call (call {call_sid})")
+        guard["ended"] = True  # stop the silence/duration monitor from racing
         await task.queue_frames([TTSSpeakFrame("Thanks so much for your time — have a great day!")])
         await p.result_callback({"status": "ending"}, properties=FunctionCallResultProperties(run_llm=False))
 
         async def _hangup():
-            await asyncio.sleep(4)
+            # Wait for the goodbye to actually finish, then hang up promptly.
+            # The old fixed 4s delay felt like the bot couldn't end the call.
+            await asyncio.sleep(1.0)
+            deadline = time.time() + 12
+            while guard["bot_speaking"] and time.time() < deadline:
+                await asyncio.sleep(0.3)
+            await asyncio.sleep(0.6)
             try:
                 await asyncio.to_thread(_twilio_update, status="completed")
+                logger.info(f"[tool] hung up call {call_sid}")
             except Exception as e:
                 logger.error(f"[tool] hangup failed: {e}")
 
@@ -429,8 +475,10 @@ async def websocket_endpoint(websocket: WebSocket):
         when = p.arguments.get("callback_time", "")
         reason = p.arguments.get("reason", "")
         logger.info(f"[tool] schedule_callback when={when!r} phone={phone}")
-        # Best-effort: record in the production Node system so it actually gets dialed.
-        scheduled_at = (datetime.datetime.utcnow() + datetime.timedelta(hours=2)).isoformat() + "Z"
+        # Record in the production Node system so it actually gets dialed, at the
+        # time the caller asked for (parsed from natural language).
+        scheduled_at = parse_callback_time(when).isoformat() + "Z"
+        logger.info(f"[tool] callback scheduled_at={scheduled_at}")
 
         def _post():
             payload = json.dumps({

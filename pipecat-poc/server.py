@@ -26,6 +26,7 @@ import asyncio
 import datetime
 import json
 import os
+import time
 import urllib.request
 
 import uvicorn
@@ -39,7 +40,18 @@ from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
-from pipecat.frames.frames import EndFrame, LLMRunFrame, TTSSpeakFrame
+from pipecat.frames.frames import (
+    BotStartedSpeakingFrame,
+    BotStoppedSpeakingFrame,
+    EndFrame,
+    LLMRunFrame,
+    StartFrame,
+    TranscriptionFrame,
+    TTSSpeakFrame,
+    UserStartedSpeakingFrame,
+    UserStoppedSpeakingFrame,
+)
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -72,6 +84,9 @@ TRANSFER_NUMBER = os.getenv("TRANSFER_NUMBER", "9548182888")
 SCHEDULE_LINK = os.getenv("SCHEDULE_LINK", "https://quotingfast.com/schedule")
 # Production Node service — used to record scheduled callbacks in the real system.
 NODE_API = os.getenv("NODE_API", "https://ai-outbound-agent-florida.onrender.com")
+# Auto-hangup guards (stop wasting credits on dead air / time-wasters).
+MAX_CALL_SECS = int(os.getenv("MAX_CALL_SECS", "180"))   # hard cap on call length
+SILENCE_SECS = int(os.getenv("SILENCE_SECS", "15"))       # dead-air cutoff
 
 SYSTEM_PROMPT = (
     f"You are {AGENT_NAME}, a friendly auto-insurance agent at {COMPANY_NAME}. "
@@ -86,7 +101,9 @@ SYSTEM_PROMPT = (
     "After calling transfer_call, do NOT call any other tool — the hand-off is automatic.\n"
     "- If the caller would rather be called back later, call schedule_callback with their preferred time.\n"
     "- If the caller would rather get the info by text, call send_text.\n"
-    "- When the conversation is over or they're not interested, call end_call.\n"
+    "- When the conversation is over, the caller is not interested, is rude, won't engage, "
+    "or is clearly wasting time, say one short polite closing line and call end_call. Do not "
+    "keep re-asking the same question or stall — wrap up and end.\n"
     "Only transfer, text, or schedule after the caller clearly agrees. "
     "Your output is spoken aloud over the phone, so no lists, markdown, or special characters."
 )
@@ -244,6 +261,41 @@ async def websocket_endpoint(websocket: WebSocket):
     context = LLMContext([{"role": "system", "content": SYSTEM_PROMPT}], tools=tools)
     aggregators = LLMContextAggregatorPair(context)
 
+    # ── Call guard state + activity tracker ───────────────────────────────
+    # Without this the call runs forever (burning credits) if the caller goes
+    # quiet or just messes around. CallGuard observes speaking activity; a
+    # monitor task force-ends the call on dead air (SILENCE_SECS) or at the
+    # hard time cap (MAX_CALL_SECS). Disabled once a transfer hands the leg
+    # off to <Dial>.
+    session_state = {"transferring": False}
+    guard = {"start": None, "last": None, "ended": False,
+             "bot_speaking": False, "user_speaking": False, "monitor": None}
+
+    class CallGuard(FrameProcessor):
+        async def process_frame(self, frame, direction: FrameDirection):
+            await super().process_frame(frame, direction)
+            now = time.time()
+            if isinstance(frame, StartFrame):
+                guard["start"] = now
+                guard["last"] = now
+            elif isinstance(frame, UserStartedSpeakingFrame):
+                guard["user_speaking"] = True
+                guard["last"] = now
+            elif isinstance(frame, UserStoppedSpeakingFrame):
+                guard["user_speaking"] = False
+                guard["last"] = now
+            elif isinstance(frame, BotStartedSpeakingFrame):
+                guard["bot_speaking"] = True
+                guard["last"] = now
+            elif isinstance(frame, BotStoppedSpeakingFrame):
+                guard["bot_speaking"] = False
+                guard["last"] = now
+            elif isinstance(frame, TranscriptionFrame):
+                guard["last"] = now
+            await self.push_frame(frame, direction)
+
+    call_guard = CallGuard()
+
     pipeline = Pipeline(
         [
             transport.input(),
@@ -254,6 +306,7 @@ async def websocket_endpoint(websocket: WebSocket):
             tts,
             transport.output(),
             aggregators.assistant(),
+            call_guard,
         ]
     )
 
@@ -268,13 +321,40 @@ async def websocket_endpoint(websocket: WebSocket):
     )
 
     # ── Tool handlers ────────────────────────────────────────────────────
-    # Once a transfer starts, the Twilio call leg is handed off to <Dial>.
-    # Guard so a stray end_call (the model sometimes fires both in one turn)
-    # doesn't hang up the call mid-transfer.
-    session_state = {"transferring": False}
-
     def _twilio_update(**kwargs):
         twilio_rest.calls(call_sid).update(**kwargs)
+
+    async def _force_end(reason: str):
+        """Hard hangup driven by the guards (independent of the model)."""
+        if guard["ended"]:
+            return
+        guard["ended"] = True
+        logger.info(f"[guard] ending call ({reason}) call={call_sid}")
+        try:
+            if reason == "max_duration":
+                await task.queue_frames([TTSSpeakFrame(
+                    "I want to be respectful of your time, so I'll let you go for now — "
+                    "we'll follow up. Take care!")])
+                await asyncio.sleep(5)
+            await asyncio.to_thread(_twilio_update, status="completed")
+        except Exception as e:
+            logger.error(f"[guard] force end failed: {e}")
+
+    async def _monitor():
+        while not guard["ended"]:
+            await asyncio.sleep(3)
+            if session_state["transferring"]:
+                return  # leg handed off to <Dial>; stop guarding
+            now = time.time()
+            if guard["start"] is None:
+                continue
+            if now - guard["start"] > MAX_CALL_SECS:
+                await _force_end("max_duration")
+                return
+            speaking = guard["bot_speaking"] or guard["user_speaking"]
+            if not speaking and guard["last"] and (now - guard["last"]) > SILENCE_SECS:
+                await _force_end("silence")
+                return
 
     async def handle_transfer(p: FunctionCallParams):
         if session_state["transferring"]:
@@ -388,10 +468,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 ),
             }
         )
+        guard["start"] = time.time()
+        guard["last"] = time.time()
+        guard["monitor"] = asyncio.create_task(_monitor())
         await task.queue_frames([LLMRunFrame()])
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(_transport, _client):
+        guard["ended"] = True
+        if guard["monitor"]:
+            guard["monitor"].cancel()
         await task.queue_frames([EndFrame()])
 
     runner = PipelineRunner(handle_sigint=False)

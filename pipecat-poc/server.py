@@ -225,13 +225,34 @@ async def twiml(request: Request):
 @app.post("/whisper")
 async def whisper(request: Request):
     """Warm-transfer whisper: TwiML played to the licensed agent BEFORE the
-    caller is bridged in, briefing them on the lead."""
+    caller is bridged in. Briefs them on the lead and requires pressing 1 to
+    accept the connection (the prospect never hears this)."""
     text = request.query_params.get("text", "You have a warm transfer coming in.")
     safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    host = _host(request)
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
-        f'<Response><Say voice="Polly.Matthew">{safe}</Say></Response>'
+        "<Response>"
+        f'<Gather numDigits="1" action="https://{host}/whisper-accept" method="GET" timeout="12">'
+        f'<Say voice="Polly.Matthew">{safe} Press 1 to connect with the prospect.</Say>'
+        "</Gather>"
+        '<Say voice="Polly.Matthew">No input received. Goodbye.</Say><Hangup/>'
+        "</Response>"
     )
+    return Response(content=xml, media_type="application/xml")
+
+
+@app.get("/whisper-accept")
+async def whisper_accept(request: Request):
+    """Agent pressed a key after the whisper. '1' bridges them to the prospect;
+    anything else drops the agent leg (no connection)."""
+    digits = request.query_params.get("Digits", "")
+    if digits == "1":
+        # Empty TwiML → the agent leg bridges to the waiting prospect.
+        xml = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
+    else:
+        xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+               '<Response><Say voice="Polly.Matthew">Okay, goodbye.</Say><Hangup/></Response>')
     return Response(content=xml, media_type="application/xml")
 
 
@@ -456,15 +477,16 @@ async def websocket_endpoint(websocket: WebSocket):
         carrier = (p.arguments.get("current_carrier") or "").strip()
         tenure = (p.arguments.get("tenure") or "").strip()
         vehicles = (p.arguments.get("vehicle_count") or "").strip()
-        parts = [f"Warm transfer for {lead_name}."]
-        if carrier and carrier.lower() not in ("unknown", "n/a", "none", ""):
-            parts.append(f"Currently with {carrier} for {tenure}." if tenure else f"Currently with {carrier}.")
+        insured = bool(carrier) and carrier.lower() not in (
+            "uninsured", "none", "no", "n/a", "na", "unknown", "")
+        if insured:
+            briefing = f"I have {lead_name} on the line, and they have been with {carrier}"
+            briefing += f" for {tenure}." if tenure else "."
         else:
-            parts.append("Currently uninsured or carrier not given.")
-        if vehicles:
-            parts.append(f"{vehicles} vehicle{'' if vehicles.strip()=='1' else 's'} to quote.")
-        parts.append("They're interested in lowering their auto rate. Connecting them now.")
-        briefing = " ".join(parts)
+            v = vehicles if vehicles else "a few"
+            plural = "" if v == "1" else "s"
+            briefing = (f"I have {lead_name} on the line. They are currently uninsured and have "
+                        f"{v} vehicle{plural} to quote.")
         whisper_url = f"https://{public_host}/whisper?text=" + urllib.parse.quote(briefing)
         logger.info(f"[tool] transfer_call -> {target} (call {call_sid}) whisper={briefing!r}")
 

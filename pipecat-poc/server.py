@@ -66,8 +66,10 @@ from pipecat.processors.audio.vad_processor import VADProcessor
 from pipecat.serializers.twilio import TwilioFrameSerializer
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.deepgram.tts import DeepgramTTSService
+from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.llm_service import FunctionCallParams, FunctionCallResultProperties
 from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.services.openai.tts import OpenAITTSService
 from pipecat.transports.websocket.fastapi import (
     FastAPIWebsocketParams,
     FastAPIWebsocketTransport,
@@ -83,6 +85,20 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 DEEPGRAM_VOICE = os.getenv("DEEPGRAM_TTS_MODEL", "aura-2-apollo-en")
+# TTS provider: 'openai' (natural, works on existing key), 'elevenlabs'
+# (most human, needs a PAID ElevenLabs account), or 'deepgram'.
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "openai").lower()
+OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "ash")
+OPENAI_TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+OPENAI_TTS_INSTRUCTIONS = os.getenv(
+    "OPENAI_TTS_INSTRUCTIONS",
+    "Speak like a warm, upbeat, natural human salesperson on a phone call — "
+    "conversational and friendly with relaxed, real pacing. Not robotic, not formal, "
+    "not announcer-like.",
+)
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "jn34bTlmmOgOJU9XfPuy")  # Steve
+ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5")
 AGENT_NAME = os.getenv("AGENT_NAME", "Steve")
 COMPANY_NAME = os.getenv("COMPANY_NAME", "Smart Quotes")
 TRANSFER_NUMBER = os.getenv("TRANSFER_NUMBER", "9548182888")
@@ -191,7 +207,8 @@ async def health():
         "status": "ok",
         "service": "pipecat-poc",
         "model": OPENAI_MODEL,
-        "voice": DEEPGRAM_VOICE,
+        "tts_provider": TTS_PROVIDER,
+        "voice": OPENAI_TTS_VOICE if TTS_PROVIDER == "openai" else (ELEVENLABS_VOICE_ID if TTS_PROVIDER == "elevenlabs" else DEEPGRAM_VOICE),
         "turn": "smart-turn-v3",
         "tools": ["transfer_call", "schedule_callback", "send_text", "end_call"],
         "transfer_number": TRANSFER_NUMBER,
@@ -306,7 +323,28 @@ async def websocket_endpoint(websocket: WebSocket):
 
     stt = DeepgramSTTService(api_key=DEEPGRAM_API_KEY)
     llm = OpenAILLMService(api_key=OPENAI_API_KEY, model=OPENAI_MODEL)
-    tts = DeepgramTTSService(api_key=DEEPGRAM_API_KEY, voice=DEEPGRAM_VOICE, sample_rate=8000)
+    if TTS_PROVIDER == "elevenlabs" and ELEVENLABS_API_KEY:
+        tts = ElevenLabsTTSService(
+            api_key=ELEVENLABS_API_KEY,
+            voice_id=ELEVENLABS_VOICE_ID,
+            model=ELEVENLABS_MODEL,
+            sample_rate=8000,
+            params=ElevenLabsTTSService.InputParams(
+                stability=0.45, similarity_boost=0.78, style=0.10,
+                use_speaker_boost=True, speed=0.97, auto_mode=True,
+            ),
+        )
+    elif TTS_PROVIDER == "deepgram":
+        tts = DeepgramTTSService(api_key=DEEPGRAM_API_KEY, voice=DEEPGRAM_VOICE, sample_rate=8000)
+    else:  # default: OpenAI TTS — natural, runs on the existing OpenAI key.
+        # 24kHz native; the transport/serializer downsamples to 8k mulaw for Twilio.
+        tts = OpenAITTSService(
+            api_key=OPENAI_API_KEY,
+            voice=OPENAI_TTS_VOICE,
+            model=OPENAI_TTS_MODEL,
+            instructions=OPENAI_TTS_INSTRUCTIONS,
+            sample_rate=24000,
+        )
     # Less-twitchy VAD so telephone-line noise / the bot's own echo doesn't
     # trigger false barge-ins (which chopped the previous call's speech into
     # erratic fragments). Higher confidence + min_volume + a longer start

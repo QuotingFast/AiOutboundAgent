@@ -77,7 +77,9 @@ const PROHIBITED_PATTERNS: Array<{ re: RegExp; flag: string }> = [
   { re: /\b(yes,? )?(i('| a)m|i am) (a )?(real |actual )?(human|person)\b/i, flag: 'false_human_claim' },
 ];
 
-const IDENTITY_CHECK_RE = /\b(is this|am i speaking with|speaking to|this) .{0,24}\?|\bhey \w+\?/i;
+// Matches explicit checks ("is this Tom?") AND natural name-confirmation
+// openers ("Hey Tom, it's Steve… you put in a quote request, right?").
+const IDENTITY_CHECK_RE = /\b(is this|am i speaking with|speaking to|do i have) .{0,24}\?|\bhey \w+[,?]|\bhi \w+\s*[—,-]|\byou (put in|filled out|requested|started) .{0,60}(right|correct)\?/i;
 const RECORDING_DISCLOSURE_RE = /\b(call[s]? (is|are|may be) recorded|recorded (line|call)|on a recorded)/i;
 const PURPOSE_RE = /\b(insurance|quote|coverage|rate)\b/i;
 const TRANSFER_PERMISSION_RE = /\b(want me to|can i|should i|ready to|ok(ay)? if i|mind if i).{0,40}(connect|transfer|get you (over|through)|put you (through|on))/i;

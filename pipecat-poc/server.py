@@ -99,6 +99,10 @@ OPENAI_TTS_INSTRUCTIONS = os.getenv(
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "jn34bTlmmOgOJU9XfPuy")  # Steve
 ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5")
+# Looser settings = less "studio-perfect", more natural/human delivery.
+ELEVENLABS_STABILITY = float(os.getenv("ELEVENLABS_STABILITY", "0.30"))
+ELEVENLABS_SIMILARITY = float(os.getenv("ELEVENLABS_SIMILARITY", "0.75"))
+ELEVENLABS_STYLE = float(os.getenv("ELEVENLABS_STYLE", "0.35"))
 AGENT_NAME = os.getenv("AGENT_NAME", "Steve")
 COMPANY_NAME = os.getenv("COMPANY_NAME", "Smart Quotes")
 TRANSFER_NUMBER = os.getenv("TRANSFER_NUMBER", "9548182888")
@@ -250,8 +254,19 @@ async def whisper(request: Request):
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
-        f'<Gather numDigits="1" action="https://{host}/whisper-accept" method="GET" timeout="12">'
-        f'<Say voice="Polly.Matthew">{safe} Press 1 to connect with the prospect.</Say>'
+        # Give the agent 2s to actually get the phone to their ear, plus a
+        # lead-in, BEFORE the briefing — otherwise the name/carrier plays while
+        # they're still raising the phone and they miss it. The briefing is then
+        # repeated so it can't be missed.
+        '<Pause length="2"/>'
+        '<Say voice="Polly.Matthew">Hi there. You have a warm auto insurance transfer.</Say>'
+        '<Pause length="1"/>'
+        f'<Gather numDigits="1" action="https://{host}/whisper-accept" method="GET" timeout="25">'
+        f'<Say voice="Polly.Matthew">{safe}</Say>'
+        '<Pause length="1"/>'
+        f'<Say voice="Polly.Matthew">Once more: {safe}</Say>'
+        '<Pause length="1"/>'
+        '<Say voice="Polly.Matthew">Press 1 to connect with the prospect.</Say>'
         "</Gather>"
         '<Say voice="Polly.Matthew">No input received. Goodbye.</Say><Hangup/>'
         "</Response>"
@@ -329,6 +344,12 @@ async def websocket_endpoint(websocket: WebSocket):
             voice_id=ELEVENLABS_VOICE_ID,
             model=ELEVENLABS_MODEL,
             sample_rate=8000,
+            params=ElevenLabsTTSService.InputParams(
+                stability=ELEVENLABS_STABILITY,
+                similarity_boost=ELEVENLABS_SIMILARITY,
+                style=ELEVENLABS_STYLE,
+                use_speaker_boost=True,
+            ),
         )
     elif TTS_PROVIDER == "deepgram":
         tts = DeepgramTTSService(api_key=DEEPGRAM_API_KEY, voice=DEEPGRAM_VOICE, sample_rate=8000)

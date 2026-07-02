@@ -190,6 +190,15 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let audioChunkCount = 0;
   let currentAgentText = '';
   let currentElevenLabsText = '';
+  // Content-based echo guard: the last thing the agent SAID, plus when it
+  // finished being SENT. Twilio keeps playing the buffered tail for 1-3s
+  // after responseIsPlaying flips false, so that tail echoes back and gets
+  // transcribed as a caller turn — the agent then "answers itself". We
+  // reject any near-in-time caller transcript that substantially overlaps
+  // the agent's own last words. Genuine short answers ("yeah", "two
+  // cars") don't overlap the agent's sentence, so they still pass.
+  let lastAgentSpokenNorm = '';
+  let lastAgentSpokenAt = 0;
 
   // Call duration tracking
   let callStartedAt = 0;
@@ -1262,6 +1271,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         if (conversation) conversation.processAgentTurn(fullResponse);
         if (analytics) analytics.addTranscriptEntry('agent', fullResponse);
         emitTranscript('agent', fullResponse);
+        noteAgentSpoke(fullResponse);
 
         // Close ElevenLabs WS after response (lazy reconnect pattern)
         setTimeout(() => {
@@ -1293,6 +1303,27 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
   function countMeaningfulWords(text: string): number {
     return (text.toLowerCase().match(/[a-z0-9]{2,}/g) || []).length;
+  }
+
+  // Record what the agent just said so the echo guard can detect the
+  // caller "transcript" that is really the agent's own buffered audio.
+  function noteAgentSpoke(text: string): void {
+    lastAgentSpokenNorm = (text || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    lastAgentSpokenAt = Date.now();
+  }
+
+  // Fraction of the caller-transcript's words that also appear in the
+  // agent's last utterance. High overlap shortly after the agent spoke =
+  // the agent hearing itself, not the caller.
+  function echoOverlap(userNorm: string): number {
+    if (!lastAgentSpokenNorm || !userNorm) return 0;
+    const agentWords = new Set(lastAgentSpokenNorm.split(' ').filter(w => w.length > 2));
+    if (agentWords.size === 0) return 0;
+    const userWords = userNorm.split(' ').filter(w => w.length > 2);
+    if (userWords.length === 0) return 0;
+    let hits = 0;
+    for (const w of userWords) if (agentWords.has(w)) hits++;
+    return hits / userWords.length;
   }
 
   function isFillerOnly(text: string): boolean {
@@ -1465,6 +1496,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           if (conversation) conversation.processAgentTurn(agentText);
           if (analytics) analytics.addTranscriptEntry('agent', agentText);
           emitTranscript('agent', agentText);
+          noteAgentSpoke(agentText);
         }
         break;
 
@@ -1611,6 +1643,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           if (conversation) conversation.processAgentTurn(agentText);
           if (analytics) analytics.addTranscriptEntry('agent', agentText);
           emitTranscript('agent', agentText);
+          noteAgentSpoke(agentText);
         }
         break;
 
@@ -1644,6 +1677,17 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         else if (typeof confidence === 'number' && confidence < 0.5) rejectReason = 'low_conf';
         else if (fillerOnly) rejectReason = 'filler_only';
         else if (!cleanedText) rejectReason = 'low_quality';
+        // Content echo: within 4s of the agent speaking, a multi-word
+        // "caller" turn that mostly repeats the agent's own words is the
+        // buffered TTS tail leaking back — reject it so the agent doesn't
+        // answer itself. Short answers (≤3 words like "yeah"/"two cars")
+        // are exempt: they rarely overlap and we never want to drop a
+        // real answer.
+        else if (
+          meaningfulWords >= 4 &&
+          (Date.now() - lastAgentSpokenAt) < 4000 &&
+          echoOverlap(normalizedUser) >= 0.6
+        ) rejectReason = 'echo_content_match';
         else if (normalizedUser && normalizedUser === lastUserTurnNorm && (Date.now() - lastUserTurnAt) < 2000) rejectReason = 'duplicate_user_turn';
 
         if (rejectReason) {
@@ -1662,7 +1706,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           // no caller waiting for a response and reprompting would just
           // make the bot talk on top of itself.
           const silentReject = rejectReason === 'empty_no_speech'
-            || rejectReason === 'echo_during_playback';
+            || rejectReason === 'echo_during_playback'
+            || rejectReason === 'echo_content_match';
           if (!silentReject) {
             deterministicReprompt();
           }
@@ -1816,7 +1861,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           hasAffirmative,
         });
 
-        const confirmMsg = '[System: Do NOT transfer yet. Ask one short yes/no question only: "Would you like me to connect you to a licensed agent now?" Wait for explicit yes before calling transfer_call.]';
+        const confirmMsg = '[System: Do NOT transfer yet — no clear yes. Ask ONE short closed question only, e.g. "Want me to connect you now? Just a yes or no." Do NOT repeat the transfer pitch and do NOT say "two minutes" again — repeating it outs you as a bot. Wait for an explicit yes before calling transfer_call.]';
         if (useDeepSeek) {
           callDeepSeekStreaming(confirmMsg);
         } else {

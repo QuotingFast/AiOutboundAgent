@@ -43,6 +43,7 @@ import {
 import { scoreCall as platformScoreCall } from '../platform/qa';
 import { createTrackedLink as createQuoteLink } from '../platform/lifecycle';
 import { buildLeadProfile as buildPlatformLeadProfile, voicePersonalizationBrief as buildVoicePersonalizationBrief } from '../platform/leadprofile';
+import { resolveTimezone as resolvePlatformTimezone, nextTimeInWindow as nextPlatformWindowTime } from '../platform/timezone';
 
 // Map of callSid -> session data for passing lead/transfer info
 const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig; toPhone?: string; campaignId?: string }>();
@@ -635,7 +636,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     const gaInputAudio: any = {
       format: { type: 'audio/pcmu' },
       turn_detection: turnDetection,
-      transcription: { model: 'gpt-4o-transcribe' },
+      transcription: { model: 'gpt-4o-transcribe', language: 'en' },
     };
 
     if (useDeepSeek) {
@@ -1063,7 +1064,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
               create_response: true,
               interrupt_response: true,
             },
-            transcription: { model: 'gpt-4o-transcribe' },
+            transcription: { model: 'gpt-4o-transcribe', language: 'en' },
           },
         },
         tools: getRealtimeTools(),
@@ -1572,8 +1573,13 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         // ElevenLabs has a ~5-minute idle timeout, which is plenty for conversation turns.
         if (!useElevenLabs) {
           responseIsPlaying = false;
+          // No text passed here: the transcript entry was already added by
+          // the output_audio_transcript.done handler — passing text made
+          // agentFinishedSpeaking() push a second copy of every agent turn,
+          // which doubled agent word counts and skewed QA talk-ratio and
+          // repetition scoring.
           if (analytics && currentAgentText) {
-            analytics.agentFinishedSpeaking(currentAgentText);
+            analytics.agentFinishedSpeaking();
           }
           currentAgentText = '';
         }
@@ -1935,8 +1941,32 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           }
         }
       } else {
-        logger.error('stream', 'No transfer number configured', { sessionId, route });
-        const noNumMsg = '[System: No transfer number is configured for this route. Apologize and say someone will call them back shortly.]';
+        // A consumer who said YES to a transfer must never fall into a
+        // dead end. Record the failure, actually schedule a callback in
+        // the next compliant window, and have the agent commit to it
+        // specifically instead of a vague "someone will call you back".
+        logger.error('stream', 'No transfer number configured — scheduling fallback callback', { sessionId, route });
+        platformRecordEvent('transfer.failed', { route, reason: 'no_destination_configured' },
+          { phone: callerNumber, callSid, campaignId: activeCampaign?.id });
+        let callbackLabel = 'within the next couple of hours';
+        try {
+          const { tz } = resolvePlatformTimezone(leadData.state, callerNumber);
+          const at = nextPlatformWindowTime(tz, 8, 21, new Date(Date.now() + 2 * 3600000));
+          scheduleCallbackTimer({
+            phone: callerNumber,
+            leadName: leadData.first_name,
+            state: leadData.state,
+            reason: 'transfer_unavailable',
+            scheduledAt: at.toISOString(),
+          });
+          platformRecordEvent('callback.scheduled', { label: 'fallback: transfer unavailable', startAt: at.toISOString() },
+            { phone: callerNumber, callSid, campaignId: activeCampaign?.id });
+          const hourLocal = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: true }).format(at);
+          callbackLabel = `around ${hourLocal}`;
+        } catch (err) {
+          logger.error('stream', 'Fallback callback scheduling failed', { sessionId, error: String(err) });
+        }
+        const noNumMsg = `[System: All licensed agents are unavailable right now. A callback is already booked for ${callbackLabel} their local time. Tell them naturally: apologize briefly, say a licensed agent will call them back ${callbackLabel}, confirm this number is good, then end warmly with end_call(reason='callback').]`;
         if (useDeepSeek) {
           callDeepSeekStreaming(noNumMsg);
         } else {

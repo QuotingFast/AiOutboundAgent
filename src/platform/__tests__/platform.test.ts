@@ -322,6 +322,20 @@ describe('QA scoring', () => {
   assert(badCall.riskFlags.includes('transfer_without_clear_permission'), 'Transfer without permission flagged');
   assert(badCall.overall < 50, `Bad call scores low (${badCall.overall})`);
 
+  // Regression: the real production opener style must count as an
+  // identity check (it previously scored 25 — false negative).
+  const realOpener = scoreCall({
+    callSid: 'CAqa_opener',
+    transcript: [
+      { role: 'agent', text: "Hey Tom, it's Steve over at Smart Quotes — you put in a car insurance quote request on one of our websites recently, right?" },
+      { role: 'user', text: 'Yeah, that was me.' },
+      { role: 'agent', text: 'Cool — heads up, calls are recorded. Who do you have insurance with right now?' },
+    ],
+    outcome: 'ended',
+  });
+  const identityDim = realOpener.dimensions.find(d => d.key === 'identity')!;
+  assertEqual(identityDim.score, 100, 'Natural name-confirmation opener counts as identity check');
+
   const humanLie = scoreCall({
     callSid: 'CAqa_lie',
     transcript: [

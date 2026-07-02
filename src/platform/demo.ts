@@ -10,6 +10,8 @@ import { recordEvent, queryEvents } from './events';
 import { upsertBuyer, listBuyers, createTransfer, updateTransferStage, getBuyer, HandoffPacket } from './buyers';
 import { scoreCall, QaTranscriptTurn } from './qa';
 import { getObjectionLibrary, recordObjectionOutcome } from './rebuttals';
+import { createTrackedLink, recordWebformSubmission, recordOfferClick } from './lifecycle';
+import { createOrUpdateLead } from '../memory';
 import { logger } from '../utils/logger';
 
 const FIRST_NAMES = ['James', 'Maria', 'Robert', 'Linda', 'Michael', 'Patricia', 'David', 'Jennifer', 'Carlos', 'Ashley', 'Kevin', 'Sandra', 'Brian', 'Nancy', 'Tyler', 'Diane', 'Marcus', 'Teresa', 'Eric', 'Gloria'];
@@ -98,6 +100,7 @@ export function seedDemoData(opts: { force?: boolean } = {}): { seeded: boolean;
 
   const objections = getObjectionLibrary();
   let leads = 0, calls = 0, transfers = 0;
+  const demoLeads: Array<{ phone: string; firstName: string; state: string; insurer: string; campaignId: string }> = [];
 
   for (let day = 13; day >= 0; day--) {
     const leadsToday = 25 + Math.floor(rand() * 20);
@@ -114,6 +117,7 @@ export function seedDemoData(opts: { force?: boolean } = {}): { seeded: boolean;
       // in data.demoDay for charting (dashboards read data.occurredAt first).
       const occurredAt = new Date(now - day * 86400000 - Math.floor(rand() * 10 * 3600000)).toISOString();
       const common = { phone, campaignId };
+      demoLeads.push({ phone, firstName, state, insurer, campaignId });
 
       recordEvent('lead.received', { source, state, insurer, firstName, occurredAt, demo: true }, common);
 
@@ -219,6 +223,33 @@ export function seedDemoData(opts: { force?: boolean } = {}): { seeded: boolean;
     }
   }
 
-  logger.info('demo', `Seeded demo data: ${leads} leads, ${calls} calls, ${transfers} transfers`);
+  // Lifecycle revenue loop: a slice of leads gets the "text me the
+  // quote" flow — tracked link → click → prefilled-form submission
+  // (new weblead + consent renewal) → offer-wall clicks.
+  let webforms = 0, offerClicks = 0;
+  for (const dl of demoLeads) {
+    if (rand() >= 0.18) continue;
+    createOrUpdateLead(dl.phone, {
+      name: dl.firstName,
+      state: dl.state,
+      currentInsurer: dl.insurer === 'None' ? undefined : dl.insurer,
+      tags: ['demo'],
+    });
+    const link = createTrackedLink(dl.phone, 'webform', { campaignId: dl.campaignId, sentVia: 'sms' });
+    if (rand() < 0.7) {
+      recordEvent('link.clicked', { kind: link.kind, token: link.token, demo: true }, { phone: dl.phone, campaignId: dl.campaignId });
+      if (rand() < 0.6) {
+        const sub = recordWebformSubmission({ token: link.token, source: 'demo-webform', campaignId: dl.campaignId });
+        if (sub && !sub.duplicate) webforms++;
+        const clicks = 1 + Math.floor(rand() * 3);
+        for (let c = 0; c < clicks; c++) {
+          recordOfferClick({ token: link.token, offerId: `offer-${1 + Math.floor(rand() * 6)}`, payout: 2 + rand() * 6 });
+          offerClicks++;
+        }
+      }
+    }
+  }
+
+  logger.info('demo', `Seeded demo data: ${leads} leads, ${calls} calls, ${transfers} transfers, ${webforms} webforms, ${offerClicks} offer clicks`);
   return { seeded: true, leads, calls, transfers };
 }

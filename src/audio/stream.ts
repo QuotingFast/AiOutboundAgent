@@ -41,6 +41,7 @@ import {
   HandoffPacket as PlatformHandoffPacket,
 } from '../platform/buyers';
 import { scoreCall as platformScoreCall } from '../platform/qa';
+import { createTrackedLink as createQuoteLink } from '../platform/lifecycle';
 
 // Map of callSid -> session data for passing lead/transfer info
 const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig; toPhone?: string; campaignId?: string }>();
@@ -2007,7 +2008,28 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           const s = getSettings();
           const effectiveAgent = activeCampaign?.aiProfile?.agentName || s.agentName;
           const effectiveCompany = activeCampaign?.aiProfile?.companyName || s.companyName;
-          const textBody = `Hi ${prospectName}, it's ${effectiveAgent} from ${effectiveCompany}! Here's a link to learn more about what we do and schedule a meeting with one of our Agency Lead Reps: https://quotingfast.com/schedule — Pick a time that works for you and we'll walk you through everything. Talk soon!`;
+
+          // Consumer campaigns: "text me the quote" sends a tracked,
+          // prefilled webform link — a submission creates a new sellable
+          // weblead AND renews the TCPA opt-in for another cycle. During
+          // the 30-day weblead cooldown the link auto-downgrades to the
+          // partner offer wall (unlimited, revenue per click).
+          const isAgency = activeCampaign?.type === 'agency_development';
+          let textBody: string;
+          let triggerReason: string;
+          if (isAgency) {
+            textBody = `Hi ${prospectName}, it's ${effectiveAgent} from ${effectiveCompany}! Here's a link to learn more about what we do and schedule a meeting with one of our Agency Lead Reps: https://quotingfast.com/schedule — Pick a time that works for you and we'll walk you through everything. Talk soon!`;
+            triggerReason = 'zoom_scheduling';
+          } else {
+            const quoteLink = createQuoteLink(targetPhone, 'webform', { campaignId: activeCampaign?.id, sentVia: 'sms' });
+            textBody = quoteLink.kind === 'webform'
+              ? `Hi ${prospectName}, it's ${effectiveAgent} from ${effectiveCompany}! Here's your quote link — everything's pre-filled, takes under 2 minutes: ${quoteLink.url} Reply STOP to opt out.`
+              : `Hi ${prospectName}, it's ${effectiveAgent} from ${effectiveCompany}! Here are today's best auto-insurance offers for you: ${quoteLink.url} Reply STOP to opt out.`;
+            triggerReason = quoteLink.kind === 'webform' ? 'quote_webform_link' : 'offer_wall_link';
+            if (quoteLink.downgraded) {
+              logger.info('stream', 'Quote link downgraded to offers', { sessionId, reason: quoteLink.downgraded });
+            }
+          }
 
           const result = await sendSms(targetPhone, textBody);
           logSms({
@@ -2017,9 +2039,10 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             body: textBody,
             twilioSid: result.sid,
             leadName: prospectName,
-            triggerReason: 'zoom_scheduling',
+            triggerReason,
           });
-          addLeadNote(targetPhone, `Zoom scheduling text sent during call`);
+          platformRecordEvent('sms.sent', { trigger: triggerReason }, { phone: targetPhone, callSid, campaignId: activeCampaign?.id });
+          addLeadNote(targetPhone, isAgency ? 'Zoom scheduling text sent during call' : 'Quote link text sent during call');
 
           if (!useDeepSeek) {
             sendFunctionOutput(call_id, { status: 'sent', message: 'Scheduling text sent successfully' });

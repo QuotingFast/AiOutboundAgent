@@ -165,7 +165,32 @@ Backward compatibility: no existing endpoint changes shape; all new APIs live un
 `/api/v2/*`; enforcement points no-op when flags are off (except DNC persistence and
 STOP handling, which are unconditional safety fixes).
 
-## 7. Known compliance-policy decision made in this rebuild
+## 7. Lifecycle Revenue Engine (`src/platform/lifecycle.ts`)
+
+Each consented lead is a renewable asset with three conversion surfaces, held in the
+funnel by perpetually renewing the TCPA opt-in before its 90-day expiry:
+
+| Surface | Frequency rule | Revenue event |
+|---------|----------------|---------------|
+| Warm transfer / verified inbound | unlimited (buyer caps apply) | auto-attributed on `transfer.connected`; manual `POST /api/v2/conversions` for verified inbound |
+| Weblead resubmission | **one sellable per 30 days** — inside the cooldown a submission is flagged `duplicate` ($0) so buyers never see a dupe, but consent still renews | `POST /webhook/webform-submitted` |
+| Partner offer click | unlimited | `POST /webhook/offer-click` (payout per click) |
+
+Mechanics:
+- **"Text me the quote"** — the agent's text tool sends a tracked `/t/:token` link to a
+  **prefilled** webform (name/state/insurer/vehicle from lead memory — the consumer just
+  hits submit). During the 30-day cooldown the link auto-downgrades to the offer wall so
+  there is always a revenue-bearing link to send.
+- **Consent renewal loop** — every submission calls `recordConsent` with a fresh
+  timestamp, restarting the 90-day clock the policy engine enforces. The renewal worker
+  scans hourly: leads inside the renewal window (last 25 days of validity, configurable)
+  and weblead-eligible surface in the pipeline and, when `autoRenewalSmsEnabled` is on,
+  get one policy-gated SMS (with STOP language) per 7 days carrying a fresh form link.
+- **Attribution** — every conversion is a ledger event with a configurable dollar value
+  (`values` in lifecycle config); `/api/v2/revenue` rolls up by type/day plus
+  link-funnel stats (sent → clicked → submitted).
+
+## 8. Known compliance-policy decision made in this rebuild
 
 The inbound prompt previously instructed the agent to claim to be human when asked
 ("No no, I'm real… Yeah, of course."). This was changed to match the outbound stance

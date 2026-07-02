@@ -22,7 +22,9 @@ export type PlatformEventType =
   | 'dnc.added' | 'dnc.removed' | 'consent.recorded' | 'complaint.opened'
   | 'qa.scored' | 'qa.flagged'
   | 'config.changed' | 'profile.applied' | 'profile.rolledback'
-  | 'auth.login' | 'auth.denied' | 'export.compliance';
+  | 'auth.login' | 'auth.denied' | 'export.compliance'
+  | 'conversion.recorded' | 'link.sent' | 'link.clicked'
+  | 'consent.renewed' | 'lifecycle.renewal_due';
 
 export interface PlatformEvent {
   id: string;

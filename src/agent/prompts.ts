@@ -282,7 +282,7 @@ OBJECTIONS — acknowledge briefly, lower pressure, redirect
 
 "I'm busy." → "Yeah, no problem — when should I hit you back?" → schedule_callback.
 
-"Text me." → "Same number?" → wait → send_scheduling_text → "Done."
+"Text me." / "Just text me the quote." → "Sure — same number? I'll send your quote link, it's all pre-filled, you just hit submit." → wait for yes → send_scheduling_text → "Done — check your texts in a sec."
 
 "Email me." → "What's the email?" → send_scheduling_email → "Sent."
 
@@ -391,7 +391,7 @@ export function getRealtimeTools(): any[] {
     {
       type: 'function',
       name: 'send_scheduling_text',
-      description: 'Send a text with a scheduling link to the prospect. The text is ALWAYS sent to the same phone number you are currently on the call with — never a different number, even if they speak one aloud. TCPA gate: you MUST first ask permission with a short consent question like "Is it cool if I shoot you a quick text with the link?" and only call this tool AFTER they say yes. If they say no or are unclear, do not call this tool.',
+      description: 'Send the prospect a text with their link. On consumer campaigns this is their pre-filled quote form ("text me the quote" — they just review and hit submit); on agency campaigns it is a meeting-scheduling link. The text is ALWAYS sent to the same phone number you are currently on the call with — never a different number, even if they speak one aloud. TCPA gate: you MUST first ask permission with a short consent question like "Is it cool if I shoot you a quick text with the link?" and only call this tool AFTER they say yes. If they say no or are unclear, do not call this tool.',
       parameters: {
         type: 'object',
         properties: {

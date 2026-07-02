@@ -20,8 +20,13 @@ import { loadRebuttals, detectObjection, buildRebuttalPromptSection } from '../r
 import { loadQa, scoreCall } from '../qa';
 import { loadProfiles, upsertProfile, getProfile, rollbackProfile, listProfiles } from '../profiles';
 import { hashPassword, verifyPassword, redactPhoneForRole, loadSecurity, authEnabled } from '../security';
+import {
+  loadLifecycle, updateLifecycleConfig, getLeadLifecycle, createTrackedLink, handleLinkClick,
+  recordWebformSubmission, recordOfferClick, revenueSummary, listConversions, runRenewalScan,
+} from '../lifecycle';
 import { resolveTimezone, localTimeIn } from '../timezone';
-import { addToDnc, removeFromDnc, loadComplianceFromDisk, recordConsent } from '../../compliance';
+import { addToDnc, removeFromDnc, loadComplianceFromDisk, recordConsent, getConsent } from '../../compliance';
+import { createOrUpdateLead } from '../../memory';
 
 let passed = 0;
 let failed = 0;
@@ -62,6 +67,7 @@ loadRebuttals();
 loadQa();
 loadProfiles();
 loadSecurity();
+loadLifecycle();
 
 describe('Timezone resolution', () => {
   assertEqual(resolveTimezone('CA').tz, 'America/Los_Angeles', 'State CA → Pacific');
@@ -342,16 +348,115 @@ describe('Security primitives', () => {
   assert(!authEnabled() || true, 'authEnabled callable');
 });
 
+describe('Lifecycle — webform loop, cooldown, consent renewal', () => {
+  const phone = '+15551230001';
+  createOrUpdateLead(phone, { name: 'Carla Jimenez', state: 'FL', currentInsurer: 'GEICO' });
+
+  // 1. Fresh lead: webform link is a webform link, prefilled.
+  const link1 = createTrackedLink(phone, 'webform', { sentVia: 'sms' });
+  assertEqual(link1.kind, 'webform', 'Fresh lead gets a webform link');
+  assert(link1.url.includes('/t/'), 'Tracked redirect URL issued');
+  assert(link1.destination.includes('first_name=Carla') && link1.destination.includes('state=FL'), 'Destination is prefilled from lead memory');
+
+  // 2. Click tracking.
+  const click = handleLinkClick(link1.token);
+  assert(click !== null && click.destination.includes('tk='), 'Click resolves to prefilled destination with token');
+  assert(handleLinkClick('nonexistent-token') === null, 'Unknown token rejected');
+
+  // 3. Submission: sellable weblead + consent renewal.
+  const sub1 = recordWebformSubmission({ token: link1.token, trustedFormUrl: 'https://cert.trustedform.com/abc' })!;
+  assert(!sub1.duplicate, 'First submission is sellable (not duplicate)');
+  assert(sub1.conversion.value > 0, 'Sellable weblead carries revenue value');
+  const consent1 = getConsent(phone)!;
+  assert(Boolean(consent1) && new Date(consent1.timestamp).getTime() > Date.now() - 60000, 'Consent renewed to now');
+  assert(new Date(sub1.consentRenewedUntil).getTime() > Date.now() + 80 * 86400000, 'Renewal extends ~90 days out');
+
+  // 4. Cooldown: an immediate second webform ask downgrades to offers…
+  const link2 = createTrackedLink(phone, 'webform');
+  assertEqual(link2.kind, 'offers', 'Webform ask during cooldown downgrades to offer wall');
+  assert(Boolean(link2.downgraded), 'Downgrade reason is stated');
+
+  // …and a forced second submission renews consent but is a $0 duplicate.
+  const sub2 = recordWebformSubmission({ phone })!;
+  assert(sub2.duplicate, 'Submission inside 30-day cooldown flagged duplicate');
+  assertEqual(sub2.conversion.value, 0, 'Duplicate weblead not valued');
+  const lc = getLeadLifecycle(phone);
+  assert(!lc.weblead.eligibleNow && lc.weblead.daysUntilEligible > 0, 'Cooldown countdown exposed');
+  assertEqual(lc.consent.status, 'active', 'Consent still active after duplicate submission');
+
+  // 5. Offer clicks: unlimited, each one pays.
+  recordOfferClick({ token: link2.token, offerId: 'offer-1', payout: 4.25 });
+  recordOfferClick({ token: link2.token, offerId: 'offer-2' });
+  recordOfferClick({ phone, offerId: 'offer-3' });
+  const clicks = listConversions({ phone, type: 'offer_click' });
+  assertEqual(clicks.length, 3, 'Multiple offer clicks all recorded');
+  assert(clicks.every(c => c.value > 0), 'Every offer click carries revenue');
+
+  // 6. Revenue rollup.
+  const rev = revenueSummary({ since: new Date(Date.now() - 3600000).toISOString() });
+  assert(rev.byType.weblead_submission.count === 2 && rev.byType.weblead_submission.duplicates === 1, 'Revenue splits sellable vs duplicate webleads');
+  assert(rev.byType.offer_click.count === 3 && rev.totalValue > 0, 'Offer clicks roll into revenue');
+});
+
+describe('Lifecycle — transfer auto-attribution', () => {
+  const phone = '+15551230002';
+  const buyer = upsertBuyer({
+    name: 'Attribution Desk', destinationNumber: '+18005550401',
+    hours: { tz: 'America/New_York', startHour: 0, endHour: 24, days: [0, 1, 2, 3, 4, 5, 6] },
+  }, 'test');
+  const rec = createTransfer({
+    callSid: 'CAattr1', buyer, phone,
+    packet: { packetId: 'pkt_attr', lead: { phone }, consent: {}, submission: {}, qualification: {}, call: { callSid: 'CAattr1' } },
+  });
+  updateTransferStage(rec.id, 'buyer_answered');
+  updateTransferStage(rec.id, 'consumer_connected');
+  const attributed = listConversions({ phone, type: 'warm_transfer' });
+  assertEqual(attributed.length, 1, 'Connected transfer auto-records a warm_transfer conversion');
+  assert(attributed[0].value > 0, 'Transfer conversion carries configured value');
+});
+
+async function renewalWorkerTests(): Promise<void> {
+  console.log('\n=== Lifecycle — renewal pipeline & worker ===');
+  const phone = '+15551230003';
+  createOrUpdateLead(phone, { name: 'Renewal Rick', state: 'TX' });
+  // Consent recorded 70 days ago → 20 days left → inside the 25-day window.
+  recordConsent({ phone, consentType: 'express_written', source: 'unit-test', timestamp: new Date(Date.now() - 70 * 86400000).toISOString() });
+  const lc = getLeadLifecycle(phone);
+  assertEqual(lc.consent.status, 'expiring', 'Consent 70 days old is in the renewal window');
+  assert(lc.renewalDue, 'Renewal due when expiring and weblead-eligible');
+
+  // Worker: with auto-send on and quiet hours opened, one push happens.
+  updateLifecycleConfig({ autoRenewalSmsEnabled: true }, 'test');
+  updatePolicyConfig({ quietHoursStart: 0, quietHoursEnd: 24 }, 'test');
+  const sent: string[] = [];
+  const fakeSms = async (to: string, body: string) => { sent.push(`${to}|${body}`); return true; };
+
+  const scan1 = await runRenewalScan(fakeSms);
+  assert(scan1.pushed >= 1, 'Renewal scan pushes an SMS for the expiring lead');
+  assert(sent.some(s => s.startsWith(phone) && s.includes('/t/') && s.includes('STOP')), 'Renewal SMS carries tracked link + STOP language');
+  const scan2 = await runRenewalScan(fakeSms);
+  assertEqual(scan2.pushed, 0, 'Min-gap prevents re-pushing the same lead');
+  updateLifecycleConfig({ autoRenewalSmsEnabled: false }, 'test');
+  updatePolicyConfig({ quietHoursStart: 8, quietHoursEnd: 21 }, 'test');
+}
+
 describe('Ledger integrity after all activity', () => {
   const integrity = verifyLedger();
   assert(integrity.valid, `Hash chain still valid after ${integrity.checked} events`);
 });
 
-console.log('\n' + '='.repeat(50));
-console.log(`Tests: ${passed} passed, ${failed} failed`);
-if (failures.length > 0) {
-  console.log('\nFailures:');
-  for (const f of failures) console.log(`  FAIL: ${f}`);
-}
-console.log('='.repeat(50));
-process.exit(failed > 0 ? 1 : 0);
+renewalWorkerTests()
+  .catch(err => {
+    failed++;
+    failures.push(`renewal worker tests threw: ${err instanceof Error ? err.message : String(err)}`);
+  })
+  .finally(() => {
+    console.log('\n' + '='.repeat(50));
+    console.log(`Tests: ${passed} passed, ${failed} failed`);
+    if (failures.length > 0) {
+      console.log('\nFailures:');
+      for (const f of failures) console.log(`  FAIL: ${f}`);
+    }
+    console.log('='.repeat(50));
+    process.exit(failed > 0 ? 1 : 0);
+  });

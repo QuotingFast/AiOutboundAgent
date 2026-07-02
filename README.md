@@ -15,6 +15,7 @@ rollout plan. Highlights:
 - **Rebuttal library + AI QA** — versioned objection rebuttals with outcome analytics; every call scored against a compliance/quality rubric
 - **Agent profiles** — versioned voice/model/VAD bundles with one-click rollback
 - **Security** — session auth + RBAC (`ADMIN_PASSWORD`), Twilio signature validation (`TWILIO_VALIDATE_SIGNATURE=true`), weblead webhook secret (`WEBLEAD_SHARED_SECRET`)
+- **Lifecycle revenue engine** — every consented lead has three monetization surfaces: warm transfers / verified inbound (no cooldown), weblead resubmission via tracked prefilled webform links ("text me the quote"; one sellable per 30 days, every submission renews the 90-day TCPA opt-in), and unlimited partner offer-wall clicks. Public link redirect at `/t/:token`; form-host postbacks at `POST /webhook/webform-submitted` and `POST /webhook/offer-click`; renewal pipeline pushes fresh opt-in links before consent expires (`/api/v2/revenue`, `/api/v2/lifecycle/*`)
 
 Run tests with `npm test`. Seed demo data with `POST /api/v2/demo/seed`.
 

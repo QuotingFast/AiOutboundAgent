@@ -28,6 +28,11 @@ import {
 } from './profiles';
 import { getFunnel, getBreakdown, getLiveOps, getConversationIntelligence } from './funnel';
 import { requireAuth, AuthedRequest, actorOf, login, logout, listUsers, createUser, deleteUser, authEnabled } from './security';
+import {
+  getLifecycleConfig, updateLifecycleConfig, getLeadLifecycle, createTrackedLink,
+  handleLinkClick, recordWebformSubmission, recordOfferClick, recordConversion,
+  revenueSummary, listConversions, renewalPipeline, runRenewalScan, ConversionType,
+} from './lifecycle';
 import { seedDemoData } from './demo';
 import { getDncList, getConsent, recordConsent } from '../compliance';
 import { logger } from '../utils/logger';
@@ -358,6 +363,96 @@ platformRouter.post('/api/v2/profiles/:id/apply', requireAuth('operator'), (req:
   const result = applyProfileToRuntime(req.params.id, actorOf(req));
   if (!result) { res.status(404).json({ error: 'profile not found' }); return; }
   res.json({ ok: true, ...result });
+});
+
+// ── Lifecycle revenue engine ────────────────────────────────────────
+
+// Public redirect for tracked links — the consumer clicks this from an
+// SMS, so it must work without a session. Tokens are unguessable
+// (72-bit random) and leak nothing on miss.
+platformRouter.get('/t/:token', (req: Request, res: Response) => {
+  const hit = handleLinkClick(req.params.token);
+  if (!hit) { res.status(404).send('Link expired'); return; }
+  res.redirect(302, hit.destination);
+});
+
+// Webform-submission postback from the form host. Lives under /webhook
+// so the WEBLEAD_SHARED_SECRET guard applies when configured.
+// A submission ALWAYS renews the TCPA opt-in; it only counts as a new
+// sellable weblead outside the 30-day cooldown (else flagged duplicate).
+platformRouter.post('/webhook/webform-submitted', (req: Request, res: Response) => {
+  const { token, phone, campaign_id, trusted_form_cert_url, jornaya_id, source } = req.body || {};
+  const result = recordWebformSubmission({
+    token, phone, campaignId: campaign_id,
+    trustedFormUrl: trusted_form_cert_url, jornayaId: jornaya_id, source,
+    payload: req.body,
+  });
+  if (!result) { res.status(400).json({ error: 'token or phone required' }); return; }
+  res.json({
+    ok: true,
+    duplicate: result.duplicate,
+    sellable: !result.duplicate,
+    consentRenewedUntil: result.consentRenewedUntil,
+    offerWallUrl: result.offerWallUrl,
+  });
+});
+
+// Offer-click postback from the offer wall / partner network. Unlimited.
+platformRouter.post('/webhook/offer-click', (req: Request, res: Response) => {
+  const { token, phone, offer_id, payout } = req.body || {};
+  const rec = recordOfferClick({ token, phone, offerId: offer_id, payout: payout !== undefined ? Number(payout) : undefined });
+  if (!rec) { res.status(400).json({ error: 'token or phone required' }); return; }
+  res.json({ ok: true, conversionId: rec.id, value: rec.value });
+});
+
+platformRouter.get('/api/v2/lifecycle/config', requireAuth('viewer'), (_req, res) => res.json(getLifecycleConfig()));
+platformRouter.put('/api/v2/lifecycle/config', requireAuth('admin'), (req: AuthedRequest, res) => {
+  res.json(updateLifecycleConfig(req.body || {}, actorOf(req)));
+});
+
+platformRouter.get('/api/v2/lifecycle/pipeline', requireAuth('viewer'), (_req, res) => res.json(renewalPipeline()));
+
+platformRouter.post('/api/v2/lifecycle/scan', requireAuth('operator'), async (_req, res) => {
+  // Manual scan never auto-sends; it refreshes the renewal-due ledger.
+  res.json(await runRenewalScan());
+});
+
+platformRouter.get('/api/v2/lifecycle/lead/:phone', requireAuth('viewer'), (req, res) => {
+  res.json(getLeadLifecycle(req.params.phone));
+});
+
+platformRouter.get('/api/v2/revenue', requireAuth('viewer'), (req, res) => {
+  res.json(revenueSummary({ since: req.query.since as string | undefined }));
+});
+
+platformRouter.get('/api/v2/conversions', requireAuth('viewer'), (req, res) => {
+  res.json(listConversions({
+    phone: req.query.phone as string | undefined,
+    type: req.query.type as ConversionType | undefined,
+    limit: req.query.limit ? parseInt(String(req.query.limit), 10) : 100,
+  }));
+});
+
+// Manual conversion recording (e.g. a verified inbound call sold
+// without handoff, confirmed by the buyer's postback or an operator).
+platformRouter.post('/api/v2/conversions', requireAuth('operator'), (req: AuthedRequest, res) => {
+  const { type, phone, campaignId, callSid, value, meta } = req.body || {};
+  const valid: ConversionType[] = ['warm_transfer', 'verified_inbound', 'weblead_submission', 'offer_click'];
+  if (!phone || !valid.includes(type)) {
+    res.status(400).json({ error: `phone and type (${valid.join('|')}) required` });
+    return;
+  }
+  res.status(201).json(recordConversion({ type, phone, campaignId, callSid, value: value !== undefined ? Number(value) : undefined, meta: { ...meta, recordedBy: actorOf(req) } }));
+});
+
+// Create a tracked link (and see whether cooldown downgraded it).
+platformRouter.post('/api/v2/links', requireAuth('operator'), (req: AuthedRequest, res) => {
+  const { phone, kind, campaignId } = req.body || {};
+  if (!phone || !['webform', 'offers'].includes(kind)) {
+    res.status(400).json({ error: 'phone and kind (webform|offers) required' });
+    return;
+  }
+  res.status(201).json(createTrackedLink(String(phone), kind, { campaignId, sentVia: 'manual' }));
 });
 
 // ── Demo seeding ────────────────────────────────────────────────────

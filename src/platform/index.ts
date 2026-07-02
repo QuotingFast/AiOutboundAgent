@@ -10,6 +10,7 @@ import { loadRebuttals } from './rebuttals';
 import { loadQa } from './qa';
 import { loadProfiles } from './profiles';
 import { loadSecurity } from './security';
+import { loadLifecycle } from './lifecycle';
 import { loadComplianceFromDisk } from '../compliance';
 import { logger } from '../utils/logger';
 
@@ -21,6 +22,7 @@ export { selectBuyer, hasConfiguredBuyers, createTransfer, updateTransferStage, 
 export { parseCallbackRequest } from './cadence';
 export { scoreCall } from './qa';
 export { detectObjection } from './rebuttals';
+export { createTrackedLink, recordConversion, getLeadLifecycle, startLifecycleWorker } from './lifecycle';
 
 export function initPlatform(): void {
   loadComplianceFromDisk();
@@ -32,5 +34,6 @@ export function initPlatform(): void {
   loadQa();
   loadProfiles();
   loadSecurity();
-  logger.info('platform', 'Platform layer initialized (events, policy, buyers, cadence, rebuttals, QA, profiles, security)');
+  loadLifecycle();
+  logger.info('platform', 'Platform layer initialized (events, policy, buyers, cadence, rebuttals, QA, profiles, security, lifecycle)');
 }

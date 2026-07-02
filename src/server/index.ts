@@ -26,7 +26,8 @@ import { loadLeadsFromDisk } from '../memory';
 import { flushAll, initPostgresPersistence } from '../db/persistence';
 import { startAudioSocketServer } from '../audiosocket/server';
 import { initOfficeNoise } from '../audio/noise';
-import { platformRouter, initPlatform, requireAuth, twilioWebhookGuard, webleadGuard, authEnabled } from '../platform';
+import { platformRouter, initPlatform, requireAuth, twilioWebhookGuard, webleadGuard, authEnabled, startLifecycleWorker } from '../platform';
+import { sendSMS as workflowSendSMS } from '../workflows';
 import { getLoginHtml } from '../platform/dashboard/login';
 
 export function createServer(): http.Server {
@@ -117,6 +118,11 @@ export async function startServer(): Promise<void> {
   // rebuttals, QA, profiles, security (loads persisted compliance state)
   initPlatform();
   logger.info('server', `Auth: ${authEnabled() ? 'ENABLED' : 'DISABLED (set ADMIN_PASSWORD)'}`);
+
+  // Lifecycle renewal worker: keeps consented leads in the funnel by
+  // pushing policy-gated re-opt-in links before the 90-day TCPA expiry
+  // (auto-send only when lifecycle config enables it).
+  startLifecycleWorker((to, body) => workflowSendSMS(to, body));
 
   // Pre-load the office-ambience buffer
   initOfficeNoise()

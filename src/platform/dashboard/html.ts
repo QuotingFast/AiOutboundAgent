@@ -359,6 +359,31 @@ export function getCommandCenterHtml(): string {
   pre.code { font-family: var(--mono); font-size: 11.5px; line-height: 1.55; background: rgba(7,9,15,0.65); border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px; overflow-x: auto; color: #c8d2e8; white-space: pre-wrap; overflow-wrap: anywhere; }
   .canvas-box { position: relative; height: 240px; }
 
+  /* ── Calls / Voice Lab ───────────────────────────────── */
+  .chat { display: flex; flex-direction: column; gap: 8px; }
+  .bubble { max-width: 84%; padding: 8px 12px; border-radius: 12px; font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; }
+  .bubble.agent { align-self: flex-start; background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.28); border-bottom-left-radius: 3px; color: #dbeafe; }
+  .bubble.user { align-self: flex-end; background: rgba(148,163,184,0.1); border: 1px solid var(--border); border-bottom-right-radius: 3px; }
+  .bubble .bub-role { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.7; margin-bottom: 3px; }
+  .qa-badge { display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 14px; border-radius: 11px; font-weight: 800; font-size: 22px; letter-spacing: -0.02em; border: 1px solid; }
+  .qa-badge.g { background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.4); color: #6ee7b7; }
+  .qa-badge.a { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.4); color: #fcd34d; }
+  .qa-badge.r { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.4); color: #fca5a5; }
+  .qa-badge small { font-size: 11px; font-weight: 600; opacity: 0.8; }
+  .spin { display: inline-block; width: 13px; height: 13px; border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff; border-radius: 50%; animation: spin360 0.7s linear infinite; vertical-align: -2px; }
+  @keyframes spin360 { to { transform: rotate(360deg); } }
+  .stat-chip { display: inline-flex; flex-direction: column; gap: 3px; padding: 10px 14px; border-radius: 11px; border: 1px solid var(--border); background: rgba(148,163,184,0.05); min-width: 132px; }
+  .stat-chip .sc-top { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; }
+  .stat-chip .sc-sub { font-size: 10.5px; color: var(--faint); font-family: var(--mono); overflow-wrap: anywhere; }
+  .slider-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  .slider-row > label { width: 130px; font-size: 11px; font-weight: 600; color: var(--muted); flex-shrink: 0; }
+  .slider-row input[type=range] { flex: 1; accent-color: var(--blue); }
+  .slider-row .sv { width: 34px; text-align: right; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text); flex-shrink: 0; }
+  .voice-card { display: flex; align-items: center; gap: 10px; }
+  .voice-card .vc-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .group-h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 16px 0 9px; }
+  .group-h:first-child { margin-top: 0; }
+
   /* ── Responsive ──────────────────────────────────────── */
   @media (max-width: 960px) {
     .sidebar { transform: translateX(-102%); }
@@ -386,6 +411,12 @@ export function getCommandCenterHtml(): string {
     <button class="nav-it active" data-tab="command">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
       Command Center</button>
+    <button class="nav-it" data-tab="calls">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.1-8.7A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>
+      Calls</button>
+    <button class="nav-it" data-tab="campaigns">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11v2a1 1 0 0 0 1 1h3l4 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a4 4 0 0 1 0 7"/><path d="M18.5 5.5a8 8 0 0 1 0 13"/></svg>
+      Campaigns</button>
     <button class="nav-it" data-tab="funnel">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8L3 4z"/></svg>
       Funnel</button>
@@ -405,6 +436,9 @@ export function getCommandCenterHtml(): string {
     <button class="nav-it" data-tab="config">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h10M18 8h2M4 16h2M10 16h10"/><circle cx="16" cy="8" r="2.5"/><circle cx="8" cy="16" r="2.5"/></svg>
       Config Studio</button>
+    <button class="nav-it" data-tab="voicelab">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h2M6 8v8M10 4v16M14 7v10M18 9v6M22 12h-2"/></svg>
+      Voice Lab</button>
     <button class="nav-it" data-tab="reports">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       Reports</button>
@@ -804,6 +838,51 @@ export function getCommandCenterHtml(): string {
   </div>
 </section>
 
+<!-- ══ Tab: Calls ═══════════════════════════════════════ -->
+<section class="tab" id="tab-calls">
+  <div class="g2">
+    <div class="panel">
+      <div class="panel-h"><div class="panel-t g">Place a call</div><div class="spacer"></div><span class="panel-note">test the agent on any number</span></div>
+      <div class="panel-b" id="placeCallForm"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><div class="panel-t">Recent calls</div><span class="chip green" id="callsLiveChip" hidden>live</span><div class="spacer"></div><button class="btn ghost xs" id="callsRefresh">Refresh</button></div>
+      <div class="panel-b flush tbl-wrap" id="recentCalls"><div class="skel" style="margin:14px 18px"></div><div class="skel" style="margin:14px 18px"></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ Tab: Campaigns ═══════════════════════════════════ -->
+<section class="tab" id="tab-campaigns">
+  <div class="panel">
+    <div class="panel-h"><div class="panel-t a">Transfer numbers</div><div class="spacer"></div><span class="panel-note">fast path — set the live transfer lines without opening a campaign</span></div>
+    <div class="panel-b" id="transferNumbers"><div class="skel"></div><div class="skel"></div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-h"><div class="panel-t">Campaigns</div><div class="spacer"></div><button class="btn ghost xs" id="campaignsRefresh">Refresh</button></div>
+    <div class="panel-b"><div class="card-grid" id="campaignCards"><div class="skel"></div><div class="skel"></div></div></div>
+  </div>
+</section>
+
+<!-- ══ Tab: Voice Lab ═══════════════════════════════════ -->
+<section class="tab" id="tab-voicelab">
+  <div class="panel">
+    <div class="panel-h"><div class="panel-t">Provider status</div><div class="spacer"></div><span class="panel-note">confirms your AI keys are wired</span></div>
+    <div class="panel-b" id="voiceStatus"><div class="skel"></div><div class="skel"></div></div>
+  </div>
+  <div class="g2">
+    <div class="panel">
+      <div class="panel-h"><div class="panel-t g">Text to speech</div><div class="spacer"></div><span class="panel-note">generate a sample from any voice</span></div>
+      <div class="panel-b" id="ttsCard"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><div class="panel-t">Voice catalog</div><div class="spacer"></div><input class="in" id="voiceSearch" placeholder="Search voices" style="width:170px"></div>
+      <div class="panel-b" id="voiceCatalog"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+    </div>
+  </div>
+  <div class="panel-note" style="margin:2px 2px 0;line-height:1.5">Live calls currently use the OpenAI Realtime voice. ElevenLabs voices here are for previewing/demoing — switch a campaign to the ElevenLabs provider in Campaigns to use one on calls.</div>
+</section>
+
 </main>
 </div>
 
@@ -836,6 +915,10 @@ export function getCommandCenterHtml(): string {
     evCache: [],
     buyersCache: [],
     campaignsCache: null,
+    callsPollTimer: null,
+    callsFormBuilt: false,
+    voiceCatalog: null,
+    audioEl: null,
     tickCount: 0
   };
 
@@ -978,6 +1061,7 @@ export function getCommandCenterHtml(): string {
           if (!opts.quiet) toast(msg, 'error');
           var err = new Error(msg);
           err.status = res.status;
+          err.data = data;
           throw err;
         }
         return data;
@@ -1115,15 +1199,19 @@ export function getCommandCenterHtml(): string {
      4. Navigation shell
      ════════════════════════════════════════════════════════ */
   var TAB_TITLES = {
-    command: 'Command Center', funnel: 'Funnel', intel: 'Intelligence',
-    transfers: 'Transfers', revenue: 'Revenue', compliance: 'Compliance Center', config: 'Config Studio', reports: 'Reports'
+    command: 'Command Center', calls: 'Calls', campaigns: 'Campaigns', funnel: 'Funnel', intel: 'Intelligence',
+    transfers: 'Transfers', revenue: 'Revenue', compliance: 'Compliance Center', config: 'Config Studio',
+    voicelab: 'Voice Lab', reports: 'Reports'
   };
   var TAB_LOADERS = {
-    funnel: loadFunnelTab, intel: loadIntelTab, transfers: loadTransfersTab,
-    revenue: loadRevenueTab, compliance: loadComplianceTab, config: loadConfigTab, reports: loadReportsTab
+    calls: loadCallsTab, campaigns: loadCampaignsTab, funnel: loadFunnelTab, intel: loadIntelTab, transfers: loadTransfersTab,
+    revenue: loadRevenueTab, compliance: loadComplianceTab, config: loadConfigTab, voicelab: loadVoiceLabTab, reports: loadReportsTab
   };
 
+  var OPENAI_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'];
+
   function switchTab(name) {
+    if (state.callsPollTimer) { clearInterval(state.callsPollTimer); state.callsPollTimer = null; }
     var navItems = document.querySelectorAll('.nav-it');
     for (var i = 0; i < navItems.length; i++) {
       navItems[i].classList.toggle('active', navItems[i].getAttribute('data-tab') === name);
@@ -3559,6 +3647,709 @@ export function getCommandCenterHtml(): string {
   }
 
   /* ════════════════════════════════════════════════════════
+     19b. Audio playback (single reusable element)
+     ════════════════════════════════════════════════════════ */
+  function stopAllAudio() {
+    var list = document.querySelectorAll('audio');
+    for (var i = 0; i < list.length; i++) { try { list[i].pause(); } catch (e) { /* noop */ } }
+  }
+
+  function getAudioEl() {
+    if (!state.audioEl) {
+      var a = document.createElement('audio');
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      state.audioEl = a;
+    }
+    return state.audioEl;
+  }
+
+  function playAudioUrl(url) {
+    if (!url) { toast('No preview available for this voice', 'error'); return; }
+    stopAllAudio();
+    var a = getAudioEl();
+    if (a.dataset.blobUrl) { try { URL.revokeObjectURL(a.dataset.blobUrl); } catch (e) { /* noop */ } a.dataset.blobUrl = ''; }
+    a.src = url;
+    a.play().catch(function () { toast('Could not play audio', 'error'); });
+  }
+
+  function playAudioBlob(blob) {
+    stopAllAudio();
+    var a = getAudioEl();
+    if (a.dataset.blobUrl) { try { URL.revokeObjectURL(a.dataset.blobUrl); } catch (e) { /* noop */ } }
+    var url = URL.createObjectURL(blob);
+    a.dataset.blobUrl = url;
+    a.src = url;
+    a.play().catch(function () { toast('Could not play audio', 'error'); });
+  }
+
+  /* ════════════════════════════════════════════════════════
+     19c. Calls — place a call + recent calls
+     ════════════════════════════════════════════════════════ */
+  function loadCallsTab() {
+    buildPlaceCallForm();
+    loadRecentCalls();
+    if (state.callsPollTimer) { clearInterval(state.callsPollTimer); }
+    state.callsPollTimer = setInterval(loadRecentCalls, 15000);
+    byId('callsLiveChip').hidden = false;
+  }
+
+  function buildPlaceCallForm() {
+    if (state.callsFormBuilt) return;
+    var box = byId('placeCallForm');
+    box.innerHTML = '';
+
+    var to = input(null, '', '+19547905093', 'tel');
+    var first = input(null, '', 'First name');
+    var st = input(null, '', 'TX'); st.maxLength = 2;
+    var insurer = input(null, '', 'e.g. Geico');
+    var vYear = input(null, '', 'Year');
+    var vMake = input(null, '', 'Make');
+    var vModel = input(null, '', 'Model');
+    var camp = el('select', 'in');
+    var optNone = el('option', null, 'Default campaign');
+    optNone.value = '';
+    camp.appendChild(optNone);
+
+    box.appendChild(fld('Phone (to) — required', to));
+    var r1 = el('div', 'fld-row');
+    r1.appendChild(fld('First name', first));
+    r1.appendChild(fld('State', st));
+    box.appendChild(r1);
+    box.appendChild(fld('Current insurer', insurer));
+    var vlabel = el('div', 'fld-l', 'Vehicle');
+    box.appendChild(vlabel);
+    var r2 = el('div', 'fld-row');
+    r2.appendChild(vYear); r2.appendChild(vMake); r2.appendChild(vModel);
+    r2.style.marginBottom = '12px';
+    box.appendChild(r2);
+    box.appendChild(fld('Campaign', camp));
+
+    var btn = el('button', 'btn primary', 'Call now');
+    btn.style.cssText = 'width:100%;justify-content:center;font-size:14px;padding:11px';
+    box.appendChild(btn);
+    var result = el('div');
+    result.id = 'placeCallResult';
+    box.appendChild(result);
+
+    /* populate campaign select */
+    api('/api/campaigns', { quiet: true }).then(function (d) {
+      var list = asList(d, 'campaigns');
+      state.campaignsCache = list;
+      list.forEach(function (c) {
+        var o = el('option', null, c.name || c.id);
+        o.value = c.id;
+        camp.appendChild(o);
+      });
+    }).catch(function () { /* leave default only */ });
+
+    btn.onclick = function () {
+      var toVal = to.value.trim();
+      if (!toVal) { toast('A phone number is required', 'error'); return; }
+      var lead = {};
+      if (first.value.trim()) lead.first_name = first.value.trim();
+      if (st.value.trim()) lead.state = st.value.trim().toUpperCase();
+      if (insurer.value.trim()) lead.current_insurer = insurer.value.trim();
+      var y = vYear.value.trim(), mk = vMake.value.trim(), md = vModel.value.trim();
+      if (y || mk || md) lead.vehicles = [{ year: y, make: mk, model: md }];
+      var payload = { to: toVal, lead: lead };
+      if (camp.value) payload.campaign_id = camp.value;
+      result.innerHTML = '';
+      btn.disabled = true;
+      var prev = btn.textContent;
+      btn.textContent = '';
+      btn.appendChild(el('span', 'spin'));
+      api('/call/start', { method: 'POST', body: payload }).then(function (d) {
+        toast('Calling ' + toVal + '…', 'ok');
+        renderCallResponseNotes(result, d);
+        loadRecentCalls();
+      }).catch(function (err) {
+        if (err && err.data) renderCallResponseNotes(result, err.data);
+      }).then(function () {
+        btn.disabled = false;
+        btn.textContent = prev;
+      });
+    };
+
+    state.callsFormBuilt = true;
+  }
+
+  function renderCallResponseNotes(box, d) {
+    box.innerHTML = '';
+    if (!d || typeof d !== 'object') return;
+    var warns = d.compliance_warnings;
+    if (Array.isArray(warns) && warns.length) {
+      var note = el('div', 'panel-note');
+      note.style.cssText = 'margin-top:10px;color:#fcd34d';
+      note.textContent = 'Compliance: ' + warns.join(' · ');
+      box.appendChild(note);
+    }
+    var blocks = d.blocks;
+    if (Array.isArray(blocks) && blocks.length) {
+      var card = el('div', 'result-card bad');
+      card.appendChild(el('div', 'result-head', 'BLOCKED'));
+      var row = el('div', 'chip-row');
+      row.style.marginTop = '8px';
+      blocks.forEach(function (b) {
+        var txt = typeof b === 'object' ? (b.reason || b.rule || JSON.stringify(b)) : String(b);
+        row.appendChild(chipNode(txt, 'red'));
+      });
+      card.appendChild(row);
+      box.appendChild(card);
+    }
+  }
+
+  function loadRecentCalls() {
+    var box = byId('recentCalls');
+    api('/api/calls', { quiet: true }).then(function (d) {
+      var list = asList(d, 'calls');
+      box.innerHTML = '';
+      if (!list.length) {
+        box.appendChild(emptyState('No calls yet', 'Place a test call on the left — outcomes and transcripts will appear here.', '☎'));
+        return;
+      }
+      var wrap = el('div', 'tbl-wrap');
+      var tbl = el('table', 'tbl');
+      var thead = el('thead');
+      var hr = el('tr');
+      ['Time', 'To', 'Lead', ''].forEach(function (h) { hr.appendChild(el('th', null, h)); });
+      thead.appendChild(hr);
+      tbl.appendChild(thead);
+      var tb = el('tbody');
+      list.forEach(function (c) {
+        var tr = el('tr', 'rowhov');
+        var tTd = el('td', 'faint tiny');
+        tTd.setAttribute('data-at', c.timestamp || '');
+        tTd.textContent = c.timestamp ? relTime(c.timestamp) : '—';
+        tr.appendChild(tTd);
+        tr.appendChild(el('td', 'mono', c.to || '—'));
+        tr.appendChild(el('td', null, c.leadName || '—'));
+        var aTd = el('td');
+        if (c.callSid) {
+          var vb = el('button', 'btn ghost xs', 'View');
+          vb.onclick = function () { openCallDrawer(c); };
+          aTd.appendChild(vb);
+        }
+        tr.appendChild(aTd);
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      wrap.appendChild(tbl);
+      box.appendChild(wrap);
+    }).catch(function () {
+      box.innerHTML = '';
+      box.appendChild(emptyState('Calls unavailable', 'Could not reach /api/calls.'));
+    });
+  }
+
+  function openCallDrawer(c) {
+    var body = openDrawer('Call — ' + (c.leadName || c.to || c.callSid));
+    skel(body, 6);
+    var sid = encodeURIComponent(c.callSid);
+    var pAnalytics = api('/api/analytics/' + sid, { quiet: true }).catch(function () { return null; });
+    var pQa = api('/api/v2/qa/call/' + sid, { quiet: true }).catch(function () { return null; });
+    Promise.all([pAnalytics, pQa]).then(function (res) {
+      var a = res[0], qa = res[1];
+      body.innerHTML = '';
+      if (!a && !qa) { body.appendChild(emptyState('Nothing recorded', 'No analytics or QA data for this call yet.')); return; }
+      a = a || {};
+
+      var head = el('div', 'chip-row');
+      head.style.marginBottom = '14px';
+      if (a.outcome) head.appendChild(chipNode(String(a.outcome), 'blue'));
+      if (a.durationMs !== undefined && a.durationMs !== null) head.appendChild(chipNode(durStr(Number(a.durationMs) / 1000), 'mono'));
+      if (c.to) head.appendChild(chipNode(String(c.to), 'mono'));
+      body.appendChild(head);
+      if (Array.isArray(a.tags) && a.tags.length) {
+        var tagRow = el('div', 'chip-row');
+        tagRow.style.marginBottom = '14px';
+        a.tags.forEach(function (t) { tagRow.appendChild(chipNode(String(t))); });
+        body.appendChild(tagRow);
+      }
+
+      if (qa) body.appendChild(renderQaBlock(qa));
+
+      body.appendChild(el('div', 'panel-t', 'Transcript'));
+      var transcript = Array.isArray(a.transcript) ? a.transcript : [];
+      if (!transcript.length) {
+        body.appendChild(el('div', 'faint tiny', 'No transcript captured.'));
+      } else {
+        var chat = el('div', 'chat');
+        chat.style.marginTop = '10px';
+        transcript.forEach(function (m) {
+          var role = String(m.role || '').toLowerCase();
+          var isAgent = role === 'agent' || role === 'assistant' || role === 'ai' || role === 'bot';
+          var b = el('div', 'bubble ' + (isAgent ? 'agent' : 'user'));
+          b.appendChild(el('div', 'bub-role', isAgent ? 'Agent' : (m.role || 'Caller')));
+          b.appendChild(el('div', null, m.text || ''));
+          chat.appendChild(b);
+        });
+        body.appendChild(chat);
+      }
+    });
+  }
+
+  function renderQaBlock(qa) {
+    var wrap = el('div');
+    wrap.style.marginBottom = '16px';
+    var top = el('div');
+    top.style.cssText = 'display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px';
+    var overall = Number(qa.overall);
+    var score = isFinite(overall) ? (overall <= 1 ? Math.round(overall * 100) : Math.round(overall)) : null;
+    var cls = score === null ? 'a' : (score >= 80 ? 'g' : (score >= 60 ? 'a' : 'r'));
+    var badge = el('div', 'qa-badge ' + cls);
+    badge.appendChild(el('span', null, score === null ? '—' : String(score)));
+    badge.appendChild(el('small', null, 'QA score'));
+    top.appendChild(badge);
+    if (Array.isArray(qa.riskFlags) && qa.riskFlags.length) {
+      var flags = el('div', 'chip-row');
+      qa.riskFlags.forEach(function (f) { flags.appendChild(chipNode(String(f), 'red')); });
+      top.appendChild(flags);
+    }
+    wrap.appendChild(top);
+    var dims = Array.isArray(qa.dimensions) ? qa.dimensions : [];
+    dims.forEach(function (dim) {
+      var v = Number(dim.score);
+      var w = isFinite(v) ? (v <= 1 ? v * 100 : v) : 0;
+      var mb = el('div', 'minibar');
+      var lab = el('div', 'mb-l', humanize(dim.key || ''));
+      if (dim.notes) lab.title = String(dim.notes);
+      mb.appendChild(lab);
+      var bar = el('div', 'bar');
+      var fill = el('i', w >= 80 ? 'g' : (w >= 60 ? 'a' : 'r'));
+      bar.appendChild(fill);
+      mb.appendChild(bar);
+      mb.appendChild(el('div', 'mb-v', isFinite(v) ? (v <= 1 ? Math.round(v * 100) : Math.round(v)) : '—'));
+      wrap.appendChild(mb);
+      requestAnimationFrame(function () { fill.style.width = Math.min(100, Math.max(0, w)) + '%'; });
+    });
+    return wrap;
+  }
+
+  /* ════════════════════════════════════════════════════════
+     19d. Campaigns
+     ════════════════════════════════════════════════════════ */
+  function loadCampaignsTab() { loadTransferNumbers(); loadCampaignCards(); }
+
+  function loadTransferNumbers() {
+    var box = byId('transferNumbers');
+    box.innerHTML = '';
+    api('/api/settings', { quiet: true }).then(function (s) {
+      s = (s && s.settings) || s || {};
+      box.innerHTML = '';
+      var allstate = input(null, s.allstateNumber || '', '+18005551234', 'tel');
+      var general = input(null, s.nonAllstateNumber || '', '+18005555678', 'tel');
+      var row = el('div', 'fld-row');
+      row.appendChild(fld('Allstate route number', allstate));
+      row.appendChild(fld('General route number', general));
+      box.appendChild(row);
+      var save = el('button', 'btn primary sm', 'Save transfer numbers');
+      save.onclick = function () {
+        save.disabled = true;
+        api('/api/settings', { method: 'PUT', body: { allstateNumber: allstate.value.trim(), nonAllstateNumber: general.value.trim() } })
+          .then(function () { toast('Transfer numbers saved', 'ok'); })
+          .catch(function () { /* toast shown */ })
+          .then(function () { save.disabled = false; });
+      };
+      box.appendChild(save);
+    }).catch(function () {
+      box.innerHTML = '';
+      box.appendChild(emptyState('Settings unavailable', 'Could not reach /api/settings.'));
+    });
+  }
+
+  function loadCampaignCards() {
+    var box = byId('campaignCards');
+    box.innerHTML = '';
+    box.appendChild(el('div', 'skel'));
+    api('/api/campaigns', { quiet: true }).then(function (d) {
+      var list = asList(d, 'campaigns');
+      state.campaignsCache = list;
+      box.innerHTML = '';
+      if (!list.length) {
+        box.appendChild(emptyState('No campaigns', 'Campaigns define the agent persona, voice and transfer routing.', '◈'));
+        return;
+      }
+      list.forEach(function (c) { box.appendChild(buildCampaignCard(c)); });
+    }).catch(function () {
+      box.innerHTML = '';
+      box.appendChild(emptyState('Campaigns unavailable', 'Could not reach /api/campaigns.'));
+    });
+  }
+
+  function buildCampaignCard(c) {
+    var ai = c.aiProfile || {};
+    var vc = c.voiceConfig || {};
+    var tr = c.transferRouting || {};
+    var routes = Array.isArray(tr.routes) ? tr.routes : [];
+    var card = el('div', 'sub-card');
+
+    var top = el('div');
+    top.style.cssText = 'display:flex;align-items:center;gap:9px;margin-bottom:9px';
+    var h4 = el('h4', null, c.name || c.id);
+    h4.style.flex = '1';
+    top.appendChild(h4);
+    if (c.type) top.appendChild(chipNode(String(c.type), 'blue'));
+    var sw = el('div', 'switch' + (c.active ? ' on' : ''));
+    sw.title = 'Toggle active';
+    sw.onclick = function () {
+      var next = !sw.classList.contains('on');
+      api('/api/campaigns/' + encodeURIComponent(c.id), { method: 'PUT', body: { active: next } }).then(function () {
+        sw.classList.toggle('on', next);
+        c.active = next;
+        state.campaignsCache = null;
+        toast('Campaign ' + (next ? 'activated' : 'paused'), 'ok');
+      }).catch(function () { /* toast shown */ });
+    };
+    top.appendChild(sw);
+    card.appendChild(top);
+
+    var voiceName = vc.voiceProvider === 'elevenlabs' ? (vc.elevenlabsVoiceId || '—') : (vc.openaiVoice || '—');
+    var dl = el('dl', 'kv');
+    var rows = [
+      ['Agent', ai.agentName || '—'],
+      ['Company', ai.companyName || '—'],
+      ['Voice', (vc.voiceProvider || 'openai') + ' · ' + voiceName],
+      ['Model', ai.realtimeModel || '—']
+    ];
+    rows.forEach(function (r) {
+      dl.appendChild(el('dt', null, r[0]));
+      dl.appendChild(el('dd', 'mono tiny', r[1]));
+    });
+    card.appendChild(dl);
+
+    if (routes.length) {
+      var rr = el('div', 'chip-row');
+      rr.style.margin = '9px 0 0';
+      routes.forEach(function (r) {
+        rr.appendChild(chipNode((r.name ? r.name + ': ' : '') + (r.destinationNumber || '—'), r.active === false ? '' : 'green'));
+      });
+      card.appendChild(rr);
+    }
+
+    var acts = el('div');
+    acts.style.cssText = 'display:flex;gap:8px;margin-top:12px';
+    var edit = el('button', 'btn ghost xs', 'Edit');
+    edit.onclick = function () { campaignModal(c); };
+    acts.appendChild(edit);
+    card.appendChild(acts);
+    return card;
+  }
+
+  function selectNode(options, value) {
+    var sel = el('select', 'in');
+    options.forEach(function (o) {
+      var opt = el('option', null, o);
+      opt.value = o;
+      if (String(o) === String(value)) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    return sel;
+  }
+
+  function campaignModal(c) {
+    var ai = c.aiProfile || {};
+    var vc = c.voiceConfig || {};
+    var tr = c.transferRouting || {};
+    var routes = Array.isArray(tr.routes) ? tr.routes.map(function (r) { return r; }) : [];
+
+    var body = el('div');
+    var agentName = input(null, ai.agentName || '', 'Alex');
+    var companyName = input(null, ai.companyName || '', 'Quoting Fast');
+    var greeting = el('textarea', 'in'); greeting.rows = 2; greeting.value = ai.greetingText || '';
+    var prompt = el('textarea', 'in'); prompt.rows = 9; prompt.value = ai.systemPrompt || '';
+    var temp = input(null, ai.temperature !== undefined ? ai.temperature : 0.8, '0.8', 'number');
+    temp.step = '0.1';
+    var model = selectNode(['gpt-realtime', 'gpt-realtime-mini'], ai.realtimeModel || 'gpt-realtime');
+    var provider = selectNode(['openai', 'elevenlabs', 'deepseek', 'deepgram'], vc.voiceProvider || 'openai');
+    var openaiVoice = selectNode(OPENAI_VOICES, vc.openaiVoice || 'alloy');
+    var elVoice = input(null, vc.elevenlabsVoiceId || '', 'ElevenLabs voice id');
+
+    body.appendChild(fld('Agent name', agentName));
+    body.appendChild(fld('Company name', companyName));
+    body.appendChild(fld('Greeting text', greeting));
+    body.appendChild(fld('System prompt', prompt));
+    var r1 = el('div', 'fld-row');
+    r1.appendChild(fld('Temperature', temp));
+    r1.appendChild(fld('Realtime model', model));
+    body.appendChild(r1);
+    var r2 = el('div', 'fld-row');
+    r2.appendChild(fld('Voice provider', provider));
+    r2.appendChild(fld('OpenAI voice', openaiVoice));
+    body.appendChild(r2);
+    body.appendChild(fld('ElevenLabs voice id', elVoice));
+
+    var routeInputs = [];
+    if (routes.length) {
+      body.appendChild(el('div', 'divider'));
+      body.appendChild(el('div', 'fld-l', 'Transfer route numbers'));
+      routes.forEach(function (r) {
+        var ri = input(null, r.destinationNumber || '', '+18005551234', 'tel');
+        routeInputs.push(ri);
+        body.appendChild(fld(r.name || r.id || 'Route', ri));
+      });
+    }
+
+    openModal('Edit campaign — ' + (c.name || c.id), body, [
+      { label: 'Cancel', onClick: closeModal },
+      {
+        label: 'Save changes', cls: 'primary', onClick: function () {
+          var payload = {
+            aiProfile: {
+              agentName: agentName.value.trim(),
+              companyName: companyName.value.trim(),
+              greetingText: greeting.value,
+              systemPrompt: prompt.value,
+              temperature: Number(temp.value),
+              realtimeModel: model.value
+            },
+            voiceConfig: {
+              voiceProvider: provider.value,
+              openaiVoice: openaiVoice.value,
+              elevenlabsVoiceId: elVoice.value.trim()
+            }
+          };
+          if (routes.length) {
+            payload.transferRouting = {
+              routes: routes.map(function (r, i) {
+                var out = {};
+                Object.keys(r).forEach(function (k) { out[k] = r[k]; });
+                out.destinationNumber = routeInputs[i].value.trim();
+                return out;
+              })
+            };
+          }
+          api('/api/campaigns/' + encodeURIComponent(c.id), { method: 'PUT', body: payload }).then(function () {
+            closeModal();
+            state.campaignsCache = null;
+            toast('Campaign saved', 'ok');
+            loadCampaignCards();
+          }).catch(function () { /* toast shown */ });
+        }
+      }
+    ], true);
+  }
+
+  /* ════════════════════════════════════════════════════════
+     19e. Voice Lab
+     ════════════════════════════════════════════════════════ */
+  function loadVoiceLabTab() {
+    loadVoiceStatus();
+    fetchVoiceCatalog().then(function () {
+      buildTtsCard();
+      renderVoiceCatalog();
+    });
+  }
+
+  function fetchVoiceCatalog() {
+    if (state.voiceCatalog) return Promise.resolve(state.voiceCatalog);
+    return api('/api/voicelab/catalog', { quiet: true }).then(function (d) {
+      state.voiceCatalog = d || { openaiVoices: [], elevenlabsVoices: [] };
+      return state.voiceCatalog;
+    }).catch(function () {
+      state.voiceCatalog = { openaiVoices: [], elevenlabsVoices: [] };
+      return state.voiceCatalog;
+    });
+  }
+
+  function loadVoiceStatus() {
+    var box = byId('voiceStatus');
+    box.innerHTML = '';
+    api('/api/voicelab/status', { quiet: true }).then(function (d) {
+      d = d || {};
+      box.innerHTML = '';
+      var row = el('div');
+      row.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap';
+      var defs = [['openai', 'OpenAI'], ['elevenlabs', 'ElevenLabs'], ['deepseek', 'DeepSeek'], ['deepgram', 'Deepgram']];
+      defs.forEach(function (def) {
+        var p = d[def[0]] || {};
+        var chip = el('div', 'stat-chip');
+        var t = el('div', 'sc-top');
+        t.appendChild(el('span', 'dot ' + (p.configured ? 'green' : 'amber')));
+        t.appendChild(el('span', null, def[1]));
+        chip.appendChild(t);
+        chip.appendChild(el('div', 'chip ' + (p.configured ? 'green' : 'amber'), p.configured ? 'Connected' : 'Not configured'));
+        var sub = [];
+        if (p.model) sub.push(String(p.model));
+        if (p.kind) sub.push(String(p.kind));
+        if (p.voices !== undefined) sub.push(fmt(p.voices) + ' voices');
+        if (sub.length) chip.appendChild(el('div', 'sc-sub', sub.join(' · ')));
+        row.appendChild(chip);
+      });
+      box.appendChild(row);
+    }).catch(function () {
+      box.innerHTML = '';
+      box.appendChild(emptyState('Status unavailable', 'Could not reach /api/voicelab/status.'));
+    });
+  }
+
+  function voicesForProvider(provider) {
+    var cat = state.voiceCatalog || {};
+    return provider === 'elevenlabs' ? (cat.elevenlabsVoices || []) : (cat.openaiVoices || []);
+  }
+
+  function buildTtsCard() {
+    var box = byId('ttsCard');
+    box.innerHTML = '';
+    var provider = selectNode(['elevenlabs', 'openai'], 'elevenlabs');
+    var voice = el('select', 'in');
+    var text = el('textarea', 'in');
+    text.rows = 3;
+    text.value = 'Hey there — this is a quick preview of how I sound on a real call. Pretty natural, right?';
+
+    function fillVoices() {
+      voice.innerHTML = '';
+      var list = voicesForProvider(provider.value);
+      if (!list.length) {
+        var o = el('option', null, 'No voices available');
+        o.value = '';
+        voice.appendChild(o);
+        return;
+      }
+      list.forEach(function (v) {
+        var o = el('option', null, v.name || v.id);
+        o.value = v.id;
+        voice.appendChild(o);
+      });
+    }
+    fillVoices();
+
+    box.appendChild(fld('Provider', provider));
+    box.appendChild(fld('Voice', voice));
+    box.appendChild(fld('Text', text));
+
+    /* ElevenLabs tuning controls */
+    var elBox = el('div');
+    var stability = sliderRow('Stability', 0.5);
+    var similarity = sliderRow('Similarity boost', 0.75);
+    var style = sliderRow('Style', 0.0);
+    elBox.appendChild(stability.row);
+    elBox.appendChild(similarity.row);
+    elBox.appendChild(style.row);
+    var boostChk = el('input'); boostChk.type = 'checkbox'; boostChk.checked = true;
+    var boostLab = el('label', 'check');
+    boostLab.style.marginTop = '4px';
+    boostLab.appendChild(boostChk);
+    boostLab.appendChild(el('span', null, 'Speaker boost'));
+    elBox.appendChild(boostLab);
+    box.appendChild(elBox);
+
+    function syncProvider() { fillVoices(); elBox.style.display = provider.value === 'elevenlabs' ? 'block' : 'none'; }
+    provider.onchange = syncProvider;
+    syncProvider();
+
+    var btn = el('button', 'btn primary', 'Generate & Play');
+    btn.style.cssText = 'width:100%;justify-content:center;margin-top:12px;padding:11px';
+    box.appendChild(btn);
+    var out = el('div');
+    out.style.marginTop = '12px';
+    box.appendChild(out);
+
+    btn.onclick = function () {
+      if (!voice.value) { toast('Pick a voice first', 'error'); return; }
+      var payload = {
+        provider: provider.value,
+        voiceId: voice.value,
+        text: text.value
+      };
+      if (provider.value === 'elevenlabs') {
+        payload.stability = stability.value();
+        payload.similarityBoost = similarity.value();
+        payload.style = style.value();
+        payload.speakerBoost = boostChk.checked;
+      }
+      out.innerHTML = '';
+      btn.disabled = true;
+      var prev = btn.textContent;
+      btn.textContent = '';
+      btn.appendChild(el('span', 'spin'));
+      var done = function () { btn.disabled = false; btn.textContent = prev; };
+      stopAllAudio();
+      fetch('/api/voicelab/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload)
+      }).then(function (res) {
+        if (res.status === 401) { window.location = '/login'; throw new Error('unauthorized'); }
+        if (!res.ok) {
+          return res.json().then(function (j) {
+            toast((j && j.error) || ('Generation failed (' + res.status + ')'), 'error');
+          }, function () {
+            toast('Generation failed (' + res.status + ')', 'error');
+          }).then(function () { done(); });
+        }
+        return res.blob().then(function (blob) {
+          var url = URL.createObjectURL(blob);
+          out.innerHTML = '';
+          var audio = document.createElement('audio');
+          audio.controls = true;
+          audio.autoplay = true;
+          audio.src = url;
+          audio.style.width = '100%';
+          stopAllAudio();
+          out.appendChild(audio);
+          var dl = el('a', 'btn ghost xs', 'Download');
+          dl.href = url;
+          dl.download = 'voice-sample.mp3';
+          dl.style.marginTop = '8px';
+          dl.style.display = 'inline-flex';
+          out.appendChild(dl);
+          done();
+        });
+      }).catch(function () { done(); });
+    };
+  }
+
+  function sliderRow(label, def) {
+    var row = el('div', 'slider-row');
+    row.appendChild(el('label', null, label));
+    var range = el('input');
+    range.type = 'range';
+    range.min = '0'; range.max = '1'; range.step = '0.05';
+    range.value = String(def);
+    row.appendChild(range);
+    var sv = el('div', 'sv', Number(def).toFixed(2));
+    row.appendChild(sv);
+    range.addEventListener('input', function () { sv.textContent = Number(range.value).toFixed(2); });
+    return { row: row, value: function () { return Number(range.value); } };
+  }
+
+  function renderVoiceCatalog() {
+    var box = byId('voiceCatalog');
+    if (!box) return;
+    var cat = state.voiceCatalog || {};
+    var q = (byId('voiceSearch').value || '').trim().toLowerCase();
+    box.innerHTML = '';
+    var groups = [
+      ['OpenAI — Realtime speech-to-speech', cat.openaiVoices || [], 'openai'],
+      ['ElevenLabs — Premium TTS (' + fmt((cat.elevenlabsVoices || []).length) + ' voices)', cat.elevenlabsVoices || [], 'elevenlabs']
+    ];
+    var any = false;
+    groups.forEach(function (g) {
+      var list = g[1].filter(function (v) {
+        return !q || String(v.name || v.id).toLowerCase().indexOf(q) >= 0;
+      });
+      if (!list.length) return;
+      any = true;
+      box.appendChild(el('div', 'group-h', g[0]));
+      var grid = el('div', 'card-grid');
+      list.forEach(function (v) {
+        var card = el('div', 'sub-card voice-card');
+        var nm = el('div', 'vc-name', v.name || v.id);
+        card.appendChild(nm);
+        card.appendChild(chipNode(g[2] === 'openai' ? 'OpenAI' : 'ElevenLabs', g[2] === 'openai' ? 'blue' : 'green'));
+        var pb = el('button', 'btn ghost xs', '▶ Preview');
+        pb.onclick = function () { playAudioUrl(v.previewUrl); };
+        card.appendChild(pb);
+        grid.appendChild(card);
+      });
+      box.appendChild(grid);
+    });
+    if (!any) box.appendChild(emptyState('No voices', q ? 'No voices match your search.' : 'No voices in the catalog.', '◌'));
+  }
+
+  /* ════════════════════════════════════════════════════════
      20. Boot
      ════════════════════════════════════════════════════════ */
   function boot() {
@@ -3576,6 +4367,9 @@ export function getCommandCenterHtml(): string {
     byId('evFilter').addEventListener('input', renderEvTable);
     byId('evRefresh').onclick = loadEvExplorer;
     byId('transfersRefresh').onclick = loadTransfers;
+    byId('callsRefresh').onclick = loadRecentCalls;
+    byId('campaignsRefresh').onclick = loadCampaignCards;
+    byId('voiceSearch').addEventListener('input', renderVoiceCatalog);
     byId('convRefresh').onclick = loadConversions;
     byId('rpScanBtn').onclick = runRenewalScan;
     byId('qlGen').onclick = genQuoteLink;

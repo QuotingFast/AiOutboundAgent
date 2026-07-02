@@ -2,6 +2,23 @@
 
 Standalone realtime voice agent service for outbound insurance calls. Handles Twilio outbound dialing, streaming audio via WebSocket, speech-to-text, AI conversation, text-to-speech, barge-in (interruption), and warm transfer.
 
+## Platform layer (v2)
+
+The operations platform lives under `src/platform/` and `/api/v2/*` — see
+[docs/REBUILD.md](docs/REBUILD.md) for the full architecture, data model, and
+rollout plan. Highlights:
+
+- **Command Center** at `/dashboard` (SSE-live ops dashboard; legacy UI at `/dashboard/legacy`; login at `/login` when `ADMIN_PASSWORD` is set)
+- **Compliance policy engine** — consent scope, persistent DNC, SMS STOP, lead-local quiet hours, frequency caps, complaint suppression; every decision recorded to a hash-chained event ledger
+- **Transfer orchestration** — buyer registry with state/hours/caps/priority eligibility, structured handoff packets to buyer webhooks, whisper briefings, per-stage telemetry
+- **Contact strategy** — configurable cadence plans and natural-language callback parsing ("call me at 6", "tomorrow morning", "Saturday")
+- **Rebuttal library + AI QA** — versioned objection rebuttals with outcome analytics; every call scored against a compliance/quality rubric
+- **Agent profiles** — versioned voice/model/VAD bundles with one-click rollback
+- **Security** — session auth + RBAC (`ADMIN_PASSWORD`), Twilio signature validation (`TWILIO_VALIDATE_SIGNATURE=true`), weblead webhook secret (`WEBLEAD_SHARED_SECRET`)
+- **Lifecycle revenue engine** — every consented lead has three monetization surfaces: warm transfers / verified inbound (no cooldown), weblead resubmission via tracked prefilled webform links ("text me the quote"; one sellable per 30 days, every submission renews the 90-day TCPA opt-in), and unlimited partner offer-wall clicks. Public link redirect at `/t/:token`; form-host postbacks at `POST /webhook/webform-submitted` and `POST /webhook/offer-click`; renewal pipeline pushes fresh opt-in links before consent expires (`/api/v2/revenue`, `/api/v2/lifecycle/*`)
+
+Run tests with `npm test`. Seed demo data with `POST /api/v2/demo/seed`.
+
 ## Architecture
 
 ```

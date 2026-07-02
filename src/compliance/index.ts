@@ -1,4 +1,49 @@
 import { logger } from '../utils/logger';
+import { loadData, scheduleSave } from '../db/persistence';
+
+// ── Persistence ─────────────────────────────────────────────────────
+// DNC, consent, and the audit log were previously in-memory only and
+// were wiped on every restart/deploy — a direct TCPA exposure. They
+// are now persisted and restored at startup via loadComplianceFromDisk().
+
+const DNC_STORE_KEY = 'compliance_dnc';
+const CONSENT_STORE_KEY = 'compliance_consent';
+const AUDIT_STORE_KEY = 'compliance_audit';
+const MAX_PERSISTED_AUDIT = 5000;
+
+export function loadComplianceFromDisk(): void {
+  const dnc = loadData<string[]>(DNC_STORE_KEY);
+  if (Array.isArray(dnc)) {
+    for (const p of dnc) dncSet.add(p);
+    logger.info('compliance', `Loaded ${dncSet.size} DNC entries from disk`);
+  }
+  const consent = loadData<Record<string, ConsentRecord>>(CONSENT_STORE_KEY);
+  if (consent) {
+    for (const [phone, rec] of Object.entries(consent)) consentStore.set(phone, rec);
+    logger.info('compliance', `Loaded ${consentStore.size} consent records from disk`);
+  }
+  const audit = loadData<{ seq: number; entries: AuditEntry[] }>(AUDIT_STORE_KEY);
+  if (audit && Array.isArray(audit.entries)) {
+    auditEntries.push(...audit.entries);
+    auditSequence = audit.seq || audit.entries.length;
+    logger.info('compliance', `Loaded ${auditEntries.length} audit entries from disk`);
+  }
+}
+
+function persistDnc(): void {
+  scheduleSave(DNC_STORE_KEY, () => Array.from(dncSet));
+}
+
+function persistConsent(): void {
+  scheduleSave(CONSENT_STORE_KEY, () => Object.fromEntries(consentStore));
+}
+
+function persistAudit(): void {
+  scheduleSave(AUDIT_STORE_KEY, () => ({
+    seq: auditSequence,
+    entries: auditEntries.slice(-MAX_PERSISTED_AUDIT),
+  }));
+}
 
 // ── Do Not Call (DNC) list ──────────────────────────────────────────
 
@@ -6,15 +51,27 @@ const dncSet = new Set<string>();
 
 export function addToDnc(phone: string): void {
   const normalized = normalizePhone(phone);
+  const isNew = !dncSet.has(normalized);
   dncSet.add(normalized);
+  persistDnc();
   auditLog('dnc_add', { phone: normalized });
+  if (isNew) {
+    // Lazy import avoids a static cycle (platform/policy imports compliance).
+    import('../platform/events').then(({ recordEvent }) => {
+      recordEvent('dnc.added', {}, { phone: normalized });
+    }).catch(() => { /* ledger optional here */ });
+  }
   logger.info('compliance', 'Added to DNC', { phone: normalized });
 }
 
 export function removeFromDnc(phone: string): void {
   const normalized = normalizePhone(phone);
   dncSet.delete(normalized);
+  persistDnc();
   auditLog('dnc_remove', { phone: normalized });
+  import('../platform/events').then(({ recordEvent }) => {
+    recordEvent('dnc.removed', {}, { phone: normalized });
+  }).catch(() => { /* ledger optional here */ });
   logger.info('compliance', 'Removed from DNC', { phone: normalized });
 }
 
@@ -121,7 +178,14 @@ const consentStore = new Map<string, ConsentRecord>();
 export function recordConsent(record: ConsentRecord): void {
   const normalized = normalizePhone(record.phone);
   consentStore.set(normalized, { ...record, phone: normalized });
+  persistConsent();
   auditLog('consent_recorded', { phone: normalized, type: record.consentType, source: record.source });
+  import('../platform/events').then(({ recordEvent }) => {
+    recordEvent('consent.recorded', {
+      type: record.consentType, source: record.source,
+      hasTrustedForm: Boolean(record.trustedFormUrl), hasJornaya: Boolean(record.jornayaId),
+    }, { phone: normalized });
+  }).catch(() => { /* ledger optional here */ });
 }
 
 export function getConsent(phone: string): ConsentRecord | undefined {
@@ -249,6 +313,7 @@ export function auditLog(action: string, data: Record<string, unknown>): void {
   };
 
   auditEntries.push(entry);
+  persistAudit();
   logger.debug('audit', action, data);
 }
 

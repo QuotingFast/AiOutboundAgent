@@ -109,9 +109,16 @@ export function rescheduleCallback(id: string, newScheduledAt: string): Schedule
   return cb;
 }
 
+// NOTE: this legacy scheduler previously persisted to the key
+// 'scheduled_callbacks', which the campaign store ALSO owns — the two
+// writers clobbered each other's data. The legacy scheduler now uses
+// its own keys.
+const LEGACY_CALLBACKS_KEY = 'legacy_scheduled_callbacks';
+const LEGACY_RETRIES_KEY = 'legacy_scheduled_retries';
+
 function persistCallbacks(): void {
-  scheduleSave('scheduled_callbacks', () => callbacks);
-  scheduleSave('scheduled_retries', () => retries);
+  scheduleSave(LEGACY_CALLBACKS_KEY, () => callbacks);
+  scheduleSave(LEGACY_RETRIES_KEY, () => retries);
 }
 
 export function getCallbacks(filter?: { status?: string }): ScheduledCallback[] {
@@ -291,13 +298,13 @@ async function processDueItems(): Promise<void> {
 export function startScheduler(): void {
   if (timerHandle) return;
   // Restore persisted callbacks and retries
-  const savedCallbacks = loadData<ScheduledCallback[]>('scheduled_callbacks');
+  const savedCallbacks = loadData<ScheduledCallback[]>(LEGACY_CALLBACKS_KEY);
   if (savedCallbacks?.length) {
     const pending = savedCallbacks.filter(c => c.status === 'pending' || c.status === 'dialing');
     pending.forEach(c => { c.status = 'pending'; callbacks.push(c); });
     logger.info('scheduler', `Restored ${pending.length} pending callbacks from disk`);
   }
-  const savedRetries = loadData<RetryEntry[]>('scheduled_retries');
+  const savedRetries = loadData<RetryEntry[]>(LEGACY_RETRIES_KEY);
   if (savedRetries?.length) {
     const pending = savedRetries.filter(r => r.status === 'pending' || r.status === 'dialing');
     pending.forEach(r => { r.status = 'pending'; retries.push(r); });

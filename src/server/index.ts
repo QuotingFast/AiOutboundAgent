@@ -26,6 +26,9 @@ import { loadLeadsFromDisk } from '../memory';
 import { flushAll, initPostgresPersistence } from '../db/persistence';
 import { startAudioSocketServer } from '../audiosocket/server';
 import { initOfficeNoise } from '../audio/noise';
+import { platformRouter, initPlatform, requireAuth, twilioWebhookGuard, webleadGuard, authEnabled, startLifecycleWorker, setJourneyHandlers, startJourneyWorker, recordEvent as platformRecordEvent } from '../platform';
+import { sendSMS as workflowSendSMS } from '../workflows';
+import { getLoginHtml } from '../platform/dashboard/login';
 
 export function createServer(): http.Server {
   const app = express();
@@ -34,8 +37,25 @@ export function createServer(): http.Server {
   app.use(express.json({ limit: '15mb' }));
   app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
+  // ── Security perimeter ────────────────────────────────────────────
+  // Twilio webhooks: signature validation (TWILIO_VALIDATE_SIGNATURE=true).
+  app.use('/twilio', twilioWebhookGuard());
+  // Lead-ingestion webhooks: shared secret / HMAC (WEBLEAD_SHARED_SECRET).
+  app.use(['/webhook', '/webhooks'], webleadGuard());
+  // Dashboard + APIs: session auth when ADMIN_PASSWORD is configured.
+  // Twilio/webhook/health/audiosocket/login paths stay outside session auth.
+  app.get('/login', (_req, res) => { res.type('html').send(getLoginHtml()); });
+  app.use(['/dashboard', '/api'], (req, res, next) => {
+    // The v2 auth endpoints must be reachable to log in.
+    if (req.path.startsWith('/v2/auth/') || (req.baseUrl === '/api' && req.path.startsWith('/v2/auth/'))) { next(); return; }
+    requireAuth('viewer')(req, res, next);
+  });
+
   // Campaign context resolution middleware (runs on all routes)
   app.use(resolveCampaignMiddleware);
+
+  // Platform v2 APIs (policy, buyers, cadence, rebuttals, QA, profiles, SSE)
+  app.use(platformRouter);
 
   // Mount campaign management routes
   app.use(campaignRouter);
@@ -93,6 +113,45 @@ export async function startServer(): Promise<void> {
 
   // Seed default campaigns (skips if campaigns already loaded from disk)
   seedCampaigns();
+
+  // Platform layer: event ledger, policy engine, buyers, cadence,
+  // rebuttals, QA, profiles, security (loads persisted compliance state)
+  initPlatform();
+  logger.info('server', `Auth: ${authEnabled() ? 'ENABLED' : 'DISABLED (set ADMIN_PASSWORD)'}`);
+
+  // Lifecycle renewal worker: keeps consented leads in the funnel by
+  // pushing policy-gated re-opt-in links before the 90-day TCPA expiry
+  // (auto-send only when lifecycle config enables it).
+  startLifecycleWorker((to, body) => workflowSendSMS(to, body));
+
+  // Journey worker: executes the scripted new-lead funnel (calls +
+  // humanized SMS). Calls reuse the same outbound path as webleads;
+  // SMS go through Twilio with human-timing delays applied upstream.
+  setJourneyHandlers(
+    async (phone, campaignId) => {
+      try {
+        const campaign = campaignId ? getCampaign(campaignId) : undefined;
+        const from = campaign?.assignedDids[0] || config.twilio.fromNumber;
+        if (!from) return false;
+        const lead = (await import('../memory')).getLeadMemory(phone);
+        const firstName = (lead?.name || '').split(' ')[0] || 'there';
+        const result = await startOutboundCall({
+          to: phone,
+          from,
+          lead: { first_name: firstName, state: lead?.state, current_insurer: lead?.currentInsurer },
+        });
+        registerPendingSession(result.callSid, { first_name: firstName, state: lead?.state }, undefined, phone, campaignId);
+        recordCall(result.callSid, phone, firstName);
+        platformRecordEvent('call.attempted', { source: 'journey', state: lead?.state }, { phone, callSid: result.callSid, campaignId });
+        return true;
+      } catch (err) {
+        logger.error('journey', 'Journey dial failed', { phone, error: err instanceof Error ? err.message : String(err) });
+        return false;
+      }
+    },
+    (to, body) => workflowSendSMS(to, body),
+  );
+  startJourneyWorker();
 
   // Pre-load the office-ambience buffer
   initOfficeNoise()

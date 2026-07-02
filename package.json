@@ -7,7 +7,10 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "smoke": "node scripts/smoke.js"
+    "smoke": "node scripts/smoke.js",
+    "test": "npm run test:campaign && npm run test:platform",
+    "test:campaign": "SKIP_ENV_VALIDATION=true ts-node src/campaign/__tests__/campaign.test.ts",
+    "test:platform": "SKIP_ENV_VALIDATION=true ts-node src/platform/__tests__/platform.test.ts"
   },
   "dependencies": {
     "@types/pg": "^8.20.0",

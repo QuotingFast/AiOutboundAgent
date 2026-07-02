@@ -10,7 +10,7 @@ import { recordEvent, queryEvents } from './events';
 import { upsertBuyer, listBuyers, createTransfer, updateTransferStage, getBuyer, HandoffPacket } from './buyers';
 import { scoreCall, QaTranscriptTurn } from './qa';
 import { getObjectionLibrary, recordObjectionOutcome } from './rebuttals';
-import { createTrackedLink, recordWebformSubmission, recordOfferClick } from './lifecycle';
+import { createTrackedLink, handleLinkClick, recordWebformSubmission, recordOfferClick } from './lifecycle';
 import { createOrUpdateLead } from '../memory';
 import { logger } from '../utils/logger';
 
@@ -237,7 +237,7 @@ export function seedDemoData(opts: { force?: boolean } = {}): { seeded: boolean;
     });
     const link = createTrackedLink(dl.phone, 'webform', { campaignId: dl.campaignId, sentVia: 'sms' });
     if (rand() < 0.7) {
-      recordEvent('link.clicked', { kind: link.kind, token: link.token, demo: true }, { phone: dl.phone, campaignId: dl.campaignId });
+      handleLinkClick(link.token);   // real click path: increments link counters + ledger
       if (rand() < 0.6) {
         const sub = recordWebformSubmission({ token: link.token, source: 'demo-webform', campaignId: dl.campaignId });
         if (sub && !sub.duplicate) webforms++;

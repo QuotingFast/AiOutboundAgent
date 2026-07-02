@@ -395,6 +395,9 @@ export function getCommandCenterHtml(): string {
     <button class="nav-it" data-tab="transfers">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13M13 3l4 4-4 4M20 17H7M11 13l-4 4 4 4"/></svg>
       Transfers</button>
+    <button class="nav-it" data-tab="revenue">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 5.5c-1.1-1-2.9-1.6-5-1.6-2.5 0-4.6 1.2-4.6 3.3 0 4.5 9.6 2.2 9.6 6.8 0 2.1-2.3 3.4-5 3.4-2.2 0-4-.6-5.1-1.7"/></svg>
+      Revenue</button>
     <div class="nav-label">Governance</div>
     <button class="nav-it" data-tab="compliance">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>
@@ -572,6 +575,95 @@ export function getCommandCenterHtml(): string {
   </div>
 </section>
 
+<!-- ══ Tab: Revenue ═════════════════════════════════════ -->
+<section class="tab" id="tab-revenue">
+  <div class="kpi-grid">
+    <div class="kpi g"><div class="kpi-l">Total revenue</div><div class="kpi-v pending" id="rvTotal">—</div><div class="kpi-s" id="rvTotalSub">last 30 days</div></div>
+    <div class="kpi b"><div class="kpi-l">Warm transfers</div><div class="kpi-v pending" id="rvTransfers">—</div><div class="kpi-s" id="rvTransfersSub">incl. verified inbound</div></div>
+    <div class="kpi g"><div class="kpi-l">Webleads sold</div><div class="kpi-v pending" id="rvWebleads">—</div><div class="kpi-s" id="rvWebleadsSub">one sellable per 30 days</div></div>
+    <div class="kpi a"><div class="kpi-l">Offer clicks</div><div class="kpi-v pending" id="rvOffers">—</div><div class="kpi-s" id="rvOffersSub">unlimited surface</div></div>
+    <div class="kpi b"><div class="kpi-l">Link click rate</div><div class="kpi-v pending" id="rvClickRate">—</div><div class="kpi-s" id="rvClickRateSub">sent → clicked</div></div>
+    <div class="kpi a"><div class="kpi-l">Renewals due</div><div class="kpi-v pending" id="rvRenewalsDue">—</div><div class="kpi-s">consents expiring soon</div></div>
+  </div>
+
+  <div class="g2">
+    <div class="panel">
+      <div class="panel-h">
+        <div class="panel-t g">Revenue trend</div>
+        <div class="spacer"></div>
+        <div class="chip-row" id="revRange">
+          <span class="chip click" data-range="today">Today</span>
+          <span class="chip click" data-range="7d">7d</span>
+          <span class="chip click on" data-range="30d">30d</span>
+        </div>
+      </div>
+      <div class="panel-b"><div class="canvas-box" style="height:260px"><canvas id="revTrendChart"></canvas></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><div class="panel-t">Conversion mix</div><div class="spacer"></div><span class="panel-note">value share by surface</span></div>
+      <div class="panel-b" id="revMix"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-h">
+      <div class="panel-t a">Renewal pipeline</div>
+      <span class="chip green" id="rpEligibleChip" hidden></span>
+      <span class="chip red" id="rpExpiredChip" hidden></span>
+      <span class="chip" id="rpAutoChip" hidden></span>
+      <div class="spacer"></div>
+      <span class="panel-note">a weblead submission always renews the 90-day opt-in</span>
+      <button class="btn primary sm" id="rpScanBtn">Run renewal scan</button>
+    </div>
+    <div class="panel-b flush tbl-wrap" id="renewalPipeline"><div class="skel" style="margin:14px 18px"></div><div class="skel" style="margin:14px 18px"></div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-h">
+      <div class="panel-t g">Recent conversions</div>
+      <div class="chip-row" id="convTypeChips">
+        <span class="chip click on" data-type="">All</span>
+        <span class="chip click" data-type="warm_transfer">Transfers</span>
+        <span class="chip click" data-type="verified_inbound">Inbound</span>
+        <span class="chip click" data-type="weblead_submission">Webleads</span>
+        <span class="chip click" data-type="offer_click">Offer clicks</span>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn ghost xs" id="convRefresh">Refresh</button>
+    </div>
+    <div class="panel-b flush tbl-wrap" id="convFeed"><div class="skel" style="margin:14px 18px"></div><div class="skel" style="margin:14px 18px"></div></div>
+  </div>
+
+  <div class="g2e">
+    <div class="panel">
+      <div class="panel-h"><div class="panel-t">Send quote link</div><div class="spacer"></div><span class="panel-note">prefilled webform or partner offer wall</span></div>
+      <div class="panel-b">
+        <div class="fld-row">
+          <div class="fld"><label class="fld-l">Phone</label><input class="in" id="qlPhone" placeholder="+15551234567"></div>
+          <div class="fld"><label class="fld-l">Link kind</label><select class="in" id="qlKind"><option value="webform">webform — text me the quote</option><option value="offers">offers — partner offer wall</option></select></div>
+        </div>
+        <button class="btn primary sm" id="qlGen">Generate link</button>
+        <div id="qlResult"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><div class="panel-t">Lead lookup</div><div class="spacer"></div><span class="panel-note">consent, cooldown &amp; conversion history</span></div>
+      <div class="panel-b">
+        <div class="fld-row" style="align-items:flex-end">
+          <div class="fld" style="margin-bottom:0"><label class="fld-l">Phone</label><input class="in" id="llPhone" placeholder="+15551234567"></div>
+          <button class="btn primary sm" id="llRun" style="flex:0 0 auto">Look up</button>
+        </div>
+        <div id="llResult"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-h"><div class="panel-t">Lifecycle config</div><div class="spacer"></div><span class="panel-note">admin only</span><button class="btn primary sm" id="lcSave">Save config</button></div>
+    <div class="panel-b" id="lcForm"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+  </div>
+</section>
+
 <!-- ══ Tab: Compliance ══════════════════════════════════ -->
 <section class="tab" id="tab-compliance">
   <div class="kpi-grid">
@@ -738,6 +830,8 @@ export function getCommandCenterHtml(): string {
     funnelRange: 'today',
     funnelData: null,
     breakDim: 'source',
+    revenueRange: '30d',
+    convType: '',
     evPrefix: '',
     evCache: [],
     buyersCache: [],
@@ -1022,11 +1116,11 @@ export function getCommandCenterHtml(): string {
      ════════════════════════════════════════════════════════ */
   var TAB_TITLES = {
     command: 'Command Center', funnel: 'Funnel', intel: 'Intelligence',
-    transfers: 'Transfers', compliance: 'Compliance Center', config: 'Config Studio', reports: 'Reports'
+    transfers: 'Transfers', revenue: 'Revenue', compliance: 'Compliance Center', config: 'Config Studio', reports: 'Reports'
   };
   var TAB_LOADERS = {
     funnel: loadFunnelTab, intel: loadIntelTab, transfers: loadTransfersTab,
-    compliance: loadComplianceTab, config: loadConfigTab, reports: loadReportsTab
+    revenue: loadRevenueTab, compliance: loadComplianceTab, config: loadConfigTab, reports: loadReportsTab
   };
 
   function switchTab(name) {
@@ -1386,6 +1480,9 @@ export function getCommandCenterHtml(): string {
     t = String(t || '');
     if (t.indexOf('policy.blocked') === 0) return 'red';
     if (t.indexOf('dnc') === 0 || t === 'sms.stop') return 'amber';
+    if (t === 'conversion.recorded' || t === 'consent.renewed') return 'green';
+    if (t.indexOf('link.') === 0) return 'blue';
+    if (t === 'lifecycle.renewal_due') return 'amber';
     if (t === 'call.answered') return 'green';
     if (t.indexOf('transfer.') === 0) return 'blue';
     if (t.indexOf('call.') === 0) return 'green';
@@ -2200,6 +2297,459 @@ export function getCommandCenterHtml(): string {
         }
       }
     ]);
+  }
+
+  /* ════════════════════════════════════════════════════════
+     15b. Revenue — lifecycle revenue engine
+     ════════════════════════════════════════════════════════ */
+  var CONV_LABELS = {
+    warm_transfer: 'Warm transfer',
+    verified_inbound: 'Verified inbound',
+    weblead_submission: 'Weblead',
+    offer_click: 'Offer click'
+  };
+  var CONV_COLORS = { warm_transfer: 'blue', verified_inbound: 'blue', weblead_submission: 'green', offer_click: 'amber' };
+  var lcInputs = null;
+
+  function fmtMoney(v) {
+    var n = Number(v);
+    if (!isFinite(n)) n = 0;
+    return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function copyText(txt) {
+    var done = function () { toast('Copied to clipboard', 'ok'); };
+    var fail = function () { toast('Copy failed — select the link manually', 'error'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(done, fail);
+      return;
+    }
+    var ta = document.createElement('textarea');
+    ta.value = txt;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { fail(); }
+    document.body.removeChild(ta);
+  }
+
+  function rangeLabel(r) {
+    if (r === 'today') return 'today';
+    if (r === '7d') return 'last 7 days';
+    return 'last 30 days';
+  }
+
+  function loadRevenueTab() { loadRevenue(); loadRenewalPipeline(); loadConversions(); loadLifecycleConfig(); }
+
+  function loadRevenue() {
+    api('/api/v2/revenue?since=' + encodeURIComponent(sinceFor(state.revenueRange)), { quiet: true }).then(function (d) {
+      d = d || {};
+      var by = d.byType || {};
+      var wt = by.warm_transfer || {}, vi = by.verified_inbound || {}, wl = by.weblead_submission || {}, oc = by.offer_click || {};
+      var totalEl = byId('rvTotal');
+      totalEl.classList.remove('pending');
+      totalEl.textContent = fmtMoney(d.totalValue);
+      byId('rvTotalSub').textContent = rangeLabel(state.revenueRange);
+      animateNumber(byId('rvTransfers'), (Number(wt.count) || 0) + (Number(vi.count) || 0));
+      byId('rvTransfersSub').textContent = fmtMoney((Number(wt.value) || 0) + (Number(vi.value) || 0)) + ' · ' + fmt(vi.count) + ' verified inbound';
+      animateNumber(byId('rvWebleads'), wl.count);
+      byId('rvWebleadsSub').textContent = fmtMoney(wl.value) + ' · ' + fmt(wl.duplicates) + ' dupes blocked';
+      animateNumber(byId('rvOffers'), oc.count);
+      byId('rvOffersSub').textContent = fmtMoney(oc.value) + ' partner payouts';
+      var ls = d.linkStats || {};
+      var cr = byId('rvClickRate');
+      cr.classList.remove('pending');
+      cr.textContent = ls.clickRate === undefined || ls.clickRate === null ? '—' : pct(ls.clickRate, 1);
+      byId('rvClickRateSub').textContent = fmt(ls.sent) + ' sent · ' + fmt(ls.clicked) + ' clicked · ' + fmt(ls.submitted) + ' submitted';
+      renderRevTrend(d.byDay || []);
+      renderRevMix(by);
+    }).catch(function () {
+      canvasEmpty('revTrendChart', 'Revenue engine unavailable', 'Could not reach /api/v2/revenue.');
+      var box = byId('revMix');
+      box.innerHTML = '';
+      box.appendChild(emptyState('Revenue engine unavailable', 'Could not reach /api/v2/revenue.', '!'));
+    });
+  }
+
+  function renderRevTrend(byDay) {
+    var total = 0;
+    byDay.forEach(function (r) { total += (Number(r.value) || 0) + (Number(r.count) || 0); });
+    if (!byDay.length || !total) {
+      canvasEmpty('revTrendChart', 'No revenue in this window', 'Sold transfers, webleads and offer clicks chart here day by day.');
+      return;
+    }
+    var labels = [], vals = [], counts = [];
+    byDay.forEach(function (r) {
+      var p = String(r.date || '').split('-');
+      labels.push(p.length === 3 ? (Number(p[1]) + '/' + Number(p[2])) : String(r.date || ''));
+      vals.push(Number(r.value) || 0);
+      counts.push(Number(r.count) || 0);
+    });
+    var scales = darkScales(false);
+    scales.y.ticks.callback = function (v) { return '$' + v; };
+    scales.y1 = { position: 'right', beginAtZero: true, grid: { display: false }, border: { display: false }, ticks: { color: '#5c6680', font: { size: 10 }, maxTicksLimit: 5 } };
+    makeChart('revTrendChart', {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'Revenue ($)', data: vals, backgroundColor: 'rgba(16,185,129,0.45)', borderColor: '#10b981', borderWidth: 1, borderRadius: 4, maxBarThickness: 26, yAxisID: 'y' },
+          { type: 'line', label: 'Conversions', data: counts, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.08)', tension: 0.35, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, yAxisID: 'y1' }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { position: 'bottom', labels: { color: '#9aa4bc', boxWidth: 9, boxHeight: 9, usePointStyle: true, font: { size: 11 } } } },
+        scales: scales
+      }
+    });
+  }
+
+  function renderRevMix(by) {
+    var box = byId('revMix');
+    box.innerHTML = '';
+    var keys = ['warm_transfer', 'verified_inbound', 'weblead_submission', 'offer_click'];
+    var rows = [], totalVal = 0;
+    keys.forEach(function (k) {
+      var r = by[k] || {};
+      var v = Number(r.value) || 0;
+      totalVal += v;
+      rows.push({ key: k, value: v, count: Number(r.count) || 0, duplicates: Number(r.duplicates) || 0 });
+    });
+    if (!totalVal) {
+      box.appendChild(emptyState('No value recorded yet', 'The split between transfers, webleads and offer clicks appears here once conversions land.', '◔'));
+      return;
+    }
+    var barCls = { warm_transfer: '', verified_inbound: '', weblead_submission: 'g', offer_click: 'a' };
+    rows.forEach(function (r) {
+      var share = r.value / totalVal * 100;
+      var mb = el('div', 'minibar');
+      var lab = el('div', 'mb-l', CONV_LABELS[r.key] || r.key);
+      lab.style.width = '128px';
+      mb.appendChild(lab);
+      var bar = el('div', 'bar');
+      var fill = el('i', barCls[r.key]);
+      bar.appendChild(fill);
+      mb.appendChild(bar);
+      mb.appendChild(el('div', 'mb-v', Math.round(share) + '%'));
+      box.appendChild(mb);
+      var det = el('div', 'faint tiny');
+      det.style.cssText = 'margin:-2px 0 9px 136px';
+      det.textContent = fmtMoney(r.value) + ' · ' + fmt(r.count) + ' conversions' + (r.duplicates ? ' · ' + fmt(r.duplicates) + ' dupes' : '');
+      box.appendChild(det);
+      setTimeout(function () { fill.style.width = Math.max(1, share) + '%'; }, 60);
+    });
+  }
+
+  function loadRenewalPipeline() {
+    var box = byId('renewalPipeline');
+    box.innerHTML = '';
+    var s = el('div', 'skel');
+    s.style.margin = '14px 18px';
+    box.appendChild(s);
+    api('/api/v2/lifecycle/pipeline', { quiet: true }).then(function (d) {
+      d = d || {};
+      var list = d.expiringSoon || [];
+      animateNumber(byId('rvRenewalsDue'), list.length);
+      var elig = byId('rpEligibleChip');
+      elig.hidden = false;
+      elig.textContent = fmt(d.webleadEligibleCount) + ' weblead-eligible';
+      var exp = byId('rpExpiredChip');
+      exp.hidden = false;
+      exp.textContent = fmt(d.expiredCount) + ' expired';
+      var auto = byId('rpAutoChip');
+      auto.hidden = false;
+      auto.textContent = d.autoRenewalEnabled ? 'auto-renewal on' : 'auto-renewal off';
+      auto.className = 'chip ' + (d.autoRenewalEnabled ? 'green' : 'amber');
+      box.innerHTML = '';
+      if (!list.length) {
+        box.appendChild(emptyState('No consents expiring soon', 'Leads enter this pipeline before their 90-day TCPA opt-in lapses, ready for a renewal push.', '✓'));
+        return;
+      }
+      var tbl = el('table', 'tbl');
+      var thead = el('thead');
+      var hr = el('tr');
+      ['Lead', 'Phone', 'Days left', 'Weblead', 'Last push'].forEach(function (h) { hr.appendChild(el('th', null, h)); });
+      thead.appendChild(hr);
+      tbl.appendChild(thead);
+      var tb = el('tbody');
+      list.forEach(function (r) {
+        var tr = el('tr', 'rowhov');
+        tr.style.cursor = 'pointer';
+        tr.title = 'Click to open the lifecycle card';
+        tr.appendChild(el('td', null, r.name || '(unnamed lead)'));
+        tr.appendChild(el('td', 'mono tiny', r.phone || ''));
+        var dl = Number(r.daysLeft);
+        var dTd = el('td');
+        dTd.appendChild(chipNode(isNaN(dl) ? '—' : fmt(dl) + 'd left', isNaN(dl) ? '' : (dl <= 3 ? 'red' : (dl <= 10 ? 'amber' : ''))));
+        tr.appendChild(dTd);
+        var wTd = el('td');
+        wTd.appendChild(chipNode(r.webleadEligible ? 'eligible' : 'cooldown', r.webleadEligible ? 'green' : ''));
+        tr.appendChild(wTd);
+        var pTd = el('td', 'faint tiny', r.lastPushAt ? relTime(r.lastPushAt) : 'never pushed');
+        if (r.lastPushAt) pTd.setAttribute('data-at', r.lastPushAt);
+        tr.appendChild(pTd);
+        tr.onclick = function () { lookupLead(r.phone); };
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      box.appendChild(tbl);
+    }).catch(function () {
+      box.innerHTML = '';
+      box.appendChild(emptyState('Pipeline unavailable', 'Could not reach /api/v2/lifecycle/pipeline.'));
+    });
+  }
+
+  function runRenewalScan() {
+    var btn = byId('rpScanBtn');
+    btn.disabled = true;
+    api('/api/v2/lifecycle/scan', { method: 'POST', body: {} }).then(function (d) {
+      btn.disabled = false;
+      d = d || {};
+      toast('Renewal scan complete — ' + fmt(d.due) + ' due, ' + fmt(d.pushed) + ' pushed', 'ok');
+      loadRenewalPipeline();
+    }).catch(function () { btn.disabled = false; });
+  }
+
+  function loadConversions() {
+    var box = byId('convFeed');
+    box.innerHTML = '';
+    var s = el('div', 'skel');
+    s.style.margin = '14px 18px';
+    box.appendChild(s);
+    var path = '/api/v2/conversions?limit=50' + (state.convType ? '&type=' + encodeURIComponent(state.convType) : '');
+    api(path, { quiet: true }).then(function (d) {
+      var list = asList(d, 'conversions');
+      box.innerHTML = '';
+      if (!list.length) {
+        box.appendChild(emptyState('No conversions yet', 'Warm transfers, weblead submissions and offer clicks land here the moment they monetize.', '◇'));
+        return;
+      }
+      var tbl = el('table', 'tbl');
+      var thead = el('thead');
+      var hr = el('tr');
+      ['When', 'Type', 'Phone', 'Campaign', 'Value'].forEach(function (h, i) { hr.appendChild(el('th', i === 4 ? 'num' : '', h)); });
+      thead.appendChild(hr);
+      tbl.appendChild(thead);
+      var tb = el('tbody');
+      list.forEach(function (c) {
+        var tr = el('tr', 'rowhov');
+        tr.style.cursor = 'pointer';
+        var whenTd = el('td', 'faint tiny', relTime(c.at));
+        whenTd.setAttribute('data-at', c.at || '');
+        tr.appendChild(whenTd);
+        var tTd = el('td');
+        tTd.appendChild(chipNode(CONV_LABELS[c.type] || c.type, c.duplicate ? '' : (CONV_COLORS[c.type] || '')));
+        if (c.duplicate) {
+          var dup = chipNode('duplicate');
+          dup.style.marginLeft = '5px';
+          tTd.appendChild(dup);
+        }
+        tr.appendChild(tTd);
+        tr.appendChild(el('td', 'mono tiny', c.phone || ''));
+        tr.appendChild(el('td', 'faint tiny mono', c.campaignId || (c.callSid ? '…' + String(c.callSid).slice(-8) : '')));
+        var vTd = el('td', 'num mono', fmtMoney(c.value));
+        if (c.duplicate) vTd.style.cssText = 'text-decoration:line-through;color:var(--faint)';
+        else vTd.style.fontWeight = '700';
+        tr.appendChild(vTd);
+        tr.onclick = function () {
+          var body = openDrawer('Conversion — ' + (CONV_LABELS[c.type] || c.type));
+          body.appendChild(renderKV(c));
+        };
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      box.appendChild(tbl);
+    }).catch(function () {
+      box.innerHTML = '';
+      box.appendChild(emptyState('Conversions unavailable', 'Could not reach /api/v2/conversions.'));
+    });
+  }
+
+  /* ── Send quote link tool ──────────────────────────────── */
+  function genQuoteLink() {
+    var out = byId('qlResult');
+    var phone = byId('qlPhone').value.trim();
+    if (!phone) { toast('Enter a phone number first', 'error'); return; }
+    var kind = byId('qlKind').value;
+    out.innerHTML = '';
+    api('/api/v2/links', { method: 'POST', body: { phone: phone, kind: kind } }).then(function (d) {
+      d = d || {};
+      var card = el('div', 'result-card ok');
+      var head = el('div');
+      head.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+      head.appendChild(el('div', 'result-head', 'LINK READY'));
+      head.appendChild(chipNode(d.kind || kind, (d.kind || kind) === 'offers' ? 'amber' : 'blue'));
+      if (d.token) head.appendChild(chipNode(String(d.token), 'mono'));
+      card.appendChild(head);
+      var urlBox = el('pre', 'code', d.url || '');
+      urlBox.style.marginTop = '9px';
+      card.appendChild(urlBox);
+      var acts = el('div');
+      acts.style.cssText = 'display:flex;gap:8px;margin-top:9px;align-items:center;flex-wrap:wrap';
+      var cp = el('button', 'btn sm', 'Copy link');
+      cp.onclick = function () { copyText(d.url || ''); };
+      acts.appendChild(cp);
+      if (d.destination) acts.appendChild(el('span', 'faint tiny', '→ ' + d.destination));
+      card.appendChild(acts);
+      if (d.downgraded) {
+        var warn = el('div');
+        warn.style.cssText = 'margin-top:10px;padding:9px 11px;border-radius:9px;border:1px solid rgba(245,158,11,0.45);background:rgba(245,158,11,0.1);color:#fcd34d;font-size:12px';
+        warn.textContent = 'Weblead cooldown active for this lead — the link was downgraded. A submission inside the 30-day window is flagged duplicate and worth $0, but it still renews the 90-day opt-in.';
+        card.appendChild(warn);
+      }
+      out.appendChild(card);
+    }).catch(function () { /* toast shown */ });
+  }
+
+  /* ── Lead lookup tool ──────────────────────────────────── */
+  function runLeadLookup() { lookupLead(byId('llPhone').value.trim()); }
+
+  function lookupLead(phone) {
+    var out = byId('llResult');
+    if (!phone) { toast('Enter a phone number to look up', 'error'); return; }
+    byId('llPhone').value = phone;
+    skel(out, 3);
+    api('/api/v2/lifecycle/lead/' + encodeURIComponent(phone), { quiet: true }).then(function (d) {
+      out.innerHTML = '';
+      if (!d) {
+        out.appendChild(emptyState('No lifecycle record', 'This number has no consent or conversion history yet.', '◌'));
+        return;
+      }
+      var card = el('div', 'sub-card');
+      card.style.marginTop = '12px';
+      var top = el('div');
+      top.style.cssText = 'display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:9px';
+      var ph = el('div', 'mono', d.phone || phone);
+      ph.style.cssText = 'font-weight:700;flex:1';
+      top.appendChild(ph);
+      var consent = d.consent || {};
+      var st = String(consent.status || 'none');
+      top.appendChild(chipNode('consent: ' + st, st === 'active' ? 'green' : (st === 'expiring' ? 'amber' : 'red')));
+      if (d.renewalDue) top.appendChild(chipNode('renewal due', 'amber'));
+      card.appendChild(top);
+      var wb = d.weblead || {};
+      var dl = el('dl', 'kv');
+      var rows = [
+        ['Consent recorded', consent.recordedAt ? new Date(consent.recordedAt).toLocaleString() : '—'],
+        ['Consent expires', consent.expiresAt ? new Date(consent.expiresAt).toLocaleString() + (consent.daysLeft !== undefined ? ' (' + fmt(consent.daysLeft) + 'd left)' : '') : '—'],
+        ['Consent source', consent.source || '—'],
+        ['Last weblead', wb.lastSubmittedAt ? relTime(wb.lastSubmittedAt) : 'never'],
+        ['Weblead cooldown', wb.eligibleNow ? 'clear — sellable now' : ('eligible in ' + fmt(wb.daysUntilEligible) + 'd' + (wb.eligibleAt ? ' (' + new Date(wb.eligibleAt).toLocaleDateString() + ')' : ''))],
+        ['Total value', fmtMoney(d.totalValue)]
+      ];
+      rows.forEach(function (r) {
+        dl.appendChild(el('dt', null, r[0]));
+        dl.appendChild(el('dd', 'mono tiny', r[1]));
+      });
+      card.appendChild(dl);
+      var wbRow = el('div', 'chip-row');
+      wbRow.style.marginTop = '9px';
+      wbRow.appendChild(chipNode(wb.eligibleNow ? 'weblead sellable now' : 'weblead in cooldown', wb.eligibleNow ? 'green' : 'amber'));
+      card.appendChild(wbRow);
+      card.appendChild(el('div', 'divider'));
+      card.appendChild(el('div', 'fld-l', 'Conversion history'));
+      var convs = d.conversions || [];
+      if (!convs.length) {
+        card.appendChild(el('div', 'faint tiny', 'No conversions recorded for this lead yet.'));
+      } else {
+        convs.slice(0, 12).forEach(function (c) {
+          var row = el('div');
+          row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(148,163,184,0.07)';
+          row.appendChild(chipNode(CONV_LABELS[c.type] || c.type, c.duplicate ? '' : (CONV_COLORS[c.type] || '')));
+          var val = el('span', 'mono tiny', fmtMoney(c.value));
+          if (c.duplicate) val.style.cssText = 'text-decoration:line-through;color:var(--faint)';
+          row.appendChild(val);
+          var when = el('span', 'faint tiny', relTime(c.at));
+          when.style.marginLeft = 'auto';
+          row.appendChild(when);
+          card.appendChild(row);
+        });
+      }
+      out.appendChild(card);
+    }).catch(function () {
+      out.innerHTML = '';
+      out.appendChild(emptyState('Lookup failed', 'Could not load the lifecycle record for ' + phone + '.', '!'));
+    });
+  }
+
+  /* ── Lifecycle config ──────────────────────────────────── */
+  var LC_SCALARS = [
+    { k: 'webleadCooldownDays', l: 'Weblead cooldown (days)' },
+    { k: 'renewalWindowDays', l: 'Renewal window (days)' },
+    { k: 'renewalPushMinGapDays', l: 'Min gap between pushes (days)' }
+  ];
+  var LC_VALUES = [
+    { k: 'warm_transfer', l: 'Warm transfer value ($)' },
+    { k: 'verified_inbound', l: 'Verified inbound value ($)' },
+    { k: 'weblead_submission', l: 'Weblead value ($)' },
+    { k: 'offer_click', l: 'Offer click value ($)' }
+  ];
+
+  function loadLifecycleConfig() {
+    var box = byId('lcForm');
+    skel(box, 4);
+    api('/api/v2/lifecycle/config', { quiet: true }).then(function (c) {
+      c = c || {};
+      box.innerHTML = '';
+      lcInputs = { values: {} };
+      lcInputs.webformBaseUrl = input(null, c.webformBaseUrl || '', 'https://quotes.example.com/q');
+      lcInputs.offerWallUrl = input(null, c.offerWallUrl || '', 'https://offers.example.com/wall');
+      var urlRow = el('div', 'fld-row');
+      urlRow.appendChild(fld('Webform base URL', lcInputs.webformBaseUrl));
+      urlRow.appendChild(fld('Offer wall URL', lcInputs.offerWallUrl));
+      box.appendChild(urlRow);
+      var numRow = el('div', 'fld-row');
+      LC_SCALARS.forEach(function (f) {
+        var i = input(null, c[f.k] !== undefined && c[f.k] !== null ? c[f.k] : '', '', 'number');
+        numRow.appendChild(fld(f.l, i));
+        lcInputs[f.k] = i;
+      });
+      box.appendChild(numRow);
+      var valRow = el('div', 'fld-row');
+      var vals = c.values || {};
+      LC_VALUES.forEach(function (f) {
+        var i = input(null, vals[f.k] !== undefined && vals[f.k] !== null ? vals[f.k] : '', '', 'number');
+        i.step = '0.01';
+        valRow.appendChild(fld(f.l, i));
+        lcInputs.values[f.k] = i;
+      });
+      box.appendChild(valRow);
+      var lab = el('label', 'check');
+      var chk = el('input');
+      chk.type = 'checkbox';
+      chk.checked = !!c.autoRenewalSmsEnabled;
+      lab.appendChild(chk);
+      lab.appendChild(el('span', null, 'Auto-renewal SMS — push "text me the quote" links automatically as consent nears expiry'));
+      box.appendChild(lab);
+      lcInputs.autoRenewalSmsEnabled = chk;
+    }).catch(function () {
+      box.innerHTML = '';
+      lcInputs = null;
+      box.appendChild(emptyState('Config unavailable', 'Could not reach /api/v2/lifecycle/config.'));
+    });
+  }
+
+  function saveLifecycleConfig() {
+    if (!lcInputs) { toast('Config form not loaded yet', 'error'); return; }
+    var body = {
+      webformBaseUrl: lcInputs.webformBaseUrl.value.trim(),
+      offerWallUrl: lcInputs.offerWallUrl.value.trim(),
+      autoRenewalSmsEnabled: !!lcInputs.autoRenewalSmsEnabled.checked,
+      values: {}
+    };
+    LC_SCALARS.forEach(function (f) {
+      var v = lcInputs[f.k].value;
+      if (v !== '') body[f.k] = Number(v);
+    });
+    LC_VALUES.forEach(function (f) {
+      var v = lcInputs.values[f.k].value;
+      if (v !== '') body.values[f.k] = Number(v);
+    });
+    api('/api/v2/lifecycle/config', { method: 'PUT', body: body }).then(function () {
+      toast('Lifecycle config saved', 'ok');
+      loadLifecycleConfig();
+      loadRenewalPipeline();
+    }).catch(function () { /* admin-gated — error toast already shown */ });
   }
 
   /* ════════════════════════════════════════════════════════
@@ -3021,9 +3571,16 @@ export function getCommandCenterHtml(): string {
     bindChipGroup('funnelRange', 'data-range', function (r) { state.funnelRange = r || 'today'; loadFunnel(); });
     bindChipGroup('breakDims', 'data-dim', function (dim) { state.breakDim = dim || 'source'; loadBreakdown(state.breakDim); });
     bindChipGroup('evChips', 'data-pre', function (p) { state.evPrefix = p; renderEvTable(); });
+    bindChipGroup('revRange', 'data-range', function (r) { state.revenueRange = r || '30d'; loadRevenue(); });
+    bindChipGroup('convTypeChips', 'data-type', function (t) { state.convType = t; loadConversions(); });
     byId('evFilter').addEventListener('input', renderEvTable);
     byId('evRefresh').onclick = loadEvExplorer;
     byId('transfersRefresh').onclick = loadTransfers;
+    byId('convRefresh').onclick = loadConversions;
+    byId('rpScanBtn').onclick = runRenewalScan;
+    byId('qlGen').onclick = genQuoteLink;
+    byId('llRun').onclick = runLeadLookup;
+    byId('lcSave').onclick = saveLifecycleConfig;
     byId('addBuyerBtn').onclick = function () { buyerModal(null); };
     byId('newPlanBtn').onclick = function () { cadenceModal(null); };
     byId('cbRun').onclick = runCallbackTest;

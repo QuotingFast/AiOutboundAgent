@@ -189,6 +189,12 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   let firstAudioAt = 0;
   let audioChunkCount = 0;
   let currentAgentText = '';
+  // One-response-in-flight guard. The OpenAI Realtime API rejects (and
+  // can double up) a second response.create while one is already active.
+  // Every response.create MUST go through triggerResponse() so the agent
+  // can never speak two overlapping turns — the "answering itself" bug.
+  let responseInFlight = false;
+  let responseInFlightAt = 0;
   let currentElevenLabsText = '';
   // Content-based echo guard: the last thing the agent SAID, plus when it
   // finished being SENT. Twilio keeps playing the buffered tail for 1-3s
@@ -765,7 +771,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       },
     }));
 
-    openaiWs.send(JSON.stringify({ type: 'response.create' }));
+    triggerResponse('greeting');
   }
 
   // --- ElevenLabs WebSocket streaming TTS ---
@@ -1555,6 +1561,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
           if (openaiWs?.readyState === WebSocket.OPEN) {
             openaiWs.send(JSON.stringify({ type: 'response.cancel' }));
           }
+          // Cancelled response frees the in-flight slot so the caller's
+          // interrupting turn can get its own reply.
+          responseInFlight = false;
           if (useElevenLabs && elevenLabsWs) {
             elevenLabsWs.close();
             elevenLabsWs = null;
@@ -1601,6 +1610,8 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         break;
 
       case 'response.done':
+        // Response finished (or failed/cancelled) — the next one may start.
+        responseInFlight = false;
         // Keep ElevenLabs connection alive between responses to avoid reconnect latency.
         // ElevenLabs has a ~5-minute idle timeout, which is plenty for conversation turns.
         if (!useElevenLabs) {
@@ -1783,11 +1794,12 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         } else if (!useDeepSeek && userText.trim() && openaiWs?.readyState === WebSocket.OPEN) {
           // OpenAI Realtime mode (ElevenLabs or native voice): auto-response
           // is OFF in session config to prevent duplicates from phantom VAD
-          // commits. Trigger one response per accepted user transcript here.
+          // commits. Trigger one response per accepted user transcript here,
+          // gated so it can't overlap an in-flight response.
           responseRequestedAt = Date.now();
           firstAudioAt = 0;
           audioChunkCount = 0;
-          openaiWs.send(JSON.stringify({ type: 'response.create' }));
+          triggerResponse('user_turn');
         }
         break;
       }
@@ -2340,6 +2352,24 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
   // --- Helpers ---
 
+  // The ONLY place a native OpenAI response.create is sent. Refuses to
+  // start a second response while one is in flight (stale flags older
+  // than 15s are treated as cleared, so a dropped response.done can't
+  // wedge the agent silent). This is what prevents the agent answering
+  // itself with a second overlapping turn.
+  function triggerResponse(source: string): boolean {
+    if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return false;
+    const now = Date.now();
+    if (responseInFlight && (now - responseInFlightAt) < 15000) {
+      logger.warn('stream', 'Suppressed overlapping response.create', { sessionId, source, inFlightForMs: now - responseInFlightAt });
+      return false;
+    }
+    responseInFlight = true;
+    responseInFlightAt = now;
+    openaiWs.send(JSON.stringify({ type: 'response.create' }));
+    return true;
+  }
+
   function sendFunctionOutput(callId: string, output: any): void {
     if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) return;
 
@@ -2352,7 +2382,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       },
     }));
 
-    openaiWs.send(JSON.stringify({ type: 'response.create' }));
+    triggerResponse('function_output');
   }
 
   function sendUserMessage(text: string): void {
@@ -2367,7 +2397,7 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       },
     }));
 
-    openaiWs.send(JSON.stringify({ type: 'response.create' }));
+    triggerResponse('system_message');
   }
 
   function sendAudioToTwilio(base64Audio: string): void {

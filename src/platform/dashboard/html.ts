@@ -166,6 +166,7 @@ export function getCommandCenterHtml(): string {
     border: 1px solid var(--border); background: rgba(148,163,184,0.08); color: var(--muted);
     white-space: nowrap;
   }
+  .chip[hidden] { display: none; }
   .chip.blue { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.35); color: #93c5fd; }
   .chip.green { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.35); color: #6ee7b7; }
   .chip.amber { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.35); color: #fcd34d; }
@@ -2201,6 +2202,849 @@ export function getCommandCenterHtml(): string {
     ]);
   }
 
-<!--NEXT-->
+  /* ════════════════════════════════════════════════════════
+     16. Compliance Center tab
+     ════════════════════════════════════════════════════════ */
+  var POLICY_FIELDS = [
+    { k: 'enforced', t: 'bool', l: 'Policy enforced' },
+    { k: 'consentRequired', t: 'bool', l: 'Consent required' },
+    { k: 'consentMaxAgeDays', t: 'num', l: 'Consent max age (days)' },
+    { k: 'quietHoursStart', t: 'num', l: 'Quiet hours start (local h)' },
+    { k: 'quietHoursEnd', t: 'num', l: 'Quiet hours end (local h)' },
+    { k: 'maxCallsPerDay', t: 'num', l: 'Max calls / day' },
+    { k: 'maxSmsPerDay', t: 'num', l: 'Max SMS / day' },
+    { k: 'maxTotalAttempts', t: 'num', l: 'Max total attempts' },
+    { k: 'maxLeadAgeDays', t: 'num', l: 'Max lead age (days)' },
+    { k: 'blockedStates', t: 'list', l: 'Blocked states (comma-separated)' },
+    { k: 'suppressDispositions', t: 'list', l: 'Suppress dispositions (comma-separated)' }
+  ];
+  var policyInputs = {};
+
+  function loadComplianceTab() {
+    loadLedgerVerify();
+    loadComplianceFeed('policy.blocked', 'blockedFeed', true);
+    loadComplianceFeed('sms.stop', 'stopFeed', false);
+    loadComplianceFeed('dnc.added', 'dncFeed', false);
+    loadPolicyForm();
+    loadSuppressions();
+  }
+
+  function loadLedgerVerify() {
+    var v = byId('cLedger');
+    v.textContent = 'Checking…';
+    v.style.color = '';
+    api('/api/v2/events/verify', { quiet: true }).then(function (d) {
+      if (d && d.valid) {
+        v.textContent = 'Verified ✓';
+        v.style.color = '#10b981';
+        byId('cLedgerSub').textContent = fmt(d.checked) + ' events hash-checked';
+      } else {
+        v.textContent = 'INVALID';
+        v.style.color = '#ef4444';
+        byId('cLedgerSub').textContent = 'chain verification failed — investigate';
+      }
+    }).catch(function () {
+      v.textContent = 'Unavailable';
+      v.style.color = '#9aa4bc';
+    });
+  }
+
+  function loadComplianceFeed(type, boxId, isBlocked) {
+    var box = byId(boxId);
+    box.innerHTML = '';
+    var s = el('div', 'skel');
+    s.style.margin = '14px 18px';
+    box.appendChild(s);
+    api('/api/v2/events?type=' + encodeURIComponent(type) + '&limit=50', { quiet: true }).then(function (d) {
+      var events = asList(d, 'events');
+      box.innerHTML = '';
+      if (!events.length) {
+        var msgs = {
+          'policy.blocked': ['No blocked outreach', 'The policy engine has not had to stop anything.'],
+          'sms.stop': ['No STOP messages', 'Nobody has texted STOP recently.'],
+          'dnc.added': ['No DNC additions', 'No new numbers were suppressed.']
+        };
+        var m = msgs[type] || ['No events', ''];
+        box.appendChild(emptyState(m[0], m[1], '✓'));
+        return;
+      }
+      events.forEach(function (evt) {
+        var it = el('div', 'tick-it ' + typeColor(type));
+        var info = el('div');
+        info.style.cssText = 'flex:1;min-width:0';
+        var top = el('div');
+        top.style.cssText = 'display:flex;align-items:center;gap:8px';
+        top.appendChild(el('span', 'mono tiny', evt.phone || '(unknown)'));
+        var data = evt.data || {};
+        if (isBlocked && data.channel) top.appendChild(chipNode(String(data.channel)));
+        info.appendChild(top);
+        if (isBlocked) {
+          var blocks = Array.isArray(data.blocks) ? data.blocks : [];
+          if (blocks.length) {
+            var br = el('div', 'chip-row');
+            br.style.marginTop = '4px';
+            blocks.forEach(function (bk) {
+              br.appendChild(chipNode(typeof bk === 'object' ? (bk.code || JSON.stringify(bk)) : String(bk), 'red'));
+            });
+            info.appendChild(br);
+          }
+          var reasons = Array.isArray(data.reasons) ? data.reasons : [];
+          if (reasons.length) info.appendChild(el('div', 'faint tiny', reasons.join(' · ')));
+        } else if (data.reason || data.source) {
+          info.appendChild(el('div', 'faint tiny', String(data.reason || data.source)));
+        }
+        it.appendChild(info);
+        var meta = el('span', 'tick-meta', relTime(evt.at));
+        meta.setAttribute('data-at', evt.at || '');
+        it.appendChild(meta);
+        box.appendChild(it);
+      });
+    }).catch(function () {
+      box.innerHTML = '';
+      box.appendChild(emptyState('Feed unavailable', 'Could not load ' + type + ' events.'));
+    });
+  }
+
+  function loadPolicyForm() {
+    var box = byId('policyForm');
+    skel(box, 5);
+    api('/api/v2/policy', { quiet: true }).then(function (p) {
+      p = p || {};
+      box.innerHTML = '';
+      policyInputs = {};
+      POLICY_FIELDS.forEach(function (f) {
+        if (f.t === 'bool') {
+          var lab = el('label', 'check');
+          lab.style.marginBottom = '10px';
+          var chk = el('input');
+          chk.type = 'checkbox';
+          chk.checked = !!p[f.k];
+          lab.appendChild(chk);
+          lab.appendChild(el('span', null, f.l));
+          box.appendChild(lab);
+          policyInputs[f.k] = chk;
+        } else if (f.t === 'num') {
+          var i = input(null, p[f.k] !== undefined && p[f.k] !== null ? p[f.k] : '', '', 'number');
+          box.appendChild(fld(f.l, i));
+          policyInputs[f.k] = i;
+        } else {
+          var li = input(null, Array.isArray(p[f.k]) ? p[f.k].join(', ') : (p[f.k] || ''), '');
+          box.appendChild(fld(f.l, li));
+          policyInputs[f.k] = li;
+        }
+      });
+    }).catch(function () {
+      box.innerHTML = '';
+      box.appendChild(emptyState('Policy unavailable', 'Could not load /api/v2/policy.'));
+    });
+  }
+
+  function savePolicy() {
+    if (!policyInputs.enforced) { toast('Policy form not loaded yet', 'error'); return; }
+    var body = {};
+    POLICY_FIELDS.forEach(function (f) {
+      var node = policyInputs[f.k];
+      if (!node) return;
+      if (f.t === 'bool') body[f.k] = !!node.checked;
+      else if (f.t === 'num') body[f.k] = node.value === '' ? null : Number(node.value);
+      else body[f.k] = node.value.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s.length > 0; });
+    });
+    api('/api/v2/policy', { method: 'PUT', body: body }).then(function () {
+      toast('Policy saved', 'ok');
+      loadPolicyForm();
+    }).catch(function () { /* toast shown */ });
+  }
+
+  function runPolicyTest() {
+    var out = byId('ptResult');
+    out.innerHTML = '';
+    var phone = byId('ptPhone').value.trim();
+    if (!phone) { toast('Enter a phone number to evaluate', 'error'); return; }
+    api('/api/v2/policy/evaluate', {
+      method: 'POST',
+      body: { channel: byId('ptChannel').value, phone: phone, state: byId('ptState').value.trim().toUpperCase() }
+    }).then(function (d) {
+      d = d || {};
+      var card = el('div', 'result-card ' + (d.allowed ? 'ok' : 'bad'));
+      card.appendChild(el('div', 'result-head', d.allowed ? 'ALLOWED' : 'BLOCKED'));
+      var blocks = d.blocks || [];
+      if (blocks.length) {
+        var br = el('div');
+        br.style.marginTop = '8px';
+        blocks.forEach(function (b) {
+          var row = el('div');
+          row.style.cssText = 'display:flex;align-items:center;gap:8px;margin:4px 0';
+          row.appendChild(chipNode(b.code || 'block', 'red'));
+          if (b.hard) row.appendChild(chipNode('hard', 'red'));
+          row.appendChild(el('span', 'tiny muted', b.reason || ''));
+          br.appendChild(row);
+        });
+        card.appendChild(br);
+      }
+      var warnings = d.warnings || [];
+      if (warnings.length) {
+        var wr = el('div', 'chip-row');
+        wr.style.marginTop = '8px';
+        warnings.forEach(function (w) { wr.appendChild(chipNode(typeof w === 'object' ? (w.code || w.reason || JSON.stringify(w)) : String(w), 'amber')); });
+        card.appendChild(wr);
+      }
+      var meta = el('div', 'faint tiny');
+      meta.style.marginTop = '8px';
+      meta.textContent = (d.tz ? 'tz ' + d.tz : '') + (d.localHour !== undefined ? ' · local hour ' + d.localHour : '');
+      card.appendChild(meta);
+      out.appendChild(card);
+    }).catch(function () { /* toast shown */ });
+  }
+
+  function loadSuppressions() {
+    var box = byId('suppressions');
+    skel(box, 3);
+    api('/api/v2/compliance/suppressions', { quiet: true }).then(function (d) {
+      var list = asList(d, 'suppressions');
+      box.innerHTML = '';
+      if (!list.length) {
+        box.appendChild(emptyState('No suppressions', 'Suppressed numbers and dispositions will list here.', '✓'));
+        return;
+      }
+      list.forEach(function (s) {
+        var it = el('div', 'tick-it amber');
+        it.style.paddingLeft = '12px';
+        var phone = typeof s === 'string' ? s : (s.phone || s.number || '(unknown)');
+        it.appendChild(el('span', 'mono tiny', String(phone)));
+        if (typeof s === 'object' && (s.reason || s.source)) it.appendChild(el('span', 'faint tiny', String(s.reason || s.source)));
+        var at = typeof s === 'object' ? (s.at || s.addedAt || s.date) : null;
+        if (at) {
+          var meta = el('span', 'tick-meta', relTime(at));
+          meta.setAttribute('data-at', at);
+          it.appendChild(meta);
+        }
+        box.appendChild(it);
+      });
+    }).catch(function () {
+      box.innerHTML = '';
+      box.appendChild(emptyState('Suppressions unavailable', 'Could not load the suppression list.'));
+    });
+  }
+
+  function exportCompliance(inputId) {
+    var phone = byId(inputId).value.trim();
+    if (!phone) { toast('Enter a phone number to export', 'error'); return; }
+    window.open('/api/v2/compliance/export/' + encodeURIComponent(phone), '_blank');
+  }
+
+  /* ════════════════════════════════════════════════════════
+     17. Config Studio tab
+     ════════════════════════════════════════════════════════ */
+  function loadConfigTab() { loadProfiles(); loadCadence(); loadFlags(); }
+
+  function loadProfiles() {
+    var box = byId('profileCards');
+    box.innerHTML = '';
+    box.appendChild(el('div', 'skel'));
+    api('/api/v2/profiles', { quiet: true }).then(function (d) {
+      var profiles = asList(d, 'profiles');
+      box.innerHTML = '';
+      if (!profiles.length) {
+        box.appendChild(emptyState('No agent profiles', 'Profiles capture full agent settings as versioned presets.', '◈'));
+        return;
+      }
+      profiles.forEach(function (p) {
+        var card = el('div', 'sub-card');
+        var top = el('div');
+        top.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap';
+        var h4 = el('h4', null, p.name || p.id);
+        h4.style.flex = '1';
+        top.appendChild(h4);
+        if (p.environment) top.appendChild(chipNode(p.environment, p.environment === 'production' ? 'green' : 'blue'));
+        if (p.builtin) top.appendChild(chipNode('built-in'));
+        card.appendChild(top);
+        if (p.description) card.appendChild(el('div', 'muted tiny', p.description));
+        var settings = p.settings || {};
+        var keys = Object.keys(settings);
+        var dl = el('dl', 'kv');
+        dl.style.margin = '10px 0';
+        keys.slice(0, 6).forEach(function (k) {
+          dl.appendChild(el('dt', null, humanize(k)));
+          var v = settings[k];
+          dl.appendChild(el('dd', 'mono tiny', typeof v === 'object' ? JSON.stringify(v) : String(v)));
+        });
+        card.appendChild(dl);
+        if (keys.length > 6) {
+          var more = el('button', 'btn ghost xs', 'View all ' + keys.length + ' settings');
+          more.onclick = function () {
+            var body = openDrawer('Settings — ' + (p.name || p.id));
+            body.appendChild(renderKV(settings));
+          };
+          card.appendChild(more);
+        }
+        var versions = p.versions || [];
+        if (versions.length) {
+          var vBox = el('div', 'faint tiny');
+          vBox.style.margin = '9px 0 0';
+          var last = versions[versions.length - 1];
+          vBox.textContent = versions.length + ' versions · latest v' + last.version + ' ' + relTime(last.savedAt) + (last.savedBy ? ' by ' + last.savedBy : '');
+          card.appendChild(vBox);
+        }
+        var acts = el('div');
+        acts.style.cssText = 'display:flex;gap:7px;margin-top:12px;flex-wrap:wrap';
+        var ar = el('button', 'btn primary xs', 'Apply to runtime');
+        ar.onclick = function () { applyProfile(p, 'runtime'); };
+        acts.appendChild(ar);
+        var ac = el('button', 'btn ghost xs', 'Apply to campaign');
+        ac.onclick = function () { applyToCampaignModal(p); };
+        acts.appendChild(ac);
+        if (versions.length > 1) {
+          var rb = el('button', 'btn ghost xs', 'Rollback');
+          rb.onclick = function () { rollbackModal(p); };
+          acts.appendChild(rb);
+        }
+        var sv = el('button', 'btn ghost xs', 'Save as new');
+        sv.onclick = function () { saveAsNewModal(p); };
+        acts.appendChild(sv);
+        card.appendChild(acts);
+        box.appendChild(card);
+      });
+    }).catch(function () {
+      box.innerHTML = '';
+      box.appendChild(emptyState('Profiles unavailable', 'Could not reach /api/v2/profiles.'));
+    });
+  }
+
+  function applyProfile(p, scope, campaignId) {
+    var body = { scope: scope };
+    if (campaignId) body.campaignId = campaignId;
+    api('/api/v2/profiles/' + encodeURIComponent(p.id) + '/apply', { method: 'POST', body: body }).then(function () {
+      closeModal();
+      toast('Profile "' + (p.name || p.id) + '" applied to ' + (campaignId ? 'campaign' : 'runtime'), 'ok');
+    }).catch(function () { /* toast shown */ });
+  }
+
+  function fetchCampaigns() {
+    if (state.campaignsCache) return Promise.resolve(state.campaignsCache);
+    return api('/api/campaigns', { quiet: true }).then(function (d) {
+      var list = asList(d, 'campaigns');
+      state.campaignsCache = list;
+      return list;
+    }).catch(function () { return []; });
+  }
+
+  function applyToCampaignModal(p) {
+    fetchCampaigns().then(function (campaigns) {
+      var body = el('div');
+      if (!campaigns.length) {
+        body.appendChild(emptyState('No campaigns found', 'Create a campaign first, then apply this profile to it.'));
+        openModal('Apply to campaign', body, [{ label: 'Close', onClick: closeModal }]);
+        return;
+      }
+      var sel = el('select', 'in');
+      campaigns.forEach(function (c) {
+        var opt = el('option', null, (c.name || c.id) + (c.active === false ? ' (inactive)' : ''));
+        opt.value = c.id;
+        sel.appendChild(opt);
+      });
+      body.appendChild(fld('Campaign', sel));
+      openModal('Apply "' + (p.name || p.id) + '" to campaign', body, [
+        { label: 'Cancel', onClick: closeModal },
+        { label: 'Apply', cls: 'primary', onClick: function () { applyProfile(p, 'campaign', sel.value); } }
+      ]);
+    });
+  }
+
+  function rollbackModal(p) {
+    var body = el('div');
+    var sel = el('select', 'in');
+    (p.versions || []).slice().reverse().forEach(function (v) {
+      var opt = el('option', null, 'v' + v.version + ' · ' + relTime(v.savedAt) + (v.note ? ' · ' + v.note : ''));
+      opt.value = String(v.version);
+      sel.appendChild(opt);
+    });
+    body.appendChild(fld('Roll back to version', sel));
+    openModal('Rollback "' + (p.name || p.id) + '"', body, [
+      { label: 'Cancel', onClick: closeModal },
+      {
+        label: 'Rollback', cls: 'danger', onClick: function () {
+          api('/api/v2/profiles/' + encodeURIComponent(p.id) + '/rollback', { method: 'POST', body: { toVersion: Number(sel.value) } })
+            .then(function () { closeModal(); toast('Rolled back to v' + sel.value, 'ok'); loadProfiles(); })
+            .catch(function () { /* toast shown */ });
+        }
+      }
+    ]);
+  }
+
+  function saveAsNewModal(p) {
+    var body = el('div');
+    var name = input(null, (p.name || p.id) + ' (copy)', 'Profile name');
+    var desc = input(null, p.description || '', 'Description');
+    var ta = el('textarea', 'in');
+    ta.rows = 12;
+    ta.value = JSON.stringify(p.settings || {}, null, 2);
+    body.appendChild(fld('Name', name));
+    body.appendChild(fld('Description', desc));
+    body.appendChild(fld('Settings (JSON)', ta));
+    openModal('Save as new profile', body, [
+      { label: 'Cancel', onClick: closeModal },
+      {
+        label: 'Create profile', cls: 'primary', onClick: function () {
+          var settings;
+          try { settings = JSON.parse(ta.value); } catch (e) { toast('Settings must be valid JSON', 'error'); return; }
+          api('/api/v2/profiles', { method: 'POST', body: { name: name.value.trim(), description: desc.value.trim(), settings: settings } })
+            .then(function () { closeModal(); toast('Profile created', 'ok'); loadProfiles(); })
+            .catch(function () { /* toast shown */ });
+        }
+      }
+    ], true);
+  }
+
+  /* ── Cadence plans ─────────────────────────────────────── */
+  function loadCadence() {
+    var box = byId('cadencePlans');
+    skel(box, 3);
+    api('/api/v2/cadence/plans', { quiet: true }).then(function (d) {
+      var plans = asList(d, 'plans');
+      box.innerHTML = '';
+      if (!plans.length) {
+        box.appendChild(emptyState('No cadence plans', 'Cadence plans control how hard and when each lead is worked, day by day.', '▥'));
+        return;
+      }
+      plans.forEach(function (plan) {
+        var card = el('div', 'sub-card');
+        card.style.marginBottom = '12px';
+        var top = el('div');
+        top.style.cssText = 'display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:6px';
+        var h4 = el('h4', null, plan.name || plan.id);
+        h4.style.flex = '1';
+        top.appendChild(h4);
+        if (plan.maxTotalAttempts !== undefined) top.appendChild(chipNode('max ' + plan.maxTotalAttempts + ' attempts', 'amber'));
+        var editBtn = el('button', 'btn ghost xs', 'Edit JSON');
+        editBtn.onclick = function () { cadenceModal(plan); };
+        top.appendChild(editBtn);
+        card.appendChild(top);
+        if (plan.description) card.appendChild(el('div', 'muted tiny', plan.description));
+        var steps = plan.steps || [];
+        var maxDay = 1;
+        steps.forEach(function (s) { maxDay = Math.max(maxDay, Number(s.toDay) || 1); });
+        if (steps.length) {
+          var tl = el('div', 'timeline-days');
+          tl.style.marginTop = '10px';
+          var maxAtt = 1;
+          steps.forEach(function (s) { maxAtt = Math.max(maxAtt, Number(s.maxAttemptsPerDay) || 1); });
+          steps.forEach(function (s) {
+            var span = Math.max(1, (Number(s.toDay) || 1) - (Number(s.fromDay) || 1) + 1);
+            var seg = el('div', 'tl-seg', 'D' + s.fromDay + '–' + s.toDay + ' ·  ×' + s.maxAttemptsPerDay);
+            seg.style.flexGrow = String(span);
+            var intensity = 0.18 + 0.5 * ((Number(s.maxAttemptsPerDay) || 1) / maxAtt);
+            seg.style.background = 'rgba(59,130,246,' + intensity.toFixed(2) + ')';
+            var winTxt = (s.windows || []).map(function (w) { return w.startHour + 'h–' + w.endHour + 'h'; }).join(', ');
+            seg.title = 'Days ' + s.fromDay + '–' + s.toDay + ' · up to ' + s.maxAttemptsPerDay + ' calls/day · windows: ' + (winTxt || 'any');
+            tl.appendChild(seg);
+          });
+          card.appendChild(tl);
+          var det = el('div', 'chip-row');
+          det.style.marginTop = '9px';
+          steps.forEach(function (s) {
+            (s.windows || []).forEach(function (w) {
+              det.appendChild(chipNode('D' + s.fromDay + '–' + s.toDay + ': ' + w.startHour + '–' + w.endHour + 'h'));
+            });
+            if (s.smsAfterMissedCall) det.appendChild(chipNode('D' + s.fromDay + '–' + s.toDay + ': SMS after miss', 'blue'));
+          });
+          card.appendChild(det);
+        } else {
+          card.appendChild(el('div', 'faint tiny', 'No steps defined.'));
+        }
+        box.appendChild(card);
+      });
+    }).catch(function () {
+      box.innerHTML = '';
+      box.appendChild(emptyState('Cadence unavailable', 'Could not reach /api/v2/cadence/plans.'));
+    });
+  }
+
+  function cadenceModal(plan) {
+    var body = el('div');
+    body.appendChild(el('div', 'panel-note', 'Edit the plan as JSON. Steps define day ranges, per-day attempt caps and calling windows.'));
+    var ta = el('textarea', 'in');
+    ta.rows = 16;
+    ta.style.marginTop = '10px';
+    ta.value = JSON.stringify(plan || {
+      id: 'plan-' + Date.now().toString(36),
+      name: 'New cadence plan',
+      description: '',
+      maxTotalAttempts: 12,
+      steps: [{ fromDay: 1, toDay: 3, maxAttemptsPerDay: 3, windows: [{ startHour: 9, endHour: 18 }], smsAfterMissedCall: true }]
+    }, null, 2);
+    body.appendChild(ta);
+    openModal(plan ? 'Edit cadence plan — ' + (plan.name || plan.id) : 'New cadence plan', body, [
+      { label: 'Cancel', onClick: closeModal },
+      {
+        label: 'Save plan', cls: 'primary', onClick: function () {
+          var parsed;
+          try { parsed = JSON.parse(ta.value); } catch (e) { toast('Plan must be valid JSON', 'error'); return; }
+          api('/api/v2/cadence/plans', { method: 'POST', body: parsed })
+            .then(function () { closeModal(); toast('Cadence plan saved', 'ok'); loadCadence(); })
+            .catch(function () { /* toast shown */ });
+        }
+      }
+    ], true);
+  }
+
+  function runCallbackTest() {
+    var out = byId('cbResult');
+    out.innerHTML = '';
+    var text = byId('cbText').value.trim();
+    if (!text) { toast('Enter a phrase to parse', 'error'); return; }
+    api('/api/v2/cadence/parse-callback', {
+      method: 'POST',
+      body: { text: text, state: byId('cbState').value.trim().toUpperCase(), phone: byId('cbPhone').value.trim() }
+    }).then(function (d) {
+      d = d || {};
+      var card = el('div', 'result-card ' + (d.matched ? 'ok' : 'bad'));
+      card.appendChild(el('div', 'result-head', d.matched ? 'CALLBACK DETECTED' : 'NO MATCH'));
+      if (d.matched) {
+        var dl = el('dl', 'kv');
+        dl.style.marginTop = '8px';
+        dl.appendChild(el('dt', null, 'Interpreted as'));
+        dl.appendChild(el('dd', null, d.label || '—'));
+        dl.appendChild(el('dt', null, 'Scheduled for'));
+        dl.appendChild(el('dd', 'mono', d.startAt ? new Date(d.startAt).toLocaleString() : '—'));
+        card.appendChild(dl);
+        var mb = el('div', 'minibar');
+        mb.style.marginTop = '8px';
+        mb.appendChild(el('div', 'mb-l', 'Confidence'));
+        var bar = el('div', 'bar');
+        var fill = el('i', 'g');
+        bar.appendChild(fill);
+        mb.appendChild(bar);
+        var conf = Number(d.confidence) || 0;
+        if (conf > 1) conf = conf / 100;
+        mb.appendChild(el('div', 'mb-v', Math.round(conf * 100) + '%'));
+        card.appendChild(mb);
+        setTimeout(function () { fill.style.width = Math.min(100, conf * 100) + '%'; }, 60);
+      } else {
+        card.appendChild(el('div', 'faint tiny', 'The phrase did not parse as a callback request.'));
+      }
+      out.appendChild(card);
+    }).catch(function () { /* toast shown */ });
+  }
+
+  function loadFlags() {
+    var panel = byId('flagsPanel');
+    var box = byId('flagsList');
+    skel(box, 3);
+    api('/api/prompts/flags', { quiet: true }).then(function (d) {
+      var flags = Array.isArray(d) ? d : null;
+      if (!flags) { panel.style.display = 'none'; return; }
+      panel.style.display = '';
+      box.innerHTML = '';
+      if (!flags.length) {
+        box.appendChild(emptyState('No feature flags', 'Prompt experiment flags will list here when defined.', '⚑'));
+        return;
+      }
+      flags.forEach(function (f) {
+        if (!f || typeof f !== 'object' || f.id === undefined) return;
+        var row = el('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:11px;padding:8px 0;border-bottom:1px solid rgba(148,163,184,0.07)';
+        var sw = el('div', 'switch' + (f.enabled ? ' on' : ''));
+        sw.setAttribute('role', 'switch');
+        sw.onclick = function () {
+          api('/api/prompts/flags', { method: 'POST', body: { id: f.id, enabled: !f.enabled } })
+            .then(function () { toast('Flag "' + f.id + '" ' + (!f.enabled ? 'enabled' : 'disabled'), 'ok'); loadFlags(); })
+            .catch(function () { /* toast shown */ });
+        };
+        row.appendChild(sw);
+        var info = el('div');
+        info.style.flex = '1';
+        var nm = el('div', null, f.name || f.id);
+        nm.style.cssText = 'font-size:13px;font-weight:600';
+        info.appendChild(nm);
+        if (f.description) info.appendChild(el('div', 'faint tiny', f.description));
+        row.appendChild(info);
+        box.appendChild(row);
+      });
+    }).catch(function () { panel.style.display = 'none'; });
+  }
+
+  function seedDemo() {
+    if (!window.confirm('Seed demo data? This writes synthetic leads, calls, transfers and QA scores into the platform. Admin only.')) return;
+    api('/api/v2/demo/seed', { method: 'POST', body: {} }).then(function () {
+      toast('Demo data seeded — dashboards will fill in shortly', 'ok');
+    }).catch(function () { /* toast shown */ });
+  }
+
+  /* ════════════════════════════════════════════════════════
+     18. Reports tab
+     ════════════════════════════════════════════════════════ */
+  function loadReportsTab() { loadFlash(); loadTrend(); loadBuyerPerf(); loadEvExplorer(); }
+
+  function kpiTile(label, value, cls, sub) {
+    var k = el('div', 'kpi ' + (cls || 'b'));
+    k.appendChild(el('div', 'kpi-l', label));
+    k.appendChild(el('div', 'kpi-v', value));
+    if (sub) k.appendChild(el('div', 'kpi-s', sub));
+    return k;
+  }
+
+  function loadFlash() {
+    var box = byId('flashGrid');
+    byId('flashDate').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+    skel(box, 4);
+    Promise.all([
+      api('/api/v2/funnel?since=' + encodeURIComponent(sinceFor('today')), { quiet: true }).catch(function () { return null; }),
+      api('/api/v2/qa/summary', { quiet: true }).catch(function () { return null; })
+    ]).then(function (res) {
+      var f = res[0], qa = res[1];
+      box.innerHTML = '';
+      if (!f && !qa) {
+        box.appendChild(emptyState('No report data yet', 'The daily flash builds itself from today’s funnel and QA activity.', '▤'));
+        return;
+      }
+      if (f && Array.isArray(f.stages)) {
+        f.stages.forEach(function (s, i) {
+          var cls = i === 0 ? 's' : (i >= f.stages.length - 2 ? 'g' : 'b');
+          box.appendChild(kpiTile(s.label || s.key, fmt(s.count), cls));
+        });
+        box.appendChild(kpiTile('Blocked', fmt(f.blocked), 'r'));
+        box.appendChild(kpiTile('Opt-outs', fmt(f.optOuts), 'a'));
+        box.appendChild(kpiTile('SMS sent', fmt(f.smsSent), 'b'));
+        box.appendChild(kpiTile('Callbacks', fmt(f.callbacksScheduled), 's'));
+      }
+      if (qa) {
+        var avg = Number(qa.avgOverall);
+        box.appendChild(kpiTile('QA average', isNaN(avg) ? '—' : (avg <= 5 ? avg.toFixed(2) : Math.round(avg) + ''), 'g', fmt(qa.scored) + ' scored'));
+        box.appendChild(kpiTile('Pending review', fmt(qa.pendingReview), 'a', fmt(qa.flagged) + ' flagged'));
+      }
+    });
+  }
+
+  function ymd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+
+  function bucketByDay(events) {
+    var map = {};
+    events.forEach(function (e) {
+      if (!e.at) return;
+      var d = new Date(e.at);
+      if (isNaN(d.getTime())) return;
+      var k = ymd(d);
+      map[k] = (map[k] || 0) + 1;
+    });
+    return map;
+  }
+
+  function loadTrend() {
+    Promise.all([
+      api('/api/v2/events?type=call.attempted&limit=5000', { quiet: true }).catch(function () { return []; }),
+      api('/api/v2/events?type=transfer.connected&limit=5000', { quiet: true }).catch(function () { return []; })
+    ]).then(function (res) {
+      var attempts = bucketByDay(asList(res[0], 'events'));
+      var connects = bucketByDay(asList(res[1], 'events'));
+      var labels = [], aData = [], cData = [], total = 0;
+      for (var i = 13; i >= 0; i--) {
+        var d = new Date();
+        d.setDate(d.getDate() - i);
+        var k = ymd(d);
+        labels.push((d.getMonth() + 1) + '/' + d.getDate());
+        aData.push(attempts[k] || 0);
+        cData.push(connects[k] || 0);
+        total += (attempts[k] || 0) + (connects[k] || 0);
+      }
+      if (!total) {
+        canvasEmpty('trendChart', 'No trend data yet', 'Attempts and buyer connects over the last 14 days will chart here.');
+        return;
+      }
+      makeChart('trendChart', {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            { label: 'Attempts', data: aData, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.08)', fill: true, tension: 0.35, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
+            { label: 'Buyer connects', data: cData, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)', fill: true, tension: 0.35, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { position: 'bottom', labels: { color: '#9aa4bc', boxWidth: 9, boxHeight: 9, usePointStyle: true, font: { size: 11 } } } },
+          scales: darkScales(false)
+        }
+      });
+    });
+  }
+
+  function loadBuyerPerf() {
+    var box = byId('buyerPerf');
+    box.innerHTML = '';
+    var s = el('div', 'skel');
+    s.style.margin = '14px 18px';
+    box.appendChild(s);
+    api('/api/v2/transfers?limit=100', { quiet: true }).then(function (d) {
+      var list = asList(d, 'transfers');
+      box.innerHTML = '';
+      if (!list.length) {
+        box.appendChild(emptyState('No transfers to analyze', 'Buyer performance builds from the transfer log.', '▦'));
+        return;
+      }
+      var groups = {};
+      list.forEach(function (t) {
+        var key = t.buyerName || '(unrouted)';
+        var g = groups[key] || (groups[key] = { name: key, initiated: 0, connected: 0, failed: 0, durs: [] });
+        g.initiated++;
+        var st = t.stages || {};
+        if (st.consumer_connected || t.currentStage === 'completed' || st.completed) g.connected++;
+        if (t.currentStage === 'failed' || st.failed) g.failed++;
+        if (st.initiated && st.consumer_connected) {
+          var dur = (new Date(st.consumer_connected).getTime() - new Date(st.initiated).getTime()) / 1000;
+          if (isFinite(dur) && dur >= 0) g.durs.push(dur);
+        }
+      });
+      var rows = Object.keys(groups).map(function (k) { return groups[k]; });
+      rows.sort(function (a, b) { return b.initiated - a.initiated; });
+      var tbl = el('table', 'tbl');
+      var thead = el('thead');
+      var hr = el('tr');
+      ['Buyer', 'Transfers', 'Connected', 'Fail rate', 'Avg bridge time'].forEach(function (h, i) {
+        hr.appendChild(el('th', i === 0 ? '' : 'num', h));
+      });
+      thead.appendChild(hr);
+      tbl.appendChild(thead);
+      var tb = el('tbody');
+      rows.forEach(function (g) {
+        var tr = el('tr', 'rowhov');
+        tr.appendChild(el('td', null, g.name));
+        tr.appendChild(el('td', 'num mono', fmt(g.initiated)));
+        tr.appendChild(el('td', 'num mono', fmt(g.connected)));
+        var fr = g.initiated ? g.failed / g.initiated * 100 : 0;
+        var frTd = el('td', 'num mono', fr.toFixed(0) + '%');
+        if (fr > 30) frTd.style.color = '#ef4444';
+        tr.appendChild(frTd);
+        var avg = g.durs.length ? g.durs.reduce(function (a, b) { return a + b; }, 0) / g.durs.length : null;
+        tr.appendChild(el('td', 'num mono', avg === null ? '—' : durStr(avg)));
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      box.appendChild(tbl);
+    }).catch(function () {
+      box.innerHTML = '';
+      box.appendChild(emptyState('Transfers unavailable', 'Could not load buyer performance.'));
+    });
+  }
+
+  /* ── Events explorer ───────────────────────────────────── */
+  function loadEvExplorer() {
+    var box = byId('evExplorer');
+    box.innerHTML = '';
+    var s = el('div', 'skel');
+    s.style.margin = '14px 18px';
+    box.appendChild(s);
+    api('/api/v2/events?limit=200', { quiet: true }).then(function (d) {
+      state.evCache = asList(d, 'events');
+      renderEvTable();
+    }).catch(function () {
+      box.innerHTML = '';
+      box.appendChild(emptyState('Events unavailable', 'Could not reach /api/v2/events.'));
+    });
+  }
+
+  function renderEvTable() {
+    var box = byId('evExplorer');
+    var filter = byId('evFilter').value.trim().toLowerCase();
+    var rows = state.evCache.filter(function (e) {
+      if (state.evPrefix && String(e.type || '').indexOf(state.evPrefix) !== 0) return false;
+      if (filter) {
+        var hay = (String(e.type || '') + ' ' + String(e.phone || '') + ' ' + String(e.callSid || '') + ' ' + JSON.stringify(e.data || {})).toLowerCase();
+        if (hay.indexOf(filter) < 0) return false;
+      }
+      return true;
+    });
+    box.innerHTML = '';
+    if (!rows.length) {
+      box.appendChild(emptyState('No matching events', state.evCache.length ? 'Try a different type filter or search text.' : 'The event ledger is empty — activity will populate it.', '◌'));
+      return;
+    }
+    var tbl = el('table', 'tbl');
+    var thead = el('thead');
+    var hr = el('tr');
+    ['When', 'Type', 'Phone', 'Call SID', 'Data'].forEach(function (h) { hr.appendChild(el('th', null, h)); });
+    thead.appendChild(hr);
+    tbl.appendChild(thead);
+    var tb = el('tbody');
+    rows.slice(0, 100).forEach(function (e) {
+      var tr = el('tr', 'rowhov');
+      tr.style.cursor = 'pointer';
+      var whenTd = el('td', 'faint tiny', relTime(e.at));
+      whenTd.setAttribute('data-at', e.at || '');
+      tr.appendChild(whenTd);
+      var tTd = el('td');
+      tTd.appendChild(chipNode(e.type, typeColor(e.type)));
+      tr.appendChild(tTd);
+      tr.appendChild(el('td', 'mono tiny', e.phone || ''));
+      tr.appendChild(el('td', 'mono faint tiny', e.callSid ? '…' + String(e.callSid).slice(-8) : ''));
+      var dj = e.data ? JSON.stringify(e.data) : '';
+      var dTd = el('td', 'faint tiny mono', dj.length > 80 ? dj.slice(0, 77) + '…' : dj);
+      tr.appendChild(dTd);
+      tr.onclick = function () {
+        var body = openDrawer('Event #' + (e.seq !== undefined ? e.seq : '') + ' — ' + e.type);
+        body.appendChild(renderKV(e));
+      };
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    box.appendChild(tbl);
+  }
+
+  /* ════════════════════════════════════════════════════════
+     19. Clock tick — elapsed timers & relative times
+     ════════════════════════════════════════════════════════ */
+  function tick() {
+    state.tickCount++;
+    var cells = document.querySelectorAll('[data-started]');
+    for (var i = 0; i < cells.length; i++) {
+      var s = cells[i].getAttribute('data-started');
+      if (s) cells[i].textContent = elapsedStr(s);
+    }
+    if (state.tickCount % 15 === 0) {
+      var ats = document.querySelectorAll('[data-at]');
+      for (var j = 0; j < ats.length; j++) {
+        var a = ats[j].getAttribute('data-at');
+        if (a) ats[j].textContent = relTime(a);
+      }
+    }
+  }
+
+  /* ════════════════════════════════════════════════════════
+     20. Boot
+     ════════════════════════════════════════════════════════ */
+  function boot() {
+    if (typeof Chart !== 'undefined') {
+      Chart.defaults.color = '#9aa4bc';
+      Chart.defaults.font.family = 'Inter, system-ui, sans-serif';
+      Chart.defaults.borderColor = 'rgba(148,163,184,0.08)';
+    }
+    bindShell();
+    bindChipGroup('funnelRange', 'data-range', function (r) { state.funnelRange = r || 'today'; loadFunnel(); });
+    bindChipGroup('breakDims', 'data-dim', function (dim) { state.breakDim = dim || 'source'; loadBreakdown(state.breakDim); });
+    bindChipGroup('evChips', 'data-pre', function (p) { state.evPrefix = p; renderEvTable(); });
+    byId('evFilter').addEventListener('input', renderEvTable);
+    byId('evRefresh').onclick = loadEvExplorer;
+    byId('transfersRefresh').onclick = loadTransfers;
+    byId('addBuyerBtn').onclick = function () { buyerModal(null); };
+    byId('newPlanBtn').onclick = function () { cadenceModal(null); };
+    byId('cbRun').onclick = runCallbackTest;
+    byId('ptRun').onclick = runPolicyTest;
+    byId('policySave').onclick = savePolicy;
+    byId('demoSeedBtn').onclick = seedDemo;
+    byId('expBtn').onclick = function () { exportCompliance('expPhone'); };
+    byId('repExpBtn').onclick = function () { exportCompliance('repExpPhone'); };
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { closeModal(); closeDrawer(); }
+    });
+    loadAuth();
+    loadPauseState();
+    connectStream();
+    loadBuyerAvail();
+    setInterval(tick, 1000);
+  }
+
+  boot();
+})();
+</script>
+</body>
 </html>`;
 }

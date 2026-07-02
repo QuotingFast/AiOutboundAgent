@@ -319,8 +319,11 @@ export function updateTransferStage(transferId: string, stage: TransferStage, fa
     activeTransfersByBuyer.set(rec.buyerId, Math.max(0, n));
   }
   persistTransfers();
+  // 'completed' after 'consumer_connected' is terminal bookkeeping, not a
+  // second connect — only count transfer.connected once per transfer.
   const evType = stage === 'buyer_answered' ? 'transfer.buyer_answered'
-    : stage === 'consumer_connected' || stage === 'completed' ? 'transfer.connected'
+    : stage === 'consumer_connected' ? 'transfer.connected'
+    : stage === 'completed' && !rec.stages.consumer_connected ? 'transfer.connected'
     : stage === 'failed' || stage === 'abandoned' ? 'transfer.failed'
     : null;
   if (evType) {

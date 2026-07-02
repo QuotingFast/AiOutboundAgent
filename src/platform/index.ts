@@ -16,6 +16,7 @@ import { loadComplianceFromDisk } from '../compliance';
 import { logger } from '../utils/logger';
 
 export { platformRouter } from './routes';
+export { voiceLabRouter } from './voicelab';
 export { requireAuth, twilioWebhookGuard, webleadGuard, authEnabled } from './security';
 export { evaluateOutreach, isBlocked, recordSmsStop, hasSmsStop } from './policy';
 export { recordEvent } from './events';

@@ -205,6 +205,9 @@ export function handleMediaStream(twilioWs: WebSocket): void {
   // cars") don't overlap the agent's sentence, so they still pass.
   let lastAgentSpokenNorm = '';
   let lastAgentSpokenAt = 0;
+  // Dedup guard for the dual-name transcript.done events (see handler).
+  let lastAgentLoggedNorm = '';
+  let lastAgentLoggedAt = 0;
 
   // Call duration tracking
   let callStartedAt = 0;
@@ -1648,6 +1651,17 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       case 'response.output_audio_transcript.done':
         if (!useElevenLabs) {
           const agentText = event.transcript || '';
+          // GA Realtime emits BOTH response.audio_transcript.done and
+          // response.output_audio_transcript.done for a single response,
+          // so this case fires twice per turn. Log/record only once —
+          // the duplicate was doubling the transcript and wrecking QA
+          // talk-ratio/repetition scores.
+          const agentNorm = agentText.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (agentNorm && agentNorm === lastAgentLoggedNorm && (Date.now() - lastAgentLoggedAt) < 5000) {
+            break;
+          }
+          lastAgentLoggedNorm = agentNorm;
+          lastAgentLoggedAt = Date.now();
           currentAgentText = agentText;
           logger.info('stream', 'Agent said', { sessionId, transcript: redactPII(agentText) });
 

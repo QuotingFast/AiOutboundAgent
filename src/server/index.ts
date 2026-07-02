@@ -26,7 +26,7 @@ import { loadLeadsFromDisk } from '../memory';
 import { flushAll, initPostgresPersistence } from '../db/persistence';
 import { startAudioSocketServer } from '../audiosocket/server';
 import { initOfficeNoise } from '../audio/noise';
-import { platformRouter, initPlatform, requireAuth, twilioWebhookGuard, webleadGuard, authEnabled, startLifecycleWorker, setJourneyHandlers, startJourneyWorker, recordEvent as platformRecordEvent } from '../platform';
+import { platformRouter, voiceLabRouter, initPlatform, requireAuth, twilioWebhookGuard, webleadGuard, authEnabled, startLifecycleWorker, setJourneyHandlers, startJourneyWorker, recordEvent as platformRecordEvent } from '../platform';
 import { sendSMS as workflowSendSMS } from '../workflows';
 import { getLoginHtml } from '../platform/dashboard/login';
 
@@ -56,6 +56,7 @@ export function createServer(): http.Server {
 
   // Platform v2 APIs (policy, buyers, cadence, rebuttals, QA, profiles, SSE)
   app.use(platformRouter);
+  app.use(voiceLabRouter);
 
   // Mount campaign management routes
   app.use(campaignRouter);

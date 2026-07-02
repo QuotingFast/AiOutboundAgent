@@ -26,6 +26,8 @@ import { loadLeadsFromDisk } from '../memory';
 import { flushAll, initPostgresPersistence } from '../db/persistence';
 import { startAudioSocketServer } from '../audiosocket/server';
 import { initOfficeNoise } from '../audio/noise';
+import { platformRouter, initPlatform, requireAuth, twilioWebhookGuard, webleadGuard, authEnabled } from '../platform';
+import { getLoginHtml } from '../platform/dashboard/login';
 
 export function createServer(): http.Server {
   const app = express();
@@ -34,8 +36,25 @@ export function createServer(): http.Server {
   app.use(express.json({ limit: '15mb' }));
   app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
+  // ── Security perimeter ────────────────────────────────────────────
+  // Twilio webhooks: signature validation (TWILIO_VALIDATE_SIGNATURE=true).
+  app.use('/twilio', twilioWebhookGuard());
+  // Lead-ingestion webhooks: shared secret / HMAC (WEBLEAD_SHARED_SECRET).
+  app.use(['/webhook', '/webhooks'], webleadGuard());
+  // Dashboard + APIs: session auth when ADMIN_PASSWORD is configured.
+  // Twilio/webhook/health/audiosocket/login paths stay outside session auth.
+  app.get('/login', (_req, res) => { res.type('html').send(getLoginHtml()); });
+  app.use(['/dashboard', '/api'], (req, res, next) => {
+    // The v2 auth endpoints must be reachable to log in.
+    if (req.path.startsWith('/v2/auth/') || (req.baseUrl === '/api' && req.path.startsWith('/v2/auth/'))) { next(); return; }
+    requireAuth('viewer')(req, res, next);
+  });
+
   // Campaign context resolution middleware (runs on all routes)
   app.use(resolveCampaignMiddleware);
+
+  // Platform v2 APIs (policy, buyers, cadence, rebuttals, QA, profiles, SSE)
+  app.use(platformRouter);
 
   // Mount campaign management routes
   app.use(campaignRouter);
@@ -93,6 +112,11 @@ export async function startServer(): Promise<void> {
 
   // Seed default campaigns (skips if campaigns already loaded from disk)
   seedCampaigns();
+
+  // Platform layer: event ledger, policy engine, buyers, cadence,
+  // rebuttals, QA, profiles, security (loads persisted compliance state)
+  initPlatform();
+  logger.info('server', `Auth: ${authEnabled() ? 'ENABLED' : 'DISABLED (set ADMIN_PASSWORD)'}`);
 
   // Pre-load the office-ambience buffer
   initOfficeNoise()

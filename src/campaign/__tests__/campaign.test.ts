@@ -102,8 +102,8 @@ describe('Campaign Store', () => {
     assert(campaign !== undefined, 'Consumer campaign exists');
     assertEqual(campaign!.type, 'consumer_auto_insurance', 'Consumer campaign type');
     assertEqual(campaign!.active, true, 'Consumer campaign active');
-    assertEqual(campaign!.aiProfile.agentName, 'Alex', 'Consumer agent name');
-    assertEqual(campaign!.aiProfile.companyName, 'Affordable Auto Rates', 'Consumer company name');
+    assertEqual(campaign!.aiProfile.agentName, 'Steve', 'Consumer agent name');
+    assertEqual(campaign!.aiProfile.companyName, 'Smart Quotes', 'Consumer company name');
   });
 
   it('should have agency development campaign', () => {
@@ -111,7 +111,7 @@ describe('Campaign Store', () => {
     assert(campaign !== undefined, 'Agency campaign exists');
     assertEqual(campaign!.type, 'agency_development', 'Agency campaign type');
     assertEqual(campaign!.active, true, 'Agency campaign active');
-    assertEqual(campaign!.aiProfile.agentName, 'Jordan', 'Agency agent name');
+    assertEqual(campaign!.aiProfile.agentName, 'Brook', 'Agency agent name');
     assertEqual(campaign!.aiProfile.companyName, 'Quoting Fast', 'Agency company name');
   });
 
@@ -211,7 +211,7 @@ describe('CampaignContext Resolver', () => {
       fromDid: '+18001111111',
       campaignId: 'campaign-consumer-auto',
       aiProfileId: 'ai-profile-consumer-default',
-      voiceId: 'cjVigY5qzO86Huf0OWal',
+      voiceId: 'jn34bTlmmOgOJU9XfPuy',
       messageProfileId: 'sms-set-consumer',
       timestamp: new Date().toISOString(),
       status: 'completed',
@@ -236,7 +236,7 @@ describe('CampaignContext Resolver', () => {
       fromDid: '+18001111111',
       campaignId: 'campaign-consumer-auto',
       aiProfileId: 'ai-profile-consumer-default',
-      voiceId: 'cjVigY5qzO86Huf0OWal',
+      voiceId: 'jn34bTlmmOgOJU9XfPuy',
       messageProfileId: 'sms-set-consumer',
       timestamp: new Date().toISOString(),
       status: 'completed',
@@ -258,16 +258,23 @@ describe('CampaignContext Resolver', () => {
     assert(result.ambiguous, 'Marked as ambiguous');
   });
 
-  it('should follow priority: DID > lead > call history > explicit', () => {
+  it('should follow priority: explicit > DID > lead > call history', () => {
     setDidMapping('+18002222222', 'campaign-agency-dev');
-    // Even with an explicit consumer campaign_id, DID should win
-    const result = resolveCampaignContext({
+    // Canonical policy: an explicit campaign_id is a deliberate operator
+    // choice and wins over DID inference (matches resolver implementation).
+    const withExplicit = resolveCampaignContext({
       inboundDid: '+18002222222',
       explicitCampaignId: 'campaign-consumer-auto',
     });
-    assert(result.success, 'Resolution succeeded');
-    assertEqual(result.context!.campaignId, 'campaign-agency-dev', 'DID takes priority');
-    assertEqual(result.source, 'inbound_did', 'Source confirms DID priority');
+    assert(withExplicit.success, 'Resolution succeeded');
+    assertEqual(withExplicit.context!.campaignId, 'campaign-consumer-auto', 'Explicit campaign wins');
+    assertEqual(withExplicit.source, 'explicit_campaign_id', 'Source confirms explicit priority');
+
+    // Without an explicit ID, the DID mapping decides.
+    const didOnly = resolveCampaignContext({ inboundDid: '+18002222222' });
+    assert(didOnly.success, 'DID-only resolution succeeded');
+    assertEqual(didOnly.context!.campaignId, 'campaign-agency-dev', 'DID used when no explicit id');
+    assertEqual(didOnly.source, 'inbound_did', 'Source confirms DID');
   });
 });
 
@@ -308,7 +315,7 @@ describe('Enforcement Middleware', () => {
       phone: '+15551234567',
       campaignId: 'campaign-consumer-auto',
       aiProfileId: 'ai-profile-consumer-default',
-      voiceId: 'cjVigY5qzO86Huf0OWal',
+      voiceId: 'jn34bTlmmOgOJU9XfPuy',
     });
     assert(result.allowed, 'Scheduled callback allowed');
   });
@@ -318,7 +325,7 @@ describe('Enforcement Middleware', () => {
       phone: '+15551234567',
       campaignId: 'campaign-consumer-auto',
       aiProfileId: 'ai-profile-agency-default', // WRONG profile
-      voiceId: 'cjVigY5qzO86Huf0OWal',
+      voiceId: 'jn34bTlmmOgOJU9XfPuy',
     });
     assert(!result.allowed, 'Mismatched AI profile blocked');
   });

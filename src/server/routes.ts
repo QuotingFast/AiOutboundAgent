@@ -5,6 +5,9 @@ import { registerPendingSession, hasPendingSession } from '../audio/stream';
 import { TransferConfig, buildSystemPrompt } from '../agent/prompts';
 import { getSettings, updateSettings, recordCall, getCallHistory } from '../config/runtime';
 import { getDashboardHtml } from './dashboard';
+import { getCommandCenterHtml } from '../platform/dashboard/html';
+import { evaluateOutreach, isBlocked, recordSmsStop } from '../platform/policy';
+import { recordEvent as platformRecordEvent } from '../platform/events';
 import { config } from '../config';
 import { getVoicePreset } from '../config/voice-presets';
 import { logger } from '../utils/logger';
@@ -228,6 +231,25 @@ router.post('/call/start', async (req: Request, res: Response) => {
       return;
     }
 
+    // Platform policy engine: consent scope, suppressions, frequency
+    // caps, lead age, blocked states. Records the decision either way;
+    // blocks only when the policy is enforced (hard blocks always).
+    const policyDecision = evaluateOutreach({
+      channel: 'call',
+      phone: to,
+      state: lead.state,
+      campaignId: campaign_id,
+      isTestNumber: isTestNumber(to, settings.tcpaWhitelist),
+    });
+    if (isBlocked(policyDecision)) {
+      res.status(403).json({
+        error: 'Policy engine blocked this call',
+        blocks: policyDecision.blocks,
+        warnings: policyDecision.warnings,
+      });
+      return;
+    }
+
     // A call to a whitelisted test number (your own cell) must never be
     // killed by answering-machine detection. On a self-test you typically
     // answer and wait silently for the agent — which, combined with the
@@ -287,12 +309,15 @@ router.post('/call/start', async (req: Request, res: Response) => {
       to,
       campaignId: ctx?.campaignId || 'none',
     });
+    platformRecordEvent('call.attempted', {
+      state: lead.state, source: 'api', insurer: lead.current_insurer,
+    }, { phone: to, callSid: result.callSid, campaignId: ctx?.campaignId || campaign_id });
 
     res.json({
       call_sid: result.callSid,
       status: result.status,
       campaign_id: ctx?.campaignId || null,
-      compliance_warnings: compliance.warnings,
+      compliance_warnings: [...compliance.warnings, ...policyDecision.warnings],
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -582,7 +607,14 @@ router.get('/api/debug/noise', (_req: Request, res: Response) => {
   res.json(getNoiseDiagnostics());
 });
 
+// Command Center (new operations dashboard). The previous dashboard
+// remains available at /dashboard/legacy during rollout.
 router.get('/dashboard', (_req: Request, res: Response) => {
+  res.type('text/html');
+  res.send(getCommandCenterHtml());
+});
+
+router.get('/dashboard/legacy', (_req: Request, res: Response) => {
   res.type('text/html');
   res.send(getDashboardHtml());
 });
@@ -1701,6 +1733,27 @@ async function handleWeblead(req: Request, res: Response) {
           // Add auto-generated note with form submission details
           addLeadNote(phone, `Weblead received: ${drivers.length} driver(s), ${vehicles.length} vehicle(s). Current insurer: ${currentInsurer || 'N/A'}. Lead ID: ${body.id || 'N/A'}. Campaign: ${resolvedCampaignId || 'none'}`);
 
+          // Ledger: lead received (funnel head) + consent artifact capture.
+          platformRecordEvent('lead.received', {
+                  source: body.source || body.vendor || 'weblead',
+                  state,
+                  insurer: currentInsurer || undefined,
+                  leadId: body.id,
+                  tcpaCompliant: meta.tcpa_compliant,
+                  hasTrustedForm: Boolean(meta.trusted_form_cert_url),
+          }, { phone, campaignId: resolvedCampaignId || undefined });
+          if (meta.trusted_form_cert_url || meta.tcpa_compliant) {
+                  recordConsent({
+                        phone,
+                        consentType: 'express_written',
+                        source: body.source || 'weblead',
+                        timestamp: body.timestamp || new Date().toISOString(),
+                        leadId: body.id ? String(body.id) : undefined,
+                        trustedFormUrl: meta.trusted_form_cert_url,
+                        jornayaId: meta.leadid_code || meta.jornaya_id,
+                  });
+          }
+
           // Check settings for auto-dial
           const settings = getSettings();
           const autoDialEnabled = settings.webleadAutoDialEnabled === true; // default false — must opt-in
@@ -1737,8 +1790,16 @@ async function handleWeblead(req: Request, res: Response) {
                   }
 
                   const compliance = runPreCallComplianceCheck(phone, state, settings.tcpaOverride, settings.tcpaWhitelist);
+                  const webleadPolicy = evaluateOutreach({
+                        channel: 'call',
+                        phone,
+                        state,
+                        campaignId: resolvedCampaignId || undefined,
+                        leadCreatedAt: body.timestamp,
+                        isTestNumber: isTestNumber(phone, settings.tcpaWhitelist),
+                  });
 
-                  if (compliance.allowed) {
+                  if (compliance.allowed && !isBlocked(webleadPolicy)) {
                             // Campaign enforcement for auto-dial (soft — never blocks the call)
                             let campaignCtx: CampaignContext | null = null;
                             if (resolvedCampaignId) {
@@ -1813,6 +1874,9 @@ async function handleWeblead(req: Request, res: Response) {
                                         leadId: body.id,
                                         campaignId: campaignCtx?.campaignId || resolvedCampaignId || 'none',
                             });
+                            platformRecordEvent('call.attempted', {
+                                        state, source: body.source || 'weblead', insurer: currentInsurer || undefined, speedToLead: true,
+                            }, { phone, callSid: cr.callSid, campaignId: campaignCtx?.campaignId || resolvedCampaignId || undefined });
 
                             res.json({
                                         success: true,
@@ -1925,6 +1989,10 @@ router.post('/twilio/sms-status', (req: Request, res: Response) => {
 
 // ── SMS Receive Webhook ─────────────────────────────────────────────
 
+// CTIA/TCPA opt-out keywords that must stop messaging immediately.
+const SMS_STOP_RE = /^\s*(stop|stopall|stop all|unsubscribe|cancel|end|quit|revoke|optout|opt out|remove me)\s*[.!]*\s*$/i;
+const SMS_HELP_RE = /^\s*(help|info)\s*[.!]*\s*$/i;
+
 router.post('/twilio/sms-incoming', (req: Request, res: Response) => {
   const from = req.body?.From || '';
   const body = req.body?.Body || '';
@@ -1940,8 +2008,28 @@ router.post('/twilio/sms-incoming', (req: Request, res: Response) => {
     twilioSid: messageSid,
     triggerReason: 'inbound',
   });
+  platformRecordEvent('sms.received', { preview: body.substring(0, 80) }, { phone: from });
 
-  // Auto-reply if needed
+  // STOP handling: suppress SMS, add to DNC, and confirm — unconditional.
+  if (SMS_STOP_RE.test(body)) {
+    recordSmsStop(from, 'sms_keyword');
+    addToDnc(from);
+    setLeadDisposition(from, 'dnc');
+    addLeadNote(from, `Opt-out via SMS "${body.trim().substring(0, 20)}"`);
+    logger.info('routes', 'SMS STOP processed — number suppressed', { from });
+    res.type('text/xml');
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Message>You have been unsubscribed and will receive no further messages from us. Reply HELP for help.</Message></Response>');
+    return;
+  }
+
+  if (SMS_HELP_RE.test(body)) {
+    const settingsNow = getSettings();
+    res.type('text/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(settingsNow.companyName || 'Quoting Fast')}: we help with the auto-insurance quote you requested. Reply STOP to opt out.</Message></Response>`);
+    return;
+  }
+
+  // Auto-note if needed
   const settings = getSettings();
   if (settings.smsEnabled) {
     const lead = getLeadMemory(from);
@@ -2006,6 +2094,14 @@ router.post('/api/sms/send', async (req: Request, res: Response) => {
       return;
     }
 
+    // Platform policy engine: STOP suppression, consent, quiet hours,
+    // daily SMS caps. Hard blocks (STOP/DNC/complaint) always enforce.
+    const smsPolicy = evaluateOutreach({ channel: 'sms', phone: normalizedPhone, campaignId: campaign_id });
+    if (isBlocked(smsPolicy)) {
+      res.status(403).json({ error: 'Policy engine blocked this SMS', blocks: smsPolicy.blocks });
+      return;
+    }
+
     const entry = logSms({
       phone: normalizedPhone,
       direction: 'outbound',
@@ -2020,6 +2116,7 @@ router.post('/api/sms/send', async (req: Request, res: Response) => {
       const result = await sendSms(normalizedPhone, trimmedBody);
       entry.status = 'sent';
       entry.twilioSid = result.sid;
+      platformRecordEvent('sms.sent', { templateId: templateId || null, trigger: 'manual' }, { phone: normalizedPhone, campaignId: campaign_id });
       res.json({ success: true, smsId: entry.id, twilioSid: result.sid });
     } catch (err) {
       entry.status = 'failed';

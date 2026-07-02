@@ -29,6 +29,18 @@ import {
 } from '../scheduler';
 import { getCampaign } from '../campaign/store';
 import { CampaignConfig } from '../campaign/types';
+import { recordEvent as platformRecordEvent } from '../platform/events';
+import {
+  hasConfiguredBuyers,
+  selectBuyer as selectPlatformBuyer,
+  createTransfer as createPlatformTransfer,
+  updateTransferStage as updatePlatformTransferStage,
+  deliverHandoff as deliverPlatformHandoff,
+  buildWhisper as buildPlatformWhisper,
+  TransferRecord as PlatformTransferRecord,
+  HandoffPacket as PlatformHandoffPacket,
+} from '../platform/buyers';
+import { scoreCall as platformScoreCall } from '../platform/qa';
 
 // Map of callSid -> session data for passing lead/transfer info
 const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig; toPhone?: string; campaignId?: string }>();
@@ -314,6 +326,11 @@ export function handleMediaStream(twilioWs: WebSocket): void {
             }, 5000); // Check every 5 seconds
           }
           if (callerNumber) recordPhoneCall(callerNumber);
+          // Media only streams once the call is connected — for outbound
+          // calls this is the "answered" moment in the funnel.
+          if (callDirection === 'outbound') {
+            platformRecordEvent('call.answered', {}, { phone: callerNumber, callSid, campaignId: activeCampaign?.id });
+          }
           const sessionAccepted = registerSession(callSid, callerNumber, leadData.first_name);
           if (!sessionAccepted) {
             logger.warn('stream', 'Max concurrency reached, call may degrade', { sessionId, callSid });
@@ -1790,15 +1807,79 @@ export function handleMediaStream(twilioWs: WebSocket): void {
       }
 
       let targetNumber: string | undefined;
+      let orchestratedTransfer: PlatformTransferRecord | undefined;
+      let orchestratedWhisper: string | undefined;
 
-      if (route === 'allstate' && transferConfig?.allstate_number) {
-        targetNumber = transferConfig.allstate_number;
-      } else if (route === 'other' && transferConfig?.non_allstate_number) {
-        targetNumber = transferConfig.non_allstate_number;
-      } else if (transferConfig?.target_number) {
-        targetNumber = transferConfig.target_number;
-      } else {
-        targetNumber = transferConfig?.non_allstate_number || transferConfig?.allstate_number;
+      // Consumer said yes — this is the funnel's accept point.
+      platformRecordEvent('transfer.offered', { route }, { phone: callerNumber, callSid, campaignId: activeCampaign?.id });
+      platformRecordEvent('transfer.accepted_by_consumer', { utterance: redactPII(lastAcceptedUserText) }, { phone: callerNumber, callSid, campaignId: activeCampaign?.id });
+      platformRecordEvent('call.qualified', {
+        insurer: args.current_carrier, tenure: args.tenure, vehicleCount: args.vehicle_count, route,
+      }, { phone: callerNumber, callSid, campaignId: activeCampaign?.id });
+
+      // Buyer orchestration: when buyers are configured, real eligibility
+      // (state, operating hours, caps, priority) picks the destination and
+      // a structured handoff packet is delivered. The LLM's route arg is a
+      // preference hint, not the decision.
+      if (hasConfiguredBuyers()) {
+        const insuredArg = args.current_carrier && !/none|no insurance|uninsured/i.test(String(args.current_carrier));
+        const { selected, ranked } = selectPlatformBuyer({
+          state: leadData.state,
+          currentInsurer: args.current_carrier,
+          insured: insuredArg,
+          continuousCoverage6mo: args.tenure ? !/(<|less|under)\s*6|month[s]? only|new/i.test(String(args.tenure)) : undefined,
+          campaignId: activeCampaign?.id,
+          routeTag: route,
+        });
+        if (selected) {
+          targetNumber = selected.buyer.destinationNumber;
+          const packet: PlatformHandoffPacket = {
+            packetId: `pkt_${callSid || sessionId}`,
+            lead: { firstName: leadData.first_name, phone: callerNumber, state: leadData.state },
+            consent: {
+              transferConsentUtterance: lastAcceptedUserText,
+              transferConsentAt: new Date().toISOString(),
+            },
+            submission: { campaignId: activeCampaign?.id },
+            qualification: {
+              currentInsurer: args.current_carrier,
+              insured: insuredArg,
+              continuousCoverage: args.tenure,
+              vehicleCount: args.vehicle_count ? Number(args.vehicle_count) : undefined,
+            },
+            call: { callSid: callSid || sessionId, aiSummary: args.reason },
+          };
+          orchestratedTransfer = createPlatformTransfer({
+            callSid: callSid || sessionId,
+            buyer: selected.buyer,
+            phone: callerNumber,
+            campaignId: activeCampaign?.id,
+            packet,
+            consentUtterance: lastAcceptedUserText,
+          });
+          orchestratedWhisper = buildPlatformWhisper(packet);
+          deliverPlatformHandoff(selected.buyer, orchestratedTransfer).catch(() => { /* logged inside */ });
+          logger.info('stream', 'Buyer selected by orchestrator', {
+            sessionId, buyer: selected.buyer.name, route,
+            rejected: ranked.filter(r => !r.eligible).map(r => `${r.buyer.name}: ${r.reasons[0] || ''}`),
+          });
+        } else {
+          logger.warn('stream', 'No eligible buyer right now — falling back to legacy transfer numbers', {
+            sessionId, reasons: ranked.map(r => `${r.buyer.name}: ${r.reasons.join('; ')}`),
+          });
+        }
+      }
+
+      if (!targetNumber) {
+        if (route === 'allstate' && transferConfig?.allstate_number) {
+          targetNumber = transferConfig.allstate_number;
+        } else if (route === 'other' && transferConfig?.non_allstate_number) {
+          targetNumber = transferConfig.non_allstate_number;
+        } else if (transferConfig?.target_number) {
+          targetNumber = transferConfig.target_number;
+        } else {
+          targetNumber = transferConfig?.non_allstate_number || transferConfig?.allstate_number;
+        }
       }
 
       // In DeepSeek mode, don't send function output to OpenAI — DeepSeek handles its own tool responses
@@ -1814,16 +1895,24 @@ export function handleMediaStream(twilioWs: WebSocket): void {
 
       if (targetNumber) {
         await new Promise(r => setTimeout(r, 1500));
-        const whisperBriefing = buildWhisperBriefing(leadData, route, args);
+        const whisperBriefing = orchestratedWhisper || buildWhisperBriefing(leadData, route, args);
         logger.info('stream', 'Executing warm transfer', {
           sessionId,
           route,
           target: targetNumber,
           briefing: whisperBriefing,
         });
+        if (!orchestratedTransfer) {
+          // Legacy path still gets ledger telemetry (no buyer record).
+          platformRecordEvent('transfer.initiated', { route, orchestrated: false }, { phone: callerNumber, callSid, campaignId: activeCampaign?.id });
+        }
         const success = await executeWarmTransfer(callSid, targetNumber, whisperBriefing);
+        if (orchestratedTransfer) {
+          updatePlatformTransferStage(orchestratedTransfer.id, success ? 'buyer_ringing' : 'failed', success ? undefined : 'redirect failed');
+        }
         if (!success) {
           logger.error('stream', 'Transfer failed', { sessionId, route });
+          platformRecordEvent('transfer.failed', { route, reason: 'redirect_failed' }, { phone: callerNumber, callSid, campaignId: activeCampaign?.id });
           if (analytics) analytics.setOutcome('ended', 'Transfer failed');
           const failMsg = '[System: The transfer failed. The line did not connect. Let the caller know and ask if they want to try again.]';
           if (useDeepSeek) {
@@ -2303,6 +2392,29 @@ export function handleMediaStream(twilioWs: WebSocket): void {
         // Run post-call workflow (async, don't block cleanup)
         runPostCallWorkflow(analyticsData, callerNumber, leadData.first_name, s.agentName, s.companyName)
           .catch(err => logger.error('stream', 'Post-call workflow error', { error: String(err) }));
+
+        // Ledger + QA scoring against the compliance/quality rubric
+        platformRecordEvent('call.completed', {
+          outcome: analyticsData.outcome, durationMs: analyticsData.durationMs || 0,
+        }, { phone: callerNumber, callSid, campaignId: activeCampaign?.id });
+        try {
+          if ((analyticsData.transcript || []).length >= 2) {
+            platformScoreCall({
+              callSid,
+              campaignId: activeCampaign?.id,
+              phone: callerNumber,
+              transcript: (analyticsData.transcript || [])
+                .filter(t => t.role !== 'system')
+                .map(t => ({ role: t.role === 'agent' ? 'agent' as const : 'user' as const, text: t.text })),
+              outcome: analyticsData.outcome,
+              transferInitiated: analyticsData.outcome === 'transferred',
+              transferConsentUtterance: analyticsData.outcome === 'transferred' ? lastAcceptedUserText : undefined,
+              durationMs: analyticsData.durationMs || 0,
+            });
+          }
+        } catch (err) {
+          logger.error('stream', 'QA scoring failed', { sessionId, error: String(err) });
+        }
 
         // Quality alerts (async, don't block cleanup)
         if (s.qualityAlertsEnabled) {

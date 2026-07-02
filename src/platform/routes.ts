@@ -33,6 +33,13 @@ import {
   handleLinkClick, recordWebformSubmission, recordOfferClick, recordConversion,
   revenueSummary, listConversions, renewalPipeline, runRenewalScan, ConversionType,
 } from './lifecycle';
+import {
+  getJourneyDefinitions, upsertJourneyDefinition, getJourneyState, journeyStats,
+  journeyResume, enterJourney, processDueJourneySteps,
+} from './journey';
+import { buildLeadProfile } from './leadprofile';
+import { composeSms, SmsIntent } from './humanizer';
+import { getSettings } from '../config/runtime';
 import { seedDemoData } from './demo';
 import { getDncList, getConsent, recordConsent } from '../compliance';
 import { logger } from '../utils/logger';
@@ -453,6 +460,71 @@ platformRouter.post('/api/v2/links', requireAuth('operator'), (req: AuthedReques
     return;
   }
   res.status(201).json(createTrackedLink(String(phone), kind, { campaignId, sentVia: 'manual' }));
+});
+
+// ── Journey funnel ──────────────────────────────────────────────────
+
+platformRouter.get('/api/v2/journey/definitions', requireAuth('viewer'), (_req, res) => res.json(getJourneyDefinitions()));
+
+platformRouter.post('/api/v2/journey/definitions', requireAuth('operator'), (req: AuthedRequest, res) => {
+  const def = req.body || {};
+  if (!def.id || !Array.isArray(def.steps)) { res.status(400).json({ error: 'id and steps[] required' }); return; }
+  res.json(upsertJourneyDefinition(def, actorOf(req)));
+});
+
+platformRouter.get('/api/v2/journey/stats', requireAuth('viewer'), (_req, res) => res.json(journeyStats()));
+
+platformRouter.get('/api/v2/journey/lead/:phone', requireAuth('viewer'), (req, res) => {
+  const st = getJourneyState(req.params.phone);
+  if (!st) { res.status(404).json({ error: 'lead not in a journey' }); return; }
+  res.json(st);
+});
+
+platformRouter.post('/api/v2/journey/lead/:phone/enter', requireAuth('operator'), (req: AuthedRequest, res) => {
+  const st = enterJourney(req.params.phone, { campaignId: req.body?.campaignId, definitionId: req.body?.definitionId });
+  if (!st) { res.status(400).json({ error: 'could not enter journey (DNC or no active definition)' }); return; }
+  res.json(st);
+});
+
+platformRouter.post('/api/v2/journey/lead/:phone/resume', requireAuth('operator'), (req: AuthedRequest, res) => {
+  const st = journeyResume(req.params.phone, actorOf(req));
+  if (!st) { res.status(400).json({ error: 'lead is not paused (engaged)' }); return; }
+  res.json(st);
+});
+
+platformRouter.post('/api/v2/journey/tick', requireAuth('operator'), async (_req, res) => {
+  res.json({ processed: await processDueJourneySteps() });
+});
+
+// Message preview: exactly what a given lead would receive for an
+// intent, personalized from their real quote data — for QA before a
+// campaign goes live.
+platformRouter.post('/api/v2/journey/preview-sms', requireAuth('viewer'), (req, res) => {
+  const { phone, intent } = req.body || {};
+  if (!phone || !intent) { res.status(400).json({ error: 'phone and intent required' }); return; }
+  const profile = buildLeadProfile(String(phone));
+  const s = getSettings();
+  const spouse = profile.additionalDrivers.find(d => d.relationship === 'spouse');
+  const { body, sendDelayMs } = composeSms(String(phone), intent as SmsIntent, {
+    firstName: profile.firstName,
+    agentName: s.agentName,
+    companyName: s.companyName,
+    state: profile.state,
+    city: profile.city,
+    currentInsurer: profile.currentInsurer,
+    vehicle: profile.vehicles[0],
+    vehicleCount: profile.vehicleCount,
+    product: profile.product,
+    spouseFirstName: spouse?.firstName,
+    additionalDriverCount: profile.additionalDrivers.length,
+    hasSr22: profile.hasSr22,
+    link: intent === 'link_send' || intent === 'renewal' ? '(tracked link)' : undefined,
+  });
+  res.json({ body, sendDelayMs, profile });
+});
+
+platformRouter.get('/api/v2/leadprofile/:phone', requireAuth('viewer'), (req, res) => {
+  res.json(buildLeadProfile(req.params.phone));
 });
 
 // ── Demo seeding ────────────────────────────────────────────────────

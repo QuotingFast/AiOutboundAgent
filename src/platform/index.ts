@@ -11,6 +11,7 @@ import { loadQa } from './qa';
 import { loadProfiles } from './profiles';
 import { loadSecurity } from './security';
 import { loadLifecycle } from './lifecycle';
+import { loadJourneys } from './journey';
 import { loadComplianceFromDisk } from '../compliance';
 import { logger } from '../utils/logger';
 
@@ -23,6 +24,8 @@ export { parseCallbackRequest } from './cadence';
 export { scoreCall } from './qa';
 export { detectObjection } from './rebuttals';
 export { createTrackedLink, recordConversion, getLeadLifecycle, startLifecycleWorker } from './lifecycle';
+export { enterJourney, journeyMarkReplied, journeyResume, setJourneyHandlers, startJourneyWorker, getJourneyState } from './journey';
+export { buildLeadProfile, voicePersonalizationBrief } from './leadprofile';
 
 export function initPlatform(): void {
   loadComplianceFromDisk();
@@ -35,5 +38,6 @@ export function initPlatform(): void {
   loadProfiles();
   loadSecurity();
   loadLifecycle();
-  logger.info('platform', 'Platform layer initialized (events, policy, buyers, cadence, rebuttals, QA, profiles, security, lifecycle)');
+  loadJourneys();
+  logger.info('platform', 'Platform layer initialized (events, policy, buyers, cadence, rebuttals, QA, profiles, security, lifecycle, journeys)');
 }

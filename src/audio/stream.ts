@@ -42,6 +42,7 @@ import {
 } from '../platform/buyers';
 import { scoreCall as platformScoreCall } from '../platform/qa';
 import { createTrackedLink as createQuoteLink } from '../platform/lifecycle';
+import { buildLeadProfile as buildPlatformLeadProfile, voicePersonalizationBrief as buildVoicePersonalizationBrief } from '../platform/leadprofile';
 
 // Map of callSid -> session data for passing lead/transfer info
 const pendingSessions = new Map<string, { lead: LeadData; transfer?: TransferConfig; toPhone?: string; campaignId?: string }>();
@@ -526,6 +527,17 @@ export function handleMediaStream(twilioWs: WebSocket): void {
     if (leadContext) {
       instructions += '\n\n' + leadContext;
     }
+
+    // Structured personalization brief: the specific cars, drivers,
+    // carrier, and area from the original quote — with instructions to
+    // confirm known facts instead of re-asking them, so the call feels
+    // like a person with their file already open.
+    try {
+      const personalization = buildVoicePersonalizationBrief(buildPlatformLeadProfile(callerNumber));
+      if (personalization) {
+        instructions += '\n\n' + personalization;
+      }
+    } catch { /* personalization is best-effort */ }
 
     // Build transfer config: campaign routes take priority, then global settings
     if (!transferConfig) {

@@ -86,6 +86,22 @@ function seedProfiles(): AgentProfile[] {
       temperature: 0.6, maxResponseTokens: 180, amdEnabled: true, amdAction: 'hangup',
       backgroundNoiseEnabled: false, bargeInDebounceMs: 200, echoSuppressionMs: 150, silenceTimeoutSec: 40,
     }),
+    preset('prof_hyper_real', 'Hyper-Real Office', 'Maximum naturalness: office ambience under the whole call, expressive ElevenLabs settings, slightly slower human pacing, short turns. Pair with the natural-speech prompt habits.', 'hyper-real', {
+      voiceProvider: 'elevenlabs',
+      temperature: 0.75,
+      maxResponseTokens: 100,
+      backgroundNoiseEnabled: true,
+      backgroundNoiseVolume: 0.06,
+      elevenlabsStability: 0.38,        // lower stability = more prosody variation
+      elevenlabsSimilarityBoost: 0.8,
+      elevenlabsStyle: 0.45,            // expressive, not monotone
+      elevenlabsUseSpeakerBoost: true,
+      elevenlabsSpeed: 0.97,            // a touch under 1.0 reads as relaxed
+      silenceDurationMs: 350,
+      bargeInDebounceMs: 110,
+      echoSuppressionMs: 150,
+      silenceTimeoutSec: 35,
+    }),
   ];
 }
 

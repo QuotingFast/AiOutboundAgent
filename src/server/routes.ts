@@ -8,6 +8,7 @@ import { getDashboardHtml } from './dashboard';
 import { getCommandCenterHtml } from '../platform/dashboard/html';
 import { evaluateOutreach, isBlocked, recordSmsStop } from '../platform/policy';
 import { recordEvent as platformRecordEvent } from '../platform/events';
+import { enterJourney, journeyMarkReplied } from '../platform/journey';
 import { config } from '../config';
 import { getVoicePreset } from '../config/voice-presets';
 import { logger } from '../utils/logger';
@@ -1878,6 +1879,10 @@ async function handleWeblead(req: Request, res: Response) {
                                         state, source: body.source || 'weblead', insurer: currentInsurer || undefined, speedToLead: true,
                             }, { phone, callSid: cr.callSid, campaignId: campaignCtx?.campaignId || resolvedCampaignId || undefined });
 
+                            // Enter the scripted journey — first call already
+                            // fired, so the funnel picks up at the follow-up steps.
+                            enterJourney(phone, { campaignId: campaignCtx?.campaignId || resolvedCampaignId || undefined, alreadyDialed: true });
+
                             res.json({
                                         success: true,
                                         phone,
@@ -1893,6 +1898,9 @@ async function handleWeblead(req: Request, res: Response) {
                   }
 
                   logger.info('routes', 'Weblead compliance failed', { phone, state, campaignId: resolvedCampaignId });
+                  // Couldn't dial right now (e.g. quiet hours) — still enter
+                  // the journey so the funnel dials in the next valid window.
+                  enterJourney(phone, { campaignId: resolvedCampaignId || undefined });
                   res.json({
                             success: true,
                             phone,
@@ -1922,6 +1930,9 @@ async function handleWeblead(req: Request, res: Response) {
                           ? 'Set webleadAutoDialEnabled=true in dashboard Settings'
                           : 'Set defaultFromNumber in dashboard Settings or TWILIO_FROM env var',
           });
+          // Even when auto-dial is off, the lead enters the journey so the
+          // scripted funnel (calls + humanized SMS) still runs on schedule.
+          enterJourney(phone, { campaignId: resolvedCampaignId || undefined });
           res.json({
                   success: true,
                   phone,
@@ -2028,6 +2039,10 @@ router.post('/twilio/sms-incoming', (req: Request, res: Response) => {
     res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(settingsNow.companyName || 'Quoting Fast')}: we help with the auto-insurance quote you requested. Reply STOP to opt out.</Message></Response>`);
     return;
   }
+
+  // A real reply means a human thread is open — pause the automated
+  // journey so scheduled messages never stomp a live conversation.
+  journeyMarkReplied(from);
 
   // Auto-note if needed
   const settings = getSettings();

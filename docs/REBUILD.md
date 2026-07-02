@@ -190,7 +190,39 @@ Mechanics:
   (`values` in lifecycle config); `/api/v2/revenue` rolls up by type/day plus
   link-funnel stats (sent → clicked → submitted).
 
-## 8. Known compliance-policy decision made in this rebuild
+## 8. Lead Journey Funnel + Humanization (`src/platform/journey.ts`, `humanizer.ts`, `leadprofile.ts`)
+
+Every weblead enters a scripted, multi-day funnel the instant it arrives, personalized
+from its actual quote data.
+
+**Journey (default, fully configurable):** call #1 (speed-to-lead) → intro SMS at +2m (only
+if unanswered) → call #2 at +3.5h in a different window → second-try SMS → day-1 value
+nudge → evening call #3 → day-2 link offer → day-3 tracked prefilled link → day-5 call #4
+→ day-7 soft close → hands off to the lifecycle renewal loop. Every step is policy-gated
+(quiet hours defer, DNC/STOP exit), skips the "couldn't reach you" track once contact is
+made, and an inbound SMS reply flips the lead to `engaged` so automation never stomps a
+live human thread (operators `resume` when done).
+
+**Lead profile (`leadprofile.ts`)** is one normalized view over everything the weblead
+carries — all vehicles, all drivers (spouse/additional flagged), address, current policy,
+coverage, SR-22. Both SMS and voice read from it, so the text and the call reference the
+same real facts.
+
+**Humanized SMS (`humanizer.ts`)** reads like a person typed it: personalized (name, the
+specific car, carrier, city, spouse), varied per lead via a deterministic per-phone persona
+(the same "person" texts them consistently; different leads get different wording), no
+`{{tokens}}` or marketing-speak, and human send-timing (20–90s jitter + "typing" delay).
+Compliance line that never bends: the **first** text in a thread always identifies the
+brand and carries STOP; follow-ups inside an active thread read fully conversational.
+
+**Hyper-real voice:** the `prof_hyper_real` agent profile layers office ambience under the
+whole call with expressive ElevenLabs settings and slightly relaxed pacing; the prompt gains
+an "office presence" section (pull-up-your-file beats, confirm-don't-re-ask, natural desk
+color) and a structured personalization brief injected per call so the agent references the
+caller's real cars/drivers/carrier. AI-disclosure rules are respected — the agent stays
+natural but never affirmatively claims to be human when directly asked.
+
+## 9. Known compliance-policy decision made in this rebuild
 
 The inbound prompt previously instructed the agent to claim to be human when asked
 ("No no, I'm real… Yeah, of course."). This was changed to match the outbound stance

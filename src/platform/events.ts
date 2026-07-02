@@ -24,7 +24,9 @@ export type PlatformEventType =
   | 'config.changed' | 'profile.applied' | 'profile.rolledback'
   | 'auth.login' | 'auth.denied' | 'export.compliance'
   | 'conversion.recorded' | 'link.sent' | 'link.clicked'
-  | 'consent.renewed' | 'lifecycle.renewal_due';
+  | 'consent.renewed' | 'lifecycle.renewal_due'
+  | 'journey.entered' | 'journey.touch' | 'journey.engaged'
+  | 'journey.converted' | 'journey.exited' | 'journey.completed';
 
 export interface PlatformEvent {
   id: string;

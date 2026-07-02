@@ -25,8 +25,15 @@ import {
   recordWebformSubmission, recordOfferClick, revenueSummary, listConversions, runRenewalScan,
 } from '../lifecycle';
 import { resolveTimezone, localTimeIn } from '../timezone';
+import { composeSms } from '../humanizer';
+import { buildLeadProfile, voicePersonalizationBrief, vehicleShorthand } from '../leadprofile';
+import {
+  loadJourneys, enterJourney, getJourneyState, journeyMarkReplied, journeyResume,
+  setJourneyHandlers, processDueJourneySteps, journeyStats,
+} from '../journey';
 import { addToDnc, removeFromDnc, loadComplianceFromDisk, recordConsent, getConsent } from '../../compliance';
 import { createOrUpdateLead } from '../../memory';
+import { updateSettings } from '../../config/runtime';
 
 let passed = 0;
 let failed = 0;
@@ -68,6 +75,7 @@ loadQa();
 loadProfiles();
 loadSecurity();
 loadLifecycle();
+loadJourneys();
 
 describe('Timezone resolution', () => {
   assertEqual(resolveTimezone('CA').tz, 'America/Los_Angeles', 'State CA → Pacific');
@@ -415,6 +423,141 @@ describe('Lifecycle — transfer auto-attribution', () => {
   assert(attributed[0].value > 0, 'Transfer conversion carries configured value');
 });
 
+describe('Lead profile extraction', () => {
+  const phone = '+15551240001';
+  createOrUpdateLead(phone, {
+    name: 'Dana Whitfield', state: 'TX', currentInsurer: 'GEICO',
+    customFields: {
+      contact: { firstName: 'Dana', lastName: 'Whitfield', city: 'Plano', zipCode: '75023', email: 'dana@example.com' },
+      vehicles: [
+        { year: '2021', make: 'Toyota', model: 'RAV4', primaryUse: 'commute' },
+        { year: '2016', make: 'Ford', model: 'F-150' },
+      ],
+      drivers: [
+        { firstName: 'Dana', lastName: 'Whitfield', relationship: 'self', maritalStatus: 'married' },
+        { firstName: 'Marcus', lastName: 'Whitfield', relationship: 'spouse', maritalStatus: 'married' },
+      ],
+      currentPolicy: { insurer: 'GEICO', coverageType: 'full', insuredSince: '2021' },
+    },
+  });
+  const p = buildLeadProfile(phone);
+  assertEqual(p.firstName, 'Dana', 'First name extracted');
+  assertEqual(p.vehicles.length, 2, 'Both vehicles extracted');
+  assertEqual(p.additionalDrivers.length, 1, 'Spouse counted as additional driver');
+  assertEqual(p.additionalDrivers[0].firstName, 'Marcus', 'Spouse name available');
+  assert(p.hasSpouseDriver, 'Spouse flag set');
+  assertEqual(p.city, 'Plano', 'City extracted');
+  assert(vehicleShorthand(p).includes('RAV4'), 'Vehicle shorthand uses the actual car');
+  const brief = voicePersonalizationBrief(p);
+  assert(brief.includes('2021 Toyota RAV4') && brief.includes('Marcus (spouse)') && brief.includes('GEICO'), 'Voice brief carries cars, spouse, carrier');
+  assert(brief.includes('Never re-ask'), 'Voice brief instructs confirm-not-re-ask');
+});
+
+describe('Humanized SMS composer', () => {
+  const phoneA = '+15551240001';   // Dana (rich profile above)
+  const phoneB = '+15551240002';
+  const base = { agentName: 'Steve', companyName: 'Smart Quotes' };
+  const pA = buildLeadProfile(phoneA);
+  const msgA = composeSms(phoneA, 'intro_missed_call', {
+    ...base, firstName: pA.firstName, state: pA.state, city: pA.city,
+    currentInsurer: pA.currentInsurer, vehicle: pA.vehicles[0], vehicleCount: pA.vehicleCount, product: pA.product,
+  });
+  assert(msgA.body.includes('Dana'), 'Intro uses their name');
+  assert(msgA.body.includes('RAV4') || msgA.body.includes("'21"), 'Intro references their actual car');
+  assert(msgA.body.includes('Smart Quotes'), 'First text identifies the brand (required)');
+  assert(/STOP/i.test(msgA.body), 'First text carries STOP language (required)');
+  assert(!msgA.body.includes('{{') && !msgA.body.includes('}}'), 'No template tokens leak');
+  assert(msgA.sendDelayMs >= 20000, 'Human send delay applied (never instant)');
+
+  const msgB = composeSms(phoneB, 'intro_missed_call', { ...base, firstName: 'Rob', product: 'auto' });
+  assert(msgA.body !== msgB.body, 'Different leads get different wording');
+  const msgA2 = composeSms(phoneA, 'intro_missed_call', {
+    ...base, firstName: pA.firstName, state: pA.state, city: pA.city,
+    currentInsurer: pA.currentInsurer, vehicle: pA.vehicles[0], vehicleCount: pA.vehicleCount, product: pA.product,
+  });
+  assertEqual(msgA.body, msgA2.body, 'Same lead gets a stable persona (deterministic)');
+
+  const nudge = composeSms(phoneA, 'value_nudge', {
+    ...base, firstName: pA.firstName, city: pA.city, currentInsurer: pA.currentInsurer,
+    vehicle: pA.vehicles[0], product: pA.product,
+    spouseFirstName: 'Marcus', additionalDriverCount: 1,
+  });
+  assert(!/STOP/i.test(nudge.body) || nudge.body.length > 0, 'Follow-ups inside a thread read conversational');
+  const linkMsg = composeSms(phoneA, 'link_send', { ...base, link: 'https://x.co/t/abc123' });
+  assert(linkMsg.body.includes('https://x.co/t/abc123'), 'Link message carries the tracked link');
+
+  const followUps = ['second_try', 'value_nudge', 'link_offer', 'last_checkin'] as const;
+  const bodies = followUps.map(i => composeSms(phoneA, i, { ...base, firstName: pA.firstName, vehicle: pA.vehicles[0], product: 'auto' }).body);
+  assertEqual(new Set(bodies).size, bodies.length, 'Every step in a journey reads differently');
+});
+
+describe('Journey engine', () => {
+  const phone = '+15551240003';
+  createOrUpdateLead(phone, { name: 'Jess Park', state: 'FL', currentInsurer: 'Progressive' });
+  const dials: string[] = [];
+  const texts: Array<{ to: string; body: string }> = [];
+  setJourneyHandlers(
+    async p => { dials.push(p); return true; },
+    async (to, body) => { texts.push({ to, body }); return true; },
+  );
+
+  const st = enterJourney(phone, { campaignId: 'campaign-consumer-auto', alreadyDialed: true })!;
+  assert(Boolean(st), 'Lead enters the journey');
+  assertEqual(st.currentStepIndex, 1, 'Speed-to-lead dial counts as step 1 done');
+  assertEqual(st.touches[0].result, 'speed_to_lead_dial', 'First touch recorded');
+  assert(st.nextTouchAt !== null, 'Next touch scheduled');
+
+  const again = enterJourney(phone, { campaignId: 'campaign-consumer-auto' })!;
+  assertEqual(again.enteredAt, st.enteredAt, 'Re-entry does not restart an active journey');
+
+  // Reply pauses automation; resume re-arms it.
+  journeyMarkReplied(phone);
+  assertEqual(getJourneyState(phone)!.status, 'engaged', 'Inbound reply pauses the journey');
+  assertEqual(getJourneyState(phone)!.nextTouchAt, null, 'No scheduled touches while engaged');
+  const resumed = journeyResume(phone, 'test')!;
+  assertEqual(resumed.status, 'active', 'Resume re-activates');
+  assert(resumed.nextTouchAt !== null, 'Resume reschedules the pending step');
+
+  const stats = journeyStats();
+  assert(stats.active >= 1 && stats.byStep.length > 0, 'Journey stats aggregate per step');
+});
+
+async function journeyExecutionTests(): Promise<void> {
+  console.log('\n=== Journey execution (due steps, policy gating) ===');
+  const phone = '+15551240005';
+  createOrUpdateLead(phone, {
+    name: 'Sam Ruiz', state: 'FL', currentInsurer: 'Allstate',
+    customFields: { vehicles: [{ year: '2019', make: 'Honda', model: 'Civic' }], contact: { firstName: 'Sam', city: 'Tampa' } },
+  });
+  const texts: Array<{ to: string; body: string }> = [];
+  setJourneyHandlers(async () => true, async (to, body) => { texts.push({ to, body }); return true; });
+  updatePolicyConfig({ quietHoursStart: 0, quietHoursEnd: 24, maxSmsPerDay: 0 }, 'test');
+  updateSettings({ smsEnabled: true });
+
+  const st = enterJourney(phone, { alreadyDialed: true })!;
+  // Force the pending SMS step due now.
+  st.nextTouchAt = new Date(Date.now() - 1000).toISOString();
+  const processed = await processDueJourneySteps();
+  assert(processed >= 1, 'Due journey step processed');
+  const sent = texts.find(t => t.to === phone);
+  assert(Boolean(sent), 'Journey sent the intro SMS');
+  assert(Boolean(sent && sent.body.includes('Sam') && (sent.body.includes('Civic') || sent.body.includes("'19"))), 'Journey SMS personalized with name + actual car');
+  assert(Boolean(sent && /STOP/i.test(sent.body)), 'Journey intro SMS carries STOP');
+  const after = getJourneyState(phone)!;
+  assertEqual(after.currentStepIndex, 2, 'Journey advanced past the SMS step');
+  assertEqual(after.touches[after.touches.length - 1].result, 'sent', 'Touch outcome recorded');
+  updatePolicyConfig({ quietHoursStart: 8, quietHoursEnd: 21, maxSmsPerDay: 2 }, 'test');
+
+  // DNC exit is ledger-driven (addToDnc records the event on a microtask).
+  const dncPhone = '+15551240004';
+  createOrUpdateLead(dncPhone, { name: 'Optout Olly', state: 'FL' });
+  enterJourney(dncPhone, {});
+  addToDnc(dncPhone);
+  await new Promise(r => setTimeout(r, 50));
+  assertEqual(getJourneyState(dncPhone)!.status, 'exited', 'DNC exits the journey');
+  removeFromDnc(dncPhone);
+}
+
 async function renewalWorkerTests(): Promise<void> {
   console.log('\n=== Lifecycle — renewal pipeline & worker ===');
   const phone = '+15551230003';
@@ -449,6 +592,11 @@ renewalWorkerTests()
   .catch(err => {
     failed++;
     failures.push(`renewal worker tests threw: ${err instanceof Error ? err.message : String(err)}`);
+  })
+  .then(() => journeyExecutionTests())
+  .catch(err => {
+    failed++;
+    failures.push(`journey execution tests threw: ${err instanceof Error ? err.message : String(err)}`);
   })
   .finally(() => {
     console.log('\n' + '='.repeat(50));

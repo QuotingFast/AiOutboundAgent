@@ -329,10 +329,6 @@ async def websocket_endpoint(websocket: WebSocket):
             voice_id=ELEVENLABS_VOICE_ID,
             model=ELEVENLABS_MODEL,
             sample_rate=8000,
-            params=ElevenLabsTTSService.InputParams(
-                stability=0.45, similarity_boost=0.78, style=0.10,
-                use_speaker_boost=True, speed=0.97, auto_mode=True,
-            ),
         )
     elif TTS_PROVIDER == "deepgram":
         tts = DeepgramTTSService(api_key=DEEPGRAM_API_KEY, voice=DEEPGRAM_VOICE, sample_rate=8000)

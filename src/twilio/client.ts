@@ -18,6 +18,16 @@ export interface StartCallParams {
 }
 
 export async function startOutboundCall(params: StartCallParams): Promise<{ callSid: string; status: string }> {
+  // HARD KILL SWITCH. Env-var based, so it survives deploys and can NEVER
+  // be re-armed by an ephemeral-disk reset the way the on-disk settings
+  // can. When OUTBOUND_KILL_SWITCH=true, no call is placed by ANY path —
+  // weblead auto-dial, journeys, scheduler, callbacks, or manual. Remove
+  // the env var in Render to allow dialing again.
+  if (config.outboundKillSwitch) {
+    logger.warn('twilio-client', 'BLOCKED outbound call — OUTBOUND_KILL_SWITCH is on', { to: params.to });
+    throw new Error('Outbound dialing is disabled (OUTBOUND_KILL_SWITCH). Remove the env var in Render to re-enable.');
+  }
+
   const fromNumber = params.from || config.twilio.fromNumber;
   if (!fromNumber) {
     throw new Error('No "from" number provided and TWILIO_FROM_NUMBER not set');

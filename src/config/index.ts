@@ -77,4 +77,10 @@ export const config = {
   debug: optional('DEBUG', 'false') === 'true',
 
   databaseUrl: process.env.DATABASE_URL || '',
+
+  // Hard kill switch for ALL outbound dialing. Env-var based so it
+  // survives deploys (the on-disk pause setting does not, since there's
+  // no database). Set OUTBOUND_KILL_SWITCH=true in Render to guarantee
+  // nothing dials regardless of campaign / pause / auto-dial state.
+  outboundKillSwitch: process.env.OUTBOUND_KILL_SWITCH === 'true',
 };

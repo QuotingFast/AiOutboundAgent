@@ -32,6 +32,7 @@ import {
   getLifecycleConfig, updateLifecycleConfig, getLeadLifecycle, createTrackedLink,
   handleLinkClick, recordWebformSubmission, recordOfferClick, recordConversion,
   revenueSummary, listConversions, renewalPipeline, runRenewalScan, ConversionType,
+  getTrackedLink, buildDestinationUrl, buildPrefillData,
 } from './lifecycle';
 import {
   getJourneyDefinitions, upsertJourneyDefinition, getJourneyState, journeyStats,
@@ -460,6 +461,27 @@ platformRouter.post('/api/v2/links', requireAuth('operator'), (req: AuthedReques
     return;
   }
   res.status(201).json(createTrackedLink(String(phone), kind, { campaignId, sentVia: 'manual' }));
+});
+
+// Server-side lead lookup for the form (used when webformPrefillMode is
+// 'token' — the form fetches the full prefill by token and jumps to its
+// final review slide). Public: the token is the unguessable credential.
+platformRouter.get('/api/v2/links/:token/lead', (req: Request, res: Response) => {
+  const link = getTrackedLink(req.params.token);
+  if (!link) { res.status(404).json({ error: 'link not found' }); return; }
+  res.json({ token: link.token, kind: link.kind, prefill: buildPrefillData(link.phone, link.token) });
+});
+
+// Preview the exact destination URL a webform/offers link would produce
+// for a given phone — so you can confirm it lands on the final slide
+// with the right prefill before sending anything.
+platformRouter.get('/api/v2/links/preview', requireAuth('viewer'), (req: Request, res: Response) => {
+  const phone = String(req.query.phone || '');
+  const kind = (req.query.kind === 'offers' ? 'offers' : 'webform') as 'webform' | 'offers';
+  if (!phone) { res.status(400).json({ error: 'phone required' }); return; }
+  const created = createTrackedLink(phone, kind, { sentVia: 'manual' });
+  const link = getTrackedLink(created.token)!;
+  res.json({ trackedUrl: created.url, kind: created.kind, downgraded: created.downgraded, landsOn: buildDestinationUrl(link) });
 });
 
 // ── Journey funnel ──────────────────────────────────────────────────

@@ -44,12 +44,68 @@ export interface LeadProfile {
   hasSpouseDriver: boolean;
   hasSr22: boolean;
   source?: string;
+  sourceWebsite?: string;   // the domain the lead was sourced from (for "what website did I fill this out on?")
   submittedAt?: string;
 }
 
 function str(v: unknown): string | undefined {
   const s = typeof v === 'string' ? v.trim() : v != null ? String(v) : '';
   return s ? s : undefined;
+}
+
+/** Pull a clean domain (e.g. "autosavingsnow.com") out of any URL/host string. */
+function toDomain(raw: unknown): string | undefined {
+  const s = str(raw);
+  if (!s) return undefined;
+  let host = s.trim();
+  try {
+    if (/^https?:\/\//i.test(host)) host = new URL(host).hostname;
+    else if (host.includes('/')) host = host.split('/')[0];
+  } catch { /* fall through to cleanup */ }
+  host = host.replace(/^www\./i, '').replace(/[^a-z0-9.-].*$/i, '').toLowerCase();
+  // Must look like a domain (has a dot, valid TLD-ish), not a vendor slug.
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) ? host : undefined;
+}
+
+/**
+ * Find the website/domain a lead was sourced from. Vendors put it under
+ * many different keys, and it may be nested in the raw payload — check
+ * the common ones plus a recursive scan of the raw webhook data.
+ */
+function extractSourceWebsite(cf: Record<string, unknown>): string | undefined {
+  const direct = [
+    'landing_page', 'landingPage', 'landing_page_url', 'source_url', 'sourceUrl',
+    'origin_url', 'originUrl', 'website', 'domain', 'source_domain', 'referrer',
+    'referer', 'original_url', 'url', 'lp_url', 'site', 'source_website',
+  ];
+  const raw = (cf.rawWebhookData || {}) as Record<string, unknown>;
+  const meta = (raw.meta || cf.meta || {}) as Record<string, unknown>;
+  const search: Record<string, unknown>[] = [cf, raw, meta];
+  for (const obj of search) {
+    for (const k of direct) {
+      const d = toDomain(obj[k]);
+      if (d) return d;
+    }
+  }
+  // Recursive shallow scan of the raw payload for any URL-ish value.
+  const seen = new Set<unknown>();
+  const walk = (o: unknown, depth: number): string | undefined => {
+    if (!o || typeof o !== 'object' || depth > 3 || seen.has(o)) return undefined;
+    seen.add(o);
+    for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+      if (/url|site|domain|landing|referr|origin/i.test(k)) {
+        const d = toDomain(v);
+        if (d && !/trustedform|jornaya|leadid/i.test(d)) return d;
+      }
+      if (v && typeof v === 'object') {
+        const nested = walk(v, depth + 1);
+        if (nested) return nested;
+      }
+    }
+    return undefined;
+  };
+  const found = walk(raw, 0);
+  return found;
 }
 
 /**
@@ -111,6 +167,7 @@ export function buildLeadProfile(phone: string): LeadProfile {
     hasSpouseDriver: drivers.some(d => d.relationship === 'spouse' || d.maritalStatus === 'married'),
     hasSr22: drivers.some(d => d.sr22),
     source: str(cf.source) || (Array.isArray(lead?.tags) && lead!.tags.includes('jangl') ? 'jangl' : undefined),
+    sourceWebsite: extractSourceWebsite(cf),
     submittedAt: str(cf.timestamp) || str((cf as Record<string, unknown>).receivedAt),
   };
 }
@@ -148,10 +205,15 @@ export function voicePersonalizationBrief(profile: LeadProfile): string {
   }
   if (profile.hasSr22) bits.push('At least one driver needs SR-22.');
   if (profile.city || profile.zip) bits.push(`Area: ${[profile.city, profile.zip].filter(Boolean).join(' ')}.`);
+  if (profile.sourceWebsite) bits.push(`Sourced from the website: ${profile.sourceWebsite}.`);
   if (bits.length === 0) return '';
-  return [
+  const lines = [
     'KNOWN LEAD DETAILS (reference these naturally — do NOT read them as a list; weave one or two in so it feels like you already have their file open):',
     ...bits.map(b => `- ${b}`),
     'Never re-ask something you already know here; instead confirm it ("still the ' + (profile.vehicles[0] ? [profile.vehicles[0].year, profile.vehicles[0].make].filter(Boolean).join(' ') : 'same car') + '?"). If a detail is missing, then ask.',
-  ].join('\n');
+  ];
+  if (profile.sourceWebsite) {
+    lines.push(`IF THEY ASK "what website did I fill this out on?" or "where did you get my info?": tell them the truth — they requested a quote on ${profile.sourceWebsite}. Say it plainly, e.g. "You filled out a quote form over on ${profile.sourceWebsite}." Never dodge that question.`);
+  }
+  return lines.join('\n');
 }

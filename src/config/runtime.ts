@@ -202,10 +202,13 @@ const settings: RuntimeSettings = {
       companyName: 'Smart Quotes',
       systemPromptOverride: '',
       inboundPromptOverride: '',
-      inboundEnabled: true,
-      webleadAutoDialEnabled: true,
-      webleadAutoDialMigrated: false,
-      autoProcessingPaused: false,
+      // Safe defaults: on a fresh or disk-wiped (no-DB) boot, the platform
+      // must come up NOT auto-dialing. It was previously defaulting to
+      // auto-dial ON, so every deploy silently re-armed outbound calling.
+      inboundEnabled: false,
+      webleadAutoDialEnabled: false,
+      webleadAutoDialMigrated: true,
+      autoProcessingPaused: true,
       tcpaOverride: false,
       tcpaWhitelist: ['+19547905093'],
       allstateNumber: '',
@@ -341,19 +344,14 @@ export function loadRuntimeFromDisk(): void {
       settings.echoSuppressionMs = 150;
       vadMigrated = true;
     }
-    // One-shot weblead auto-dial heal: the toggle used to default to false,
-    // which silently dropped every weblead at the "Weblead stored (no auto-
-    // dial)" branch — phones never rang. Flip a persisted explicit `false`
-    // exactly once so existing deployments get the new default-on behavior.
-    // After this runs, webleadAutoDialMigrated stays true forever and the
-    // user's dashboard toggle is the source of truth.
-    if (settings.webleadAutoDialMigrated !== true) {
-      if (settings.webleadAutoDialEnabled !== true) {
-        settings.webleadAutoDialEnabled = true;
-      }
-      settings.webleadAutoDialMigrated = true;
-      vadMigrated = true;
-    }
+    // NOTE: a prior "one-shot" migration here force-enabled weblead auto-
+    // dial whenever webleadAutoDialMigrated wasn't set. On this service the
+    // persistence disk is ephemeral (no DATABASE_URL), so that flag was
+    // wiped on every deploy and the migration re-armed outbound auto-dial
+    // on EVERY boot — overriding an operator's deliberate "off". Removed.
+    // Auto-dial is now strictly whatever the operator last set (default
+    // OFF), and the OUTBOUND_KILL_SWITCH env var is the deploy-proof
+    // master stop.
     // Force-heal TCPA override: this MUST be off across restarts. We had
     // a production incident where it was left on overnight and bots
     // dialed leads at 2am. Real numbers go through the normal 8am-9pm

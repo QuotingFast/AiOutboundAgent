@@ -26,6 +26,7 @@ import { getConsent, recordConsent, isOnDnc } from '../compliance';
 import { getLeadMemory, getAllLeads, addLeadNote } from '../memory';
 import { getPolicyConfig, evaluateOutreach, isBlocked, hasSmsStop } from './policy';
 import { recordEvent, onEvent, normalizePhone, queryEvents } from './events';
+import { buildLeadProfile } from './leadprofile';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
@@ -58,6 +59,19 @@ export interface TrackedLink {
 export interface LifecycleConfig {
   webformBaseUrl: string;        // prefilled quote form host
   offerWallUrl: string;          // partner offer wall
+  // Extra query params appended to the webform link that tell the form
+  // to jump straight to the FINAL review slide (all fields pre-filled,
+  // one tap to submit → offers). Set this to match your form, e.g.
+  // "step=review", "slide=final", "prefilled=1", or a combination like
+  // "step=review&autofill=1". Leave blank if your form auto-advances.
+  webformFinalStepParams: string;
+  // How the form receives the lead data:
+  //   'query'  — individual fields as query params (default)
+  //   'payload'— a single base64url JSON blob in the `d` param (use when
+  //              the form ingests one encoded object like the offer wall)
+  //   'token'  — send only the tracking token; the form looks the lead up
+  //              server-side via GET /api/v2/links/:token/lead
+  webformPrefillMode: 'query' | 'payload' | 'token';
   webleadCooldownDays: number;   // min days between countable submissions
   renewalWindowDays: number;     // start renewal pushes this many days before consent expiry
   renewalPushMinGapDays: number; // don't re-push the same lead more often than this
@@ -68,6 +82,8 @@ export interface LifecycleConfig {
 const DEFAULT_CONFIG: LifecycleConfig = {
   webformBaseUrl: 'https://quotingfast.com/quote',
   offerWallUrl: 'https://quotingfast.com/offers',
+  webformFinalStepParams: 'step=review&prefilled=1',
+  webformPrefillMode: 'query',
   webleadCooldownDays: 30,
   renewalWindowDays: 25,
   renewalPushMinGapDays: 7,
@@ -274,30 +290,90 @@ export function createTrackedLink(rawPhone: string, kind: 'webform' | 'offers', 
 }
 
 /** Prefill the form from lead memory so the consumer just hits submit. */
+/**
+ * Build the full, flat prefill object for a lead — everything the form
+ * needs to land on its final review slide with nothing left to fill:
+ * identity, address, current policy, coverage, ALL drivers, ALL vehicles.
+ */
+export function buildPrefillData(phone: string, token: string): Record<string, unknown> {
+  const p = buildLeadProfile(phone);
+  const data: Record<string, unknown> = {
+    tk: token,
+    phone: phone.replace(/^\+/, ''),
+    first_name: p.firstName,
+    last_name: p.lastName,
+    email: p.email,
+    state: p.state,
+    city: p.city,
+    zip: p.zip,
+    current_insurer: p.currentInsurer,
+    insured: p.insured,
+    coverage_type: p.coverageType,
+    insured_since: p.insuredSince,
+    vehicle_count: p.vehicleCount,
+    driver_count: p.drivers.length,
+    // Structured arrays for forms that ingest them:
+    vehicles: p.vehicles.map(v => ({ year: v.year, make: v.make, model: v.model, primary_use: v.primaryUse })),
+    drivers: p.drivers.map(d => ({ name: d.name, first_name: d.firstName, relationship: d.relationship, marital_status: d.maritalStatus, sr22: d.sr22 })),
+  };
+  // Also flatten the first few vehicles/drivers as indexed params for
+  // forms that read vehicle1_make style fields.
+  p.vehicles.slice(0, 4).forEach((v, i) => {
+    if (v.year) data[`vehicle${i + 1}_year`] = v.year;
+    if (v.make) data[`vehicle${i + 1}_make`] = v.make;
+    if (v.model) data[`vehicle${i + 1}_model`] = v.model;
+  });
+  p.drivers.slice(0, 4).forEach((d, i) => {
+    if (d.firstName) data[`driver${i + 1}_first_name`] = d.firstName;
+    if (d.relationship) data[`driver${i + 1}_relationship`] = d.relationship;
+  });
+  // Drop undefined/empty so the URL stays clean.
+  for (const k of Object.keys(data)) {
+    const v = data[k];
+    if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) delete data[k];
+  }
+  return data;
+}
+
+/**
+ * Prefill the form and land on the FINAL review slide. The exact shape
+ * is controlled by lifecycle config (webformPrefillMode + the
+ * final-step params) so it can be matched to the live form without a
+ * code change:
+ *   - query   → every field as a query param (default)
+ *   - payload → one base64url JSON blob in `d` (offer-wall style)
+ *   - token   → just ?tk=…; the form looks the lead up server-side
+ * The final-step params (e.g. step=review&prefilled=1) are always
+ * appended so the consumer opens straight on "hit submit → see offers".
+ */
 export function buildDestinationUrl(link: TrackedLink): string {
   const base = link.kind === 'webform' ? cfg.webformBaseUrl : cfg.offerWallUrl;
-  const lead = getLeadMemory(link.phone);
-  const params = new URLSearchParams();
-  params.set('tk', link.token);
-  params.set('phone', link.phone.replace(/^\+/, ''));
-  if (lead) {
-    const [first, ...rest] = (lead.name || '').split(' ');
-    if (first && first !== 'Unknown') params.set('first_name', first);
-    if (rest.length) params.set('last_name', rest.join(' '));
-    if (lead.state) params.set('state', lead.state);
-    if (lead.currentInsurer) params.set('current_insurer', lead.currentInsurer);
-    const cf = lead.customFields || {};
-    const contact = cf.contact as Record<string, string> | undefined;
-    if (contact?.zipCode) params.set('zip', contact.zipCode);
-    if (contact?.email) params.set('email', contact.email);
-    const vehicles = cf.vehicles as Array<Record<string, string>> | undefined;
-    if (vehicles?.[0]) {
-      if (vehicles[0].year) params.set('vehicle_year', vehicles[0].year);
-      if (vehicles[0].make) params.set('vehicle_make', vehicles[0].make);
-      if (vehicles[0].model) params.set('vehicle_model', vehicles[0].model);
-    }
+  const sep = base.includes('?') ? '&' : '?';
+
+  // Offer-wall links are already the final destination; just carry the token.
+  if (link.kind === 'offers') {
+    return `${base}${sep}tk=${encodeURIComponent(link.token)}&phone=${encodeURIComponent(link.phone.replace(/^\+/, ''))}`;
   }
-  return `${base}${base.includes('?') ? '&' : '?'}${params.toString()}`;
+
+  const data = buildPrefillData(link.phone, link.token);
+  const finalStep = (cfg.webformFinalStepParams || '').trim();
+
+  let qs: string;
+  if (cfg.webformPrefillMode === 'token') {
+    qs = `tk=${encodeURIComponent(link.token)}`;
+  } else if (cfg.webformPrefillMode === 'payload') {
+    const blob = Buffer.from(JSON.stringify(data)).toString('base64url');
+    qs = `d=${blob}`;
+  } else {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(data)) {
+      if (Array.isArray(v) || typeof v === 'object') params.set(k, JSON.stringify(v));
+      else params.set(k, String(v));
+    }
+    qs = params.toString();
+  }
+
+  return `${base}${sep}${qs}${finalStep ? '&' + finalStep : ''}`;
 }
 
 export function getTrackedLink(token: string): TrackedLink | undefined { return links.get(token); }

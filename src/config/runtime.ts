@@ -323,6 +323,13 @@ export function loadRuntimeFromDisk(): void {
       settings.vadThreshold = 0.55;
       vadMigrated = true;
     }
+    // Voice upgrade: move persisted legacy OpenAI voices to Marin, the
+    // newest and most natural gpt-realtime voice. Only touches the older
+    // default set; a deliberate choice of any current voice is preserved.
+    if (settings.voiceProvider === 'openai' && (!settings.voice || ['coral', 'alloy', 'echo'].includes(settings.voice))) {
+      settings.voice = 'marin';
+      vadMigrated = true;
+    }
     // Heal sluggish persisted silence_duration values down to the current
     // default. Older defaults were 1400ms then 500ms; 300ms is snappier while
     // still tolerating natural pauses on the legacy server_vad path.

@@ -1208,7 +1208,7 @@ export function getCommandCenterHtml(): string {
     revenue: loadRevenueTab, compliance: loadComplianceTab, config: loadConfigTab, voicelab: loadVoiceLabTab, reports: loadReportsTab
   };
 
-  var OPENAI_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'];
+  var OPENAI_VOICES = ['marin', 'cedar', 'coral', 'sage', 'verse', 'ballad', 'ash', 'alloy', 'echo', 'shimmer'];
 
   function switchTab(name) {
     if (state.callsPollTimer) { clearInterval(state.callsPollTimer); state.callsPollTimer = null; }

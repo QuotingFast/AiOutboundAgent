@@ -32,7 +32,10 @@ export const config = {
     apiKey: required('OPENAI_API_KEY'),
     model: optional('OPENAI_MODEL', 'gpt-4o'),
     realtimeModel: optional('OPENAI_REALTIME_MODEL', 'gpt-realtime'),
-    voice: optional('OPENAI_VOICE', 'coral'),
+    // Marin and Cedar are the newest gpt-realtime voices — markedly more
+    // natural/expressive than the legacy set (alloy, echo, coral…).
+    // Default to Marin for the most human-sounding calls.
+    voice: optional('OPENAI_VOICE', 'marin'),
   },
 
   elevenlabs: {

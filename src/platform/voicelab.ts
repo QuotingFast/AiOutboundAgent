@@ -11,8 +11,9 @@ import { logger } from '../utils/logger';
 
 export const voiceLabRouter = Router();
 
-// OpenAI Realtime speech-to-speech voices.
-const OPENAI_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'];
+// OpenAI Realtime speech-to-speech voices. Marin and Cedar are the
+// newest gpt-realtime voices and the most natural — listed first.
+const OPENAI_VOICES = ['marin', 'cedar', 'coral', 'sage', 'verse', 'ballad', 'ash', 'alloy', 'echo', 'shimmer'];
 
 // ElevenLabs named voices → IDs (the full production roster).
 const EL_VOICES: Record<string, string> = {
